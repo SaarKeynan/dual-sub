@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DualSub settings</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>DualSub</h1>
+        <p>French + English, together</p>
+      </div>
+      <label class="switch" title="Turn DualSub on or off">
+        <input id="enabled" type="checkbox">
+        <span></span>
+      </label>
+    </header>
+
+    <div id="playerStatus" class="status">Open a YouTube video to begin.</div>
+
+    <main>
+      <section class="language source-theme">
+        <div class="section-heading">
+          <h2>French</h2>
+          <label class="inline-check"><input id="showSource" type="checkbox"> Show</label>
+        </div>
+        <div class="grid">
+          <label>Size <output id="sourceSizeOutput"></output>
+            <input id="sourceFontSize" type="range" min="16" max="54" step="1">
+          </label>
+          <label>Text <input id="sourceTextColor" type="color"></label>
+          <label>Background <input id="sourceBackgroundColor" type="color"></label>
+          <label>Opacity <output id="sourceOpacityOutput"></output>
+            <input id="sourceBackgroundOpacity" type="range" min="0" max="100" step="1">
+          </label>
+          <label>Font
+            <select id="sourceFontFamily">
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="system-ui, sans-serif">System</option>
+              <option value="Verdana, sans-serif">Verdana</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="'Courier New', monospace">Courier</option>
+            </select>
+          </label>
+          <label>Weight
+            <select id="sourceFontWeight">
+              <option value="400">Regular</option>
+              <option value="600">Semi-bold</option>
+              <option value="700">Bold</option>
+              <option value="800">Extra bold</option>
+            </select>
+          </label>
+          <label class="inline-check"><input id="sourceItalic" type="checkbox"> Italic</label>
+        </div>
+      </section>
+
+      <section class="language target-theme">
+        <div class="section-heading">
+          <h2>English</h2>
+          <label class="inline-check"><input id="showTranslation" type="checkbox"> Show</label>
+        </div>
+        <div class="grid">
+          <label>Size <output id="targetSizeOutput"></output>
+            <input id="targetFontSize" type="range" min="16" max="54" step="1">
+          </label>
+          <label>Text <input id="targetTextColor" type="color"></label>
+          <label>Background <input id="targetBackgroundColor" type="color"></label>
+          <label>Opacity <output id="targetOpacityOutput"></output>
+            <input id="targetBackgroundOpacity" type="range" min="0" max="100" step="1">
+          </label>
+          <label>Font
+            <select id="targetFontFamily">
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="system-ui, sans-serif">System</option>
+              <option value="Verdana, sans-serif">Verdana</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="'Courier New', monospace">Courier</option>
+            </select>
+          </label>
+          <label>Weight
+            <select id="targetFontWeight">
+              <option value="400">Regular</option>
+              <option value="600">Semi-bold</option>
+              <option value="700">Bold</option>
+              <option value="800">Extra bold</option>
+            </select>
+          </label>
+          <label class="inline-check"><input id="targetItalic" type="checkbox"> Italic</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Layout & selection</h2>
+        <div class="grid">
+          <label>Bottom offset <output id="bottomOffsetOutput"></output>
+            <input id="bottomOffset" type="range" min="30" max="220" step="2">
+          </label>
+          <label>Maximum width <output id="maxWidthOutput"></output>
+            <input id="maxWidth" type="range" min="45" max="98" step="1">
+          </label>
+        </div>
+        <label class="check-row"><input id="hideNativeCaptions" type="checkbox"> Hide YouTube's native captions while DualSub is on</label>
+        <label class="check-row"><input id="wholeLiveLines" type="checkbox"> Show complete French and English lines together (adds delay)</label>
+        <label class="check-row"><input id="selectionTranslation" type="checkbox"> Translate highlighted subtitle text inline</label>
+        <label class="email-label">Translation engine
+          <select id="translationProvider">
+            <option value="google">Google web translation (better quality)</option>
+            <option value="mymemory">MyMemory (documented free API)</option>
+          </select>
+        </label>
+        <label class="email-label">Optional MyMemory contact email
+          <input id="mymemoryEmail" type="email" placeholder="you@example.com" autocomplete="email">
+        </label>
+        <p class="privacy">Fallback translations are sent to the selected provider. Google web translation is higher quality and keyless but unofficial and may be rate-limited. MyMemory's current free limits are 5,000 characters/day anonymously or 50,000 with the optional contact email.</p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Shortcut: <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd></span>
+      <button id="reset" type="button">Reset styles</button>
+    </footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

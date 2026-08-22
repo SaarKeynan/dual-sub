@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "DualSub for YouTube",
+  "version": "0.2.3",
+  "description": "Show French and English YouTube subtitles together, style them independently, and translate selected text.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "https://api.mymemory.translated.net/*",
+    "https://translate.googleapis.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "DualSub settings",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/dualsub.svg"
+  },
+  "icons": {
+    "48": "icons/dualsub.svg",
+    "96": "icons/dualsub.svg"
+  },
+  "commands": {
+    "toggle-dualsub": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Toggle both subtitle tracks"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "page-bridge.js"
+      ],
+      "matches": [
+        "*://www.youtube.com/*"
+      ]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "dualsub@local",
+      "strict_min_version": "109.0"
+    }
+  }
+}
