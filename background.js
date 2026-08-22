@@ -10,11 +10,12 @@ const DEFAULT_SETTINGS = {
   hoverLookup: true,
   wordAlignment: true,
   colorFrenchWordGroups: false,
+  wordGroupPaletteVersion: 2,
   wordGroupColors: {
     unknown: "#ffffff",
     noun: "#60a5fa",
-    verb: "#fb7185",
-    adjective: "#c084fc",
+    verb: "#a78bfa",
+    adjective: "#fb7185",
     adverb: "#facc15",
     pronoun: "#22d3ee",
     determiner: "#4ade80",
@@ -56,7 +57,62 @@ const DEFAULT_SETTINGS = {
 
 const translationCache = new Map();
 const translationPending = new Map();
+const persistentTranslationCache = new Map();
+const TRANSLATION_CACHE_KEY = "translationCacheV1";
+const TRANSLATION_CACHE_MAX_ENTRIES = 1200;
+const TRANSLATION_CACHE_MAX_AGE_MS = 180 * 24 * 60 * 60_000;
+let persistentTranslationCacheLoadPromise;
+let persistentTranslationCacheWritePromise = Promise.resolve();
 const VOCABULARY_KEY = "vocabulary";
+
+function cacheTranslationInMemory(cacheKey, result) {
+  translationCache.set(cacheKey, result);
+  if (translationCache.size > 1500) {
+    translationCache.delete(translationCache.keys().next().value);
+  }
+}
+
+function loadPersistentTranslationCache() {
+  if (persistentTranslationCacheLoadPromise) return persistentTranslationCacheLoadPromise;
+  persistentTranslationCacheLoadPromise = browser.storage.local.get(TRANSLATION_CACHE_KEY)
+    .then((stored) => {
+      const now = Date.now();
+      const entries = Array.isArray(stored[TRANSLATION_CACHE_KEY]) ? stored[TRANSLATION_CACHE_KEY] : [];
+      for (const entry of entries) {
+        if (!entry?.key || !entry?.result?.translatedText || now - Number(entry.savedAt || 0) > TRANSLATION_CACHE_MAX_AGE_MS) continue;
+        persistentTranslationCache.set(entry.key, entry);
+      }
+    })
+    .catch(() => {});
+  return persistentTranslationCacheLoadPromise;
+}
+
+async function findPersistentTranslation(cacheKey) {
+  await loadPersistentTranslationCache();
+  const entry = persistentTranslationCache.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() - Number(entry.savedAt || 0) > TRANSLATION_CACHE_MAX_AGE_MS) {
+    persistentTranslationCache.delete(cacheKey);
+    return null;
+  }
+  cacheTranslationInMemory(cacheKey, entry.result);
+  return entry.result;
+}
+
+async function persistWordTranslation(cacheKey, result) {
+  await loadPersistentTranslationCache();
+  persistentTranslationCache.set(cacheKey, { key: cacheKey, result, savedAt: Date.now() });
+  const write = async () => {
+    const entries = Array.from(persistentTranslationCache.values())
+      .sort((left, right) => Number(right.savedAt || 0) - Number(left.savedAt || 0))
+      .slice(0, TRANSLATION_CACHE_MAX_ENTRIES);
+    persistentTranslationCache.clear();
+    entries.forEach((entry) => persistentTranslationCache.set(entry.key, entry));
+    await browser.storage.local.set({ [TRANSLATION_CACHE_KEY]: entries });
+  };
+  persistentTranslationCacheWritePromise = persistentTranslationCacheWritePromise.then(write, write);
+  await persistentTranslationCacheWritePromise;
+}
 
 async function getVocabulary() {
   const stored = await browser.storage.local.get(VOCABULARY_KEY);
@@ -231,10 +287,16 @@ async function getSettings() {
 }
 
 function mergeSettings(value = {}) {
+  const wordGroupColors = { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) };
+  if (!value.wordGroupPaletteVersion && wordGroupColors.verb === "#fb7185" && wordGroupColors.adjective === "#c084fc") {
+    wordGroupColors.verb = DEFAULT_SETTINGS.wordGroupColors.verb;
+    wordGroupColors.adjective = DEFAULT_SETTINGS.wordGroupColors.adjective;
+  }
   return {
     ...DEFAULT_SETTINGS,
     ...value,
-    wordGroupColors: { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) },
+    wordGroupPaletteVersion: 2,
+    wordGroupColors,
     sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
     targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
   };
@@ -330,7 +392,7 @@ async function translateWithGoogle(cleanText, source, target) {
   return { translatedText, provider: "google" };
 }
 
-async function translateSelection(text, sourceLanguage, targetLanguage) {
+async function translateSelection(text, sourceLanguage, targetLanguage, cacheMode = "transient") {
   const rawText = String(text || "").trim();
   if (!rawText) throw new Error("Select a word or sentence first.");
   const source = sourceLanguage || "fr";
@@ -338,8 +400,13 @@ async function translateSelection(text, sourceLanguage, targetLanguage) {
   const settings = await getSettings();
   const provider = settings.translationProvider === "mymemory" ? "mymemory" : "google";
   const cleanText = trimToUtf8Bytes(rawText, provider === "google" ? 4500 : 490);
-  const cacheKey = `${provider}|${source}|${target}|${cleanText}`;
+  const cacheText = cacheMode === "word" ? cleanText.normalize("NFC").toLocaleLowerCase() : cleanText;
+  const cacheKey = `${provider}|${source}|${target}|${cacheText}`;
   if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
+  if (cacheMode === "word") {
+    const persistentResult = await findPersistentTranslation(cacheKey);
+    if (persistentResult) return persistentResult;
+  }
   if (translationPending.has(cacheKey)) return translationPending.get(cacheKey);
 
   const request = (async () => {
@@ -355,9 +422,13 @@ async function translateSelection(text, sourceLanguage, targetLanguage) {
     }
 
     const result = { ...translated, sourceText: cleanText };
-    translationCache.set(cacheKey, result);
-    if (translationCache.size > 1500) {
-      translationCache.delete(translationCache.keys().next().value);
+    cacheTranslationInMemory(cacheKey, result);
+    if (cacheMode === "word") {
+      try {
+        await persistWordTranslation(cacheKey, result);
+      } catch (_error) {
+        // Translation still succeeds if local cache persistence is unavailable.
+      }
     }
     return result;
   })();
@@ -408,7 +479,7 @@ browser.runtime.onMessage.addListener((message) => {
     return fetchCaptions(message.url).then((text) => ({ ok: true, text }));
   }
   if (message?.type === "translate-selection") {
-    return translateSelection(message.text, message.sourceLanguage, message.targetLanguage)
+    return translateSelection(message.text, message.sourceLanguage, message.targetLanguage, message.cacheMode)
       .then((result) => ({ ok: true, ...result }))
       .catch((error) => ({
         ok: false,

@@ -408,9 +408,44 @@
 
   function describe(analysis) {
     if (!analysis) return "";
-    if (analysis.partOfSpeech === "nominal") return "noun or adjective in this context";
-    const person = analysis.person && analysis.number ? `${analysis.person} person ${analysis.number}` : "";
-    return [analysis.mood, analysis.tense, person].filter(Boolean).join(" · ");
+    if (analysis.partOfSpeech === "nominal") return "This word is acting as a noun or adjective here.";
+    const subjects = {
+      "1st singular": "je",
+      "2nd singular": "tu",
+      "3rd singular": "il, elle, or on",
+      "1st plural": "nous",
+      "2nd plural": "vous",
+      "3rd plural": "ils or elles"
+    };
+    const subject = subjects[`${analysis.person} ${analysis.number}`] || "";
+    const subjectText = subject ? `, normally used with “${subject}”` : "";
+    if (analysis.mood === "participle") {
+      return analysis.tense === "past"
+        ? "This is a past participle, used in compound past tenses or like an adjective."
+        : "This is a present participle, expressing an action in progress (similar to English “-ing”).";
+    }
+    if (analysis.mood === "infinitive") return "This is the infinitive: the dictionary form of the verb.";
+    if (analysis.mood === "imperative") return `This is a command or instruction${subjectText}.`;
+    if (analysis.mood === "subjunctive") {
+      return `This is a subjunctive form${subjectText}, often used for wishes, doubt, emotion, or necessity.`;
+    }
+    if (analysis.mood === "conditional") {
+      return `This is a conditional form${subjectText}: it describes what would or could happen.`;
+    }
+    const tenseExplanations = {
+      present: "It describes what is happening now or what happens generally.",
+      imperfect: "It describes an ongoing, repeated, or background action in the past.",
+      future: "It describes something that will happen.",
+      past: "It describes something that happened in the past."
+    };
+    const tenseNames = {
+      present: "present tense",
+      imperfect: "imperfect tense",
+      future: "future tense",
+      past: "past tense"
+    };
+    const tenseName = tenseNames[analysis.tense] || `${analysis.tense || "conjugated"} form`;
+    return `This is the ${tenseName}${subjectText}. ${tenseExplanations[analysis.tense] || ""}`.trim();
   }
 
   const ready = initializeResources();

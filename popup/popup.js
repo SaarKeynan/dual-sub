@@ -283,10 +283,16 @@ async function initialize() {
   const defaultResponse = await browser.runtime.sendMessage({ type: "get-default-settings" });
   defaults = defaultResponse.settings;
   const stored = await browser.storage.sync.get("settings");
+  const storedWordGroupColors = { ...defaults.wordGroupColors, ...(stored.settings?.wordGroupColors || {}) };
+  if (!stored.settings?.wordGroupPaletteVersion && storedWordGroupColors.verb === "#fb7185" && storedWordGroupColors.adjective === "#c084fc") {
+    storedWordGroupColors.verb = defaults.wordGroupColors.verb;
+    storedWordGroupColors.adjective = defaults.wordGroupColors.adjective;
+  }
   settings = {
     ...defaults,
     ...(stored.settings || {}),
-    wordGroupColors: { ...defaults.wordGroupColors, ...(stored.settings?.wordGroupColors || {}) },
+    wordGroupPaletteVersion: 2,
+    wordGroupColors: storedWordGroupColors,
     sourceStyle: { ...defaults.sourceStyle, ...(stored.settings?.sourceStyle || {}) },
     targetStyle: { ...defaults.targetStyle, ...(stored.settings?.targetStyle || {}) }
   };

@@ -120,6 +120,10 @@ async function testCaptionProcessing() {
   assert(!source.includes("Translate line"));
   assert(source.includes("chooseFrenchVoice"));
   assert(source.includes("colorFrenchWordGroups"));
+  assert(source.includes('class="dualsub-card-translation"'));
+  assert(source.includes("How this verb works"));
+  assert(source.includes("lookupTranslationCache"));
+  assert(source.includes('cacheMode: "word"'));
   assert(popupCss.includes("overflow-y: auto"), "The settings popup should scroll vertically");
   assert(popupCss.includes("overflow-x: hidden"), "The settings popup should not scroll horizontally");
   const frenchAppearanceStart = popupHtml.indexOf('data-appearance-content="source"');
@@ -137,7 +141,9 @@ async function testCaptionProcessing() {
     );
   }
   assert(contentCss.includes("--dualsub-group-unknown: #ffffff"));
+  assert(contentCss.includes("--dualsub-group-verb: #a78bfa"));
   assert(contentCss.includes("var(--dualsub-group-adverb, #facc15)"));
+  assert(contentCss.includes('.dualsub-card-translation[data-group="verb"]'));
 }
 
 async function testFrenchConjugation() {
@@ -150,10 +156,14 @@ async function testFrenchConjugation() {
   assert.strictEqual(suis.tense, "present");
   assert.strictEqual(suis.person, "1st");
   assert.strictEqual(suis.number, "singular");
+  assert(context.DualSubFrench.describe(suis).includes("normally used with “je”"));
+  assert(context.DualSubFrench.describe(suis).includes("happening now"));
   const feraient = analyze("feraient");
   assert.strictEqual(feraient.lemma, "faire");
   assert.strictEqual(feraient.mood, "conditional");
   assert.strictEqual(feraient.tense, "present");
+  assert(context.DualSubFrench.describe(feraient).includes("would or could happen"));
+  assert(context.DualSubFrench.describe(feraient).includes("ils or elles"));
   const parlerai = analyze("parlerai");
   assert.strictEqual(parlerai.lemma, "parler");
   assert.strictEqual(parlerai.tense, "future");
@@ -279,17 +289,29 @@ async function testVocabularyStorage() {
   assert.strictEqual(defaultSettings.settings.subtitleLeadMs, undefined);
   assert.strictEqual(defaultSettings.settings.colorFrenchWordGroups, false);
   assert.strictEqual(defaultSettings.settings.wordGroupColors.unknown, "#ffffff");
+  assert.strictEqual(defaultSettings.settings.wordGroupColors.verb, "#a78bfa");
   assert.strictEqual(defaultSettings.settings.wordGroupColors.adverb, "#facc15");
   assert.strictEqual(Object.keys(defaultSettings.settings.wordGroupColors).length, 10);
   assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
   assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
 
   const translations = await Promise.all([
-    messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en" }),
-    messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en" })
+    messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en", cacheMode: "word" }),
+    messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en", cacheMode: "word" })
   ]);
   assert(translations.every((result) => result.ok && result.translatedText === "hello"));
   assert.strictEqual(fetchCount, 1, "Concurrent identical translations should share one request");
+  assert.strictEqual(stores.local.translationCacheV1.length, 1, "Word translations should persist locally");
+  vm.runInContext("translationCache.clear(); persistentTranslationCache.clear(); persistentTranslationCacheLoadPromise = undefined;", context);
+  const persistentHit = await messageListener({
+    type: "translate-selection",
+    text: "BONJOUR",
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+    cacheMode: "word"
+  });
+  assert(persistentHit.ok && persistentHit.translatedText === "hello");
+  assert.strictEqual(fetchCount, 1, "A persistent case-insensitive word hit should avoid the network");
 
   stores.sync.settings = { ...defaultSettings.settings, translationProvider: "mymemory" };
   context.fetch = async (url) => {

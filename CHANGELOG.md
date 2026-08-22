@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.3 — clearer lookup cards and persistent word cache
+
+- Rewrote verb-form explanations as plain-language descriptions of the base
+  verb, likely subject, tense, and everyday meaning of that tense.
+- Moved each selected word’s grammatical group and translation into one
+  color-matched panel; verb panels and conjugation accents are purple by
+  default and follow the editable verb color.
+- Added a bounded, 180-day local cache for up to 1,200 translated words. It
+  survives background-worker restarts, while sentence translations remain
+  transient.
+- Added an immediate in-page cache so reopening a translated word does not
+  briefly flash “Translating…”.
+
 ## 0.6.2 — editable grammatical palette
 
 - Replaced the similar pastel word-group colors with a more distinct palette.

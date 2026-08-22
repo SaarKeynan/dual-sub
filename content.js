@@ -11,11 +11,12 @@
     hoverLookup: true,
     wordAlignment: true,
     colorFrenchWordGroups: false,
+    wordGroupPaletteVersion: 2,
     wordGroupColors: {
       unknown: "#ffffff",
       noun: "#60a5fa",
-      verb: "#fb7185",
-      adjective: "#c084fc",
+      verb: "#a78bfa",
+      adjective: "#fb7185",
       adverb: "#facc15",
       pronoun: "#22d3ee",
       determiner: "#4ade80",
@@ -106,6 +107,7 @@
   let timedTrackRecoveryLastError = "";
   let usingAheadTranslation = false;
   const aheadTranslations = new Map();
+  const lookupTranslationCache = new Map();
   const aheadTranslationPending = new Set();
   const aheadTranslationFailed = new Set();
   const aheadTranslationQueue = [];
@@ -126,10 +128,16 @@
   let lastPlaybackCueIndex = -1;
 
   function mergeSettings(value = {}) {
+    const wordGroupColors = { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) };
+    if (!value.wordGroupPaletteVersion && wordGroupColors.verb === "#fb7185" && wordGroupColors.adjective === "#c084fc") {
+      wordGroupColors.verb = DEFAULT_SETTINGS.wordGroupColors.verb;
+      wordGroupColors.adjective = DEFAULT_SETTINGS.wordGroupColors.adjective;
+    }
     return {
       ...DEFAULT_SETTINGS,
       ...value,
-      wordGroupColors: { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) },
+      wordGroupPaletteVersion: 2,
+      wordGroupColors,
       sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
       targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
     };
@@ -213,10 +221,12 @@
             </div>
           </div>
           <div class="dualsub-card-source"></div>
-          <div class="dualsub-card-group" hidden></div>
-          <div class="dualsub-card-result"></div>
+          <div class="dualsub-card-translation" data-group="unknown">
+            <div class="dualsub-card-group" hidden></div>
+            <div class="dualsub-card-result"></div>
+          </div>
           <div class="dualsub-card-conjugation" hidden>
-            <div class="dualsub-card-label">Verb form</div>
+            <div class="dualsub-card-label">How this verb works</div>
             <div class="dualsub-card-lemma"></div>
             <div class="dualsub-card-grammar"></div>
           </div>
@@ -1325,6 +1335,14 @@
       .toLocaleLowerCase();
   }
 
+  function rememberLookupTranslation(cacheKey, translatedText) {
+    if (!cacheKey || !translatedText) return;
+    lookupTranslationCache.set(cacheKey, translatedText);
+    if (lookupTranslationCache.size > 1200) {
+      lookupTranslationCache.delete(lookupTranslationCache.keys().next().value);
+    }
+  }
+
   function stemEnglishWord(value) {
     const word = normalizeLookupWord(value);
     const irregular = {
@@ -1445,11 +1463,17 @@
         const results = await Promise.allSettled(evidenceTexts.map((text) => browser.runtime.sendMessage({
           type: "translate-selection", text,
           sourceLanguage: settings.sourceLanguage,
-          targetLanguage: settings.targetLanguage
+          targetLanguage: settings.targetLanguage,
+          cacheMode: "word"
         })));
         const translations = results
           .filter((result) => result.status === "fulfilled" && result.value?.ok)
           .map((result) => result.value.translatedText);
+        const surfaceResponse = results[0]?.status === "fulfilled" ? results[0].value : null;
+        if (surfaceResponse?.ok) {
+          const cacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(wordText)}`;
+          rememberLookupTranslation(cacheKey, surfaceResponse.translatedText);
+        }
         if (translations.length && word.isConnected && word.classList.contains("is-hovered")) {
           refineAlignedTargetWords(translations, alignmentContext);
         }
@@ -1513,6 +1537,7 @@
     if (!cleanText) return;
     const sequence = ++lookupSequence;
     const sourceNode = selectionCard.querySelector(".dualsub-card-source");
+    const translationNode = selectionCard.querySelector(".dualsub-card-translation");
     const groupNode = selectionCard.querySelector(".dualsub-card-group");
     const resultNode = selectionCard.querySelector(".dualsub-card-result");
     const sentenceSourceNode = selectionCard.querySelector(".dualsub-card-sentence-source");
@@ -1557,31 +1582,32 @@
       conjugation
     };
     sourceNode.textContent = cleanText;
+    translationNode.dataset.group = wordGroup?.group || "unknown";
     groupNode.hidden = !wordGroup;
     groupNode.dataset.group = wordGroup?.group || "unknown";
     groupNode.textContent = wordGroup
       ? [WORD_GROUP_LABELS[wordGroup.group] || "Word", ...(wordGroup.alternatives || []).map((group) => `also ${WORD_GROUP_LABELS[group]?.toLocaleLowerCase() || group}`)].join(" · ")
       : "";
-    resultNode.textContent = "Translating…";
+    const lookupCacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(cleanText)}`;
+    const cachedLookup = kind === "word" ? lookupTranslationCache.get(lookupCacheKey) : null;
+    resultNode.textContent = cachedLookup || "Translating…";
     sentenceSourceNode.textContent = sentence;
     sentenceTargetNode.textContent = lookupContext.sentenceTranslation || "Translation available on request";
     conjugationNode.hidden = !conjugation;
     if (conjugation) {
       if (conjugation.partOfSpeech === "nominal") {
         lemmaNode.textContent = normalizeLookupWord(conjugation.lemma) !== normalizeLookupWord(cleanText)
-          ? `Likely noun here: ${conjugation.lemma} · caption form: ${cleanText}`
-          : `Context: ${cleanText} is used as a noun or adjective`;
+          ? `In this sentence, “${cleanText}” is most likely the noun “${conjugation.lemma}”.`
+          : `In this sentence, “${cleanText}” is being used as a noun or adjective.`;
         grammarNode.textContent = conjugation.verbReadings?.length
-          ? `Possible verb reading: ${cleanText} → ${conjugation.verbReadings.map((item) => item.lemma).join(" / ")}`
-          : "The preceding determiner makes a verb reading unlikely here.";
+          ? `In another context, it could be a form of ${conjugation.verbReadings.map((item) => `“${item.lemma}”`).join(" or ")}.`
+          : "The word before it makes a verb meaning unlikely here.";
       } else {
-        const confidenceLabel = conjugation.confidence === "high"
-          ? ""
-          : conjugation.confidence === "verified" ? "Verified: " : "Possible: ";
-        lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${conjugation.lemma}`;
+        const confidenceLabel = ["high", "verified"].includes(conjugation.confidence) ? "Base verb" : "Possible base verb";
+        lemmaNode.textContent = `${confidenceLabel}: ${conjugation.lemma}`;
         const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
         grammarNode.textContent = conjugation.alternatives?.length
-          ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma}: ${globalThis.DualSubFrench.describe(item)}`).join(" / ")}`
+          ? `${description} Other possible reading: ${conjugation.alternatives.map((item) => `${item.lemma} — ${globalThis.DualSubFrench.describe(item)}`).join("; ")}`
           : description;
       }
     }
@@ -1612,11 +1638,12 @@
       pausedByLookup = true;
     }
 
-    const surfacePromise = browser.runtime.sendMessage({
+    const surfacePromise = cachedLookup ? Promise.resolve({ ok: true, translatedText: cachedLookup, cached: true }) : browser.runtime.sendMessage({
         type: "translate-selection",
         text: cleanText,
         sourceLanguage: settings.sourceLanguage,
-        targetLanguage: settings.targetLanguage
+        targetLanguage: settings.targetLanguage,
+        cacheMode: kind === "word" ? "word" : "transient"
       });
     const lemmaTexts = conjugation?.partOfSpeech === "verb"
       ? [conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.lemma)]
@@ -1625,16 +1652,20 @@
       .slice(0, 3)
       : [];
     const lemmaPromises = lemmaTexts.map((lemma) => browser.runtime.sendMessage({
-        type: "translate-selection",
-        text: lemma,
-        sourceLanguage: settings.sourceLanguage,
-        targetLanguage: settings.targetLanguage
+      type: "translate-selection",
+      text: lemma,
+      sourceLanguage: settings.sourceLanguage,
+      targetLanguage: settings.targetLanguage,
+      cacheMode: "word"
       }));
     try {
       const response = await surfacePromise;
       if (sequence !== lookupSequence || !selectionCard.classList.contains("is-visible")) return;
       resultNode.textContent = response?.ok ? response.translatedText : (response?.error || "Translation unavailable");
       if (response?.ok && lookupContext) {
+        if (kind === "word") {
+          rememberLookupTranslation(lookupCacheKey, response.translatedText);
+        }
         lookupContext.translatedText = response.translatedText;
         saveButton.disabled = false;
         refineAlignedTargetWords(response.translatedText);

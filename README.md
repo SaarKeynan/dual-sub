@@ -37,10 +37,11 @@ interactive study surface.
 - Hover or click a French word for an instant translation. A corresponding
   English word is highlighted only when the translated surface form or inferred
   infinitive provides an exact or strong inflection match; uncertain matches are
-  intentionally left unmarked.
+  intentionally left unmarked. Word translations are cached locally in a
+  bounded 1,200-entry store so common lookups remain instant across visits.
 - French conjugations are analyzed locally with ablaut's reverse morphology,
   then checked against a 7,820-infinitive Lefff derivative. The lookup card
-  shows likely infinitives, tense, person, and number, including alternatives
+  explains likely base verbs, tense, subject, and alternatives in plain language
   for genuinely ambiguous forms such as `suis` (`être` / `suivre`).
 - An offline Lexique 3.83 derivative identifies grammatical word groups for
   125,132 French forms. Lookup cards show a color-coded noun, verb, adjective,
