@@ -10,11 +10,14 @@
     wholeLiveLines: true,
     hoverLookup: true,
     wordAlignment: true,
+    colorFrenchWordGroups: false,
     pauseOnLookup: false,
     recallMode: false,
     autoPause: false,
     lookupCardPosition: "smart",
     hoverDelay: 420,
+    pronunciationVoiceURI: "",
+    pronunciationRate: 0.88,
     captionOffsetMs: 0,
     translationProvider: "google",
     bottomOffset: 72,
@@ -104,6 +107,7 @@
   let lookupContext = null;
   let lookupDismissTimer;
   let lookupPinned = false;
+  let phraseSelectionAnchor = null;
   let pausedByLookup = false;
   let loopCueRange = null;
   let playbackRateBeforeSlow = 1;
@@ -153,6 +157,7 @@
     root.style.setProperty("--dualsub-bottom", `${settings.bottomOffset}px`);
     root.style.setProperty("--dualsub-width", `${settings.maxWidth}%`);
     root.classList.toggle("dualsub-recall-mode", Boolean(settings.recallMode));
+    root.classList.toggle("dualsub-color-word-groups", Boolean(settings.colorFrenchWordGroups));
     applyLineStyle(sourceLine, settings.sourceStyle);
     applyLineStyle(targetLine, settings.targetStyle);
 
@@ -192,6 +197,7 @@
             </div>
           </div>
           <div class="dualsub-card-source"></div>
+          <div class="dualsub-card-group" hidden></div>
           <div class="dualsub-card-result"></div>
           <div class="dualsub-card-conjugation" hidden>
             <div class="dualsub-card-label">Verb form</div>
@@ -209,7 +215,7 @@
             <button type="button" data-action="speak">Pronounce</button>
             <button type="button" data-action="copy">Copy</button>
             <button type="button" data-action="save">+ Vocabulary</button>
-            <button type="button" data-action="sentence">Translate line</button>
+            <button type="button" data-action="phrase">Select phrase</button>
             <button type="button" data-action="replay">Replay</button>
             <button type="button" data-action="slow">0.75× replay</button>
             <button type="button" data-action="loop">Loop line</button>
@@ -1076,7 +1082,35 @@
     }
   }
 
+  const WORD_GROUP_LABELS = Object.freeze({
+    noun: "Noun", verb: "Verb", adjective: "Adjective", adverb: "Adverb",
+    pronoun: "Pronoun", determiner: "Determiner", preposition: "Preposition",
+    conjunction: "Conjunction", interjection: "Interjection", unknown: "Word"
+  });
+
+  function tagFrenchWord(word, sentence = currentSourceText) {
+    if (!word) return { group: "unknown", alternatives: [] };
+    const text = word.dataset.word || word.textContent;
+    const analysis = globalThis.DualSubFrench?.analyzeWord(text, sentence);
+    const classification = globalThis.DualSubFrench?.classifyWord(text, sentence, analysis) || {
+      group: analysis?.partOfSpeech === "verb" ? "verb" : "unknown",
+      alternatives: []
+    };
+    word.dataset.wordGroup = classification.group;
+    word.dataset.wordGroupAlternatives = (classification.alternatives || []).join(",");
+    word.setAttribute(
+      "aria-label",
+      `Look up ${text}${classification.group !== "unknown" ? `, ${WORD_GROUP_LABELS[classification.group]}` : ""}`
+    );
+    return classification;
+  }
+
+  function retagCurrentFrenchWords() {
+    sourceLine?.querySelectorAll(".dualsub-word").forEach((word) => tagFrenchWord(word));
+  }
+
   function renderTokenizedText(line, text, language) {
+    if (line === sourceLine && phraseSelectionAnchor) phraseSelectionAnchor = null;
     const fragment = document.createDocumentFragment();
     let segments;
     try {
@@ -1106,7 +1140,7 @@
       if (line === sourceLine) {
         word.tabIndex = 0;
         word.setAttribute("role", "button");
-        word.setAttribute("aria-label", `Look up ${segment.text}`);
+        tagFrenchWord(word, text);
       }
       fragment.appendChild(word);
       wordIndex += 1;
@@ -1216,13 +1250,50 @@
     // produce misleading results for learners.
     if (!selectedElement?.closest(".dualsub-source .dualsub-line-text")) return;
 
+    phraseSelectionAnchor = null;
     showSelectionCard(text, event.clientX, event.clientY, "selection");
   }
 
   function clearWordHighlights() {
-    root?.querySelectorAll(".dualsub-word.is-hovered, .dualsub-word.is-aligned").forEach((word) => {
-      word.classList.remove("is-hovered", "is-aligned");
+    root?.querySelectorAll(".dualsub-word.is-hovered, .dualsub-word.is-aligned, .dualsub-word.is-range-anchor, .dualsub-word.is-range-selected").forEach((word) => {
+      word.classList.remove("is-hovered", "is-aligned", "is-range-anchor", "is-range-selected");
     });
+  }
+
+  function beginPhraseSelection(word) {
+    if (!word?.isConnected) return;
+    clearWordHighlights();
+    phraseSelectionAnchor = word;
+    word.classList.add("is-range-anchor");
+    lookupSequence += 1;
+    lookupContext = null;
+    lookupPinned = false;
+    selectionCard?.classList.remove("is-visible");
+    root?.classList.remove("dualsub-learning-open");
+    setStatus("ready", "Phrase selection · click the final French word.", 3200);
+  }
+
+  function completePhraseSelection(word, clientX, clientY) {
+    const words = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
+    const anchorIndex = words.indexOf(phraseSelectionAnchor);
+    const wordIndex = words.indexOf(word);
+    if (anchorIndex < 0 || wordIndex < 0) {
+      beginPhraseSelection(word);
+      return;
+    }
+    const firstIndex = Math.min(anchorIndex, wordIndex);
+    const lastIndex = Math.max(anchorIndex, wordIndex);
+    const range = document.createRange();
+    range.setStartBefore(words[firstIndex]);
+    range.setEndAfter(words[lastIndex]);
+    const text = range.toString().replace(/\s+/g, " ").trim();
+    clearWordHighlights();
+    words.slice(firstIndex, lastIndex + 1).forEach((selectedWord) => selectedWord.classList.add("is-range-selected"));
+    phraseSelectionAnchor = null;
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    showSelectionCard(text, clientX, clientY, "selection");
   }
 
   function highlightAlignedWord(sourceWord) {
@@ -1332,6 +1403,7 @@
 
   function handleWordPointerOver(event) {
     if (!settings.enabled || !settings.hoverLookup) return;
+    if (phraseSelectionAnchor || event.buttons) return;
     const word = event.target.closest?.(".dualsub-source .dualsub-word");
     if (!word || word.contains(event.relatedTarget)) return;
     cancelLookupDismiss();
@@ -1425,6 +1497,7 @@
     if (!cleanText) return;
     const sequence = ++lookupSequence;
     const sourceNode = selectionCard.querySelector(".dualsub-card-source");
+    const groupNode = selectionCard.querySelector(".dualsub-card-group");
     const resultNode = selectionCard.querySelector(".dualsub-card-result");
     const sentenceSourceNode = selectionCard.querySelector(".dualsub-card-sentence-source");
     const sentenceTargetNode = selectionCard.querySelector(".dualsub-card-sentence-target");
@@ -1435,7 +1508,7 @@
     const wiktionaryNode = selectionCard.querySelector(".dualsub-card-wiktionary");
     const pinButton = selectionCard.querySelector('[data-action="pin"]');
     const saveButton = selectionCard.querySelector('[data-action="save"]');
-    const sentenceButton = selectionCard.querySelector('[data-action="sentence"]');
+    const phraseButton = selectionCard.querySelector('[data-action="phrase"]');
     const replayButton = selectionCard.querySelector('[data-action="replay"]');
     const previousButton = selectionCard.querySelector('[data-action="previous"]');
     const nextButton = selectionCard.querySelector('[data-action="next"]');
@@ -1446,6 +1519,11 @@
     const hoveredWord = sourceLine.querySelector(".dualsub-word.is-hovered");
     const hoveredWordIndex = sourceWords.indexOf(hoveredWord);
     const conjugation = kind === "word" ? globalThis.DualSubFrench?.analyzeWord(cleanText, currentSourceText) : null;
+    const wordGroup = kind === "word"
+      ? (hoveredWord
+          ? tagFrenchWord(hoveredWord)
+          : globalThis.DualSubFrench?.classifyWord(cleanText, currentSourceText, conjugation))
+      : null;
     lookupContext = {
       kind,
       sourceText: cleanText,
@@ -1463,24 +1541,38 @@
       conjugation
     };
     sourceNode.textContent = cleanText;
+    groupNode.hidden = !wordGroup;
+    groupNode.dataset.group = wordGroup?.group || "unknown";
+    groupNode.textContent = wordGroup
+      ? [WORD_GROUP_LABELS[wordGroup.group] || "Word", ...(wordGroup.alternatives || []).map((group) => `also ${WORD_GROUP_LABELS[group]?.toLocaleLowerCase() || group}`)].join(" · ")
+      : "";
     resultNode.textContent = "Translating…";
     sentenceSourceNode.textContent = sentence;
     sentenceTargetNode.textContent = lookupContext.sentenceTranslation || "Translation available on request";
     conjugationNode.hidden = !conjugation;
     if (conjugation) {
-      const confidenceLabel = conjugation.confidence === "high"
-        ? ""
-        : conjugation.confidence === "verified" ? "Verified: " : "Possible: ";
-      lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${conjugation.lemma}`;
-      const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
-      grammarNode.textContent = conjugation.alternatives?.length
-        ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma}: ${globalThis.DualSubFrench.describe(item)}`).join(" / ")}`
-        : description;
+      if (conjugation.partOfSpeech === "nominal") {
+        lemmaNode.textContent = normalizeLookupWord(conjugation.lemma) !== normalizeLookupWord(cleanText)
+          ? `Likely noun here: ${conjugation.lemma} · caption form: ${cleanText}`
+          : `Context: ${cleanText} is used as a noun or adjective`;
+        grammarNode.textContent = conjugation.verbReadings?.length
+          ? `Possible verb reading: ${cleanText} → ${conjugation.verbReadings.map((item) => item.lemma).join(" / ")}`
+          : "The preceding determiner makes a verb reading unlikely here.";
+      } else {
+        const confidenceLabel = conjugation.confidence === "high"
+          ? ""
+          : conjugation.confidence === "verified" ? "Verified: " : "Possible: ";
+        lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${conjugation.lemma}`;
+        const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
+        grammarNode.textContent = conjugation.alternatives?.length
+          ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma}: ${globalThis.DualSubFrench.describe(item)}`).join(" / ")}`
+          : description;
+      }
     }
     saveButton.disabled = true;
     saveButton.textContent = "+ Vocabulary";
-    sentenceButton.disabled = !sentence;
-    sentenceButton.textContent = "Translate line";
+    phraseButton.disabled = kind !== "word" || hoveredWordIndex < 0;
+    phraseButton.textContent = kind === "selection" ? "Phrase selected" : "Select phrase";
     replayButton.disabled = !video;
     previousButton.disabled = hoveredWordIndex <= 0;
     nextButton.disabled = hoveredWordIndex < 0 || hoveredWordIndex >= sourceWords.length - 1;
@@ -1510,10 +1602,12 @@
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
       });
-    const lemmaTexts = [conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.lemma)]
+    const lemmaTexts = conjugation?.partOfSpeech === "verb"
+      ? [conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.lemma)]
       .filter((lemma, index, values) => lemma && values.indexOf(lemma) === index)
       .filter((lemma) => normalizeLookupWord(lemma) !== normalizeLookupWord(cleanText))
-      .slice(0, 3);
+      .slice(0, 3)
+      : [];
     const lemmaPromises = lemmaTexts.map((lemma) => browser.runtime.sendMessage({
         type: "translate-selection",
         text: lemma,
@@ -1542,11 +1636,29 @@
     }
   }
 
+  function chooseFrenchVoice(voices, preferredVoiceURI = "") {
+    const candidates = Array.from(voices || []).filter((voice) =>
+      /^fr(?:[-_]|$)/i.test(voice.lang || "") || /french|fran[cç]ais|france/i.test(voice.name || "")
+    );
+    return candidates.sort((left, right) => {
+      const score = (voice) =>
+        (voice.voiceURI === preferredVoiceURI ? 10000 : 0) +
+        (/^fr-FR$/i.test(voice.lang || "") ? 500 : 300) +
+        (/natural|neural|premium/i.test(voice.name || "") ? 120 : 0) +
+        (voice.localService ? 30 : 0) +
+        (voice.default ? 10 : 0);
+      return score(right) - score(left) || left.name.localeCompare(right.name);
+    })[0] || null;
+  }
+
   async function handleLearningCardAction(event) {
     const button = event.target.closest?.("[data-action]");
     if (!button) {
       const word = event.target.closest?.(".dualsub-source .dualsub-word");
-      if (word && window.getSelection()?.isCollapsed) {
+      if (word && phraseSelectionAnchor) {
+        event.preventDefault();
+        completePhraseSelection(word, event.clientX, event.clientY);
+      } else if (word && window.getSelection()?.isCollapsed) {
         clearTimeout(hoverLookupTimer);
         highlightAlignedWord(word);
         const rect = word.getBoundingClientRect();
@@ -1580,6 +1692,13 @@
       highlightAlignedWord(word);
       const rect = word.getBoundingClientRect();
       showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+      return;
+    }
+
+    if (action === "phrase") {
+      const words = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
+      const word = words[lookupContext.wordIndex];
+      if (word) beginPhraseSelection(word);
       return;
     }
 
@@ -1645,33 +1764,19 @@
     }
 
     if (action === "speak") {
-      window.speechSynthesis?.cancel();
-      const utterance = new SpeechSynthesisUtterance(lookupContext.sourceText);
-      utterance.lang = settings.sourceLanguage === "fr" ? "fr-FR" : settings.sourceLanguage;
-      utterance.rate = 0.88;
-      window.speechSynthesis?.speak(utterance);
-      return;
-    }
-
-    if (action === "sentence") {
-      button.disabled = true;
-      button.textContent = "Translating…";
-      const targetNode = selectionCard.querySelector(".dualsub-card-sentence-target");
-      try {
-        const response = await browser.runtime.sendMessage({
-          type: "translate-selection",
-          text: lookupContext.sentence,
-          sourceLanguage: settings.sourceLanguage,
-          targetLanguage: settings.targetLanguage
-        });
-        targetNode.textContent = response?.ok ? response.translatedText : (response?.error || "Translation unavailable");
-        if (response?.ok) lookupContext.sentenceTranslation = response.translatedText;
-      } catch (error) {
-        targetNode.textContent = error.message || "Translation unavailable";
-      } finally {
-        button.disabled = false;
-        button.textContent = "Translate line";
+      const synthesis = window.speechSynthesis;
+      const voice = chooseFrenchVoice(synthesis?.getVoices?.(), settings.pronunciationVoiceURI);
+      if (!synthesis || typeof SpeechSynthesisUtterance !== "function" || !voice) {
+        button.textContent = "No French voice installed";
+        setTimeout(() => { if (button.isConnected) button.textContent = "Pronounce"; }, 1800);
+        return;
       }
+      synthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(lookupContext.sourceText);
+      utterance.voice = voice;
+      utterance.lang = voice.lang || "fr-FR";
+      utterance.rate = Math.max(0.6, Math.min(1.2, Number(settings.pronunciationRate) || 0.88));
+      synthesis.speak(utterance);
       return;
     }
 
@@ -1700,6 +1805,7 @@
     lookupSequence += 1;
     lookupContext = null;
     lookupPinned = false;
+    phraseSelectionAnchor = null;
     clearTimeout(lookupDismissTimer);
     clearTimeout(hoverLookupTimer);
     clearTimeout(hoverPrefetchTimer);
@@ -1711,7 +1817,7 @@
   }
 
   function handleLearningKeydown(event) {
-    if (event.key === "Escape" && selectionCard?.classList.contains("is-visible")) {
+    if (event.key === "Escape" && (selectionCard?.classList.contains("is-visible") || phraseSelectionAnchor)) {
       hideSelectionCard();
       return;
     }
@@ -1852,6 +1958,10 @@
   document.addEventListener("yt-navigate-finish", handleNavigation);
   document.addEventListener("fullscreenchange", () => setTimeout(attachToPlayer, 50));
   document.addEventListener("mousedown", (event) => {
+    if (phraseSelectionAnchor && !event.target.closest?.(".dualsub-source .dualsub-word")) {
+      phraseSelectionAnchor = null;
+      clearWordHighlights();
+    }
     if (!lookupPinned && selectionCard?.classList.contains("is-visible") && !selectionCard.contains(event.target)) {
       hideSelectionCard();
     }
@@ -1935,6 +2045,8 @@
     if (!animationFrame) renderLoop();
     setTimeout(requestTrackData, 500);
   });
+
+  globalThis.DualSubFrench?.ready?.then(() => retagCurrentFrenchWords()).catch(() => {});
 
   const playerObserver = new MutationObserver(() => {
     if (!root?.isConnected || !video?.isConnected) attachToPlayer();

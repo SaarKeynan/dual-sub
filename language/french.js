@@ -3,22 +3,37 @@
   let morphologyEngine = null;
   let attestedLemmas = null;
   let morphologyState = "fallback";
+  let wordGroupIndex = null;
+  let wordGroupState = "fallback";
 
-  async function initializeMorphology() {
-    if (typeof wasm_bindgen !== "function" || typeof browser === "undefined") return;
+  async function initializeResources() {
+    if (typeof browser === "undefined") return;
     morphologyState = "loading";
-    try {
+    wordGroupState = "loading";
+    const morphologyPromise = (async () => {
+      if (typeof wasm_bindgen !== "function") throw new Error("Morphology engine unavailable");
       const [, lemmaResponse] = await Promise.all([
-        wasm_bindgen({ module_or_path: browser.runtime.getURL("vendor/ablaut/ablaut_bg.wasm") }),
-        fetch(browser.runtime.getURL("vendor/lefff/french-verb-lemmas.json"))
-      ]);
+          wasm_bindgen({ module_or_path: browser.runtime.getURL("vendor/ablaut/ablaut_bg.wasm") }),
+          fetch(browser.runtime.getURL("vendor/lefff/french-verb-lemmas.json"))
+        ]);
       if (!lemmaResponse.ok) throw new Error(`Lemma resource returned ${lemmaResponse.status}`);
-      attestedLemmas = new Set(await lemmaResponse.json());
+      return new Set(await lemmaResponse.json());
+    })();
+    const wordGroupPromise = fetch(browser.runtime.getURL("vendor/lexique/french-word-groups.json"))
+      .then((response) => {
+        if (!response.ok) throw new Error(`Word-group resource returned ${response.status}`);
+        return response.json();
+      });
+    const [morphologyResult, wordGroupResult] = await Promise.allSettled([morphologyPromise, wordGroupPromise]);
+    if (morphologyResult.status === "fulfilled") {
+      attestedLemmas = morphologyResult.value;
       morphologyEngine = wasm_bindgen;
       morphologyState = "ready";
-    } catch (_error) {
-      morphologyState = "fallback";
-    }
+    } else morphologyState = "fallback";
+    if (wordGroupResult.status === "fulfilled") {
+      wordGroupIndex = wordGroupResult.value;
+      wordGroupState = "ready";
+    } else wordGroupState = "fallback";
   }
 
   function normalize(value) {
@@ -286,20 +301,125 @@
     return { ...analyses[0], alternatives: analyses.slice(1, 7) };
   }
 
+  const strongNominalDeterminers = new Set([
+    "un", "une", "des", "ce", "cet", "cette", "ces",
+    "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+    "notre", "nos", "votre", "vos", "leur", "leurs",
+    "chaque", "quelque", "quelques", "plusieurs", "aucun", "aucune"
+  ]);
+
+  const closedWordGroups = new Map([
+    ["pronoun", new Set(["je", "j", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles", "me", "m", "te", "t", "se", "s", "moi", "toi", "lui", "eux", "y", "en", "qui", "que", "quoi", "dont", "où", "lequel", "laquelle", "lesquels", "lesquelles", "ceci", "cela", "ça"])],
+    ["determiner", new Set(["un", "une", "des", "le", "la", "les", "l", "du", "au", "aux", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "chaque", "quelque", "plusieurs", "aucun", "aucune"] )],
+    ["preposition", new Set(["à", "après", "avant", "avec", "chez", "contre", "dans", "de", "depuis", "derrière", "devant", "durant", "en", "entre", "hors", "jusque", "malgré", "par", "parmi", "pendant", "pour", "sans", "selon", "sous", "sur", "vers"] )],
+    ["conjunction", new Set(["car", "comme", "donc", "et", "lorsque", "mais", "ni", "or", "ou", "parce", "puisque", "quand", "que", "quoique", "si"] )],
+    ["interjection", new Set(["ah", "aïe", "bah", "ben", "bof", "bravo", "chut", "eh", "euh", "hé", "hélas", "oh", "ouf", "zut"] )]
+  ]);
+
+  const groupByCode = Object.freeze({
+    n: "noun", v: "verb", j: "adjective", r: "adverb", p: "pronoun",
+    d: "determiner", s: "preposition", c: "conjunction", i: "interjection"
+  });
+
+  function lexicalGroups(rawWord) {
+    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    for (const [group, words] of closedWordGroups) {
+      if (words.has(word)) return [group];
+    }
+    return Array.from(wordGroupIndex?.[word] || "", (code) => groupByCode[code]).filter(Boolean);
+  }
+
+  function likelyNominalLemma(rawWord) {
+    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const candidates = [];
+    if (word.endsWith("ées")) candidates.push(word.slice(0, -2));
+    else if (word.endsWith("ée")) candidates.push(word.slice(0, -1));
+    return candidates.find((candidate) =>
+      lexicalGroups(candidate).some((group) => group === "noun" || group === "adjective")
+    ) || word;
+  }
+
+  function hasNominalDeterminer(rawWord, sentence) {
+    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const words = normalize(sentence).match(/[\p{L}]+/gu) || [];
+    const articles = new Set(["le", "la", "les", "l", "du", "au", "aux"]);
+    const subjectPronouns = new Set(["je", "j", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles"]);
+    return words.some((candidate, index) => {
+      if (candidate !== word) return false;
+      const preceding = words[index - 1];
+      if (strongNominalDeterminers.has(preceding)) return true;
+      if (!articles.has(preceding)) return false;
+      // In “il la fait”, la is an object pronoun; in “le fait”, it is a
+      // determiner. The extra look-behind avoids turning the former into a noun.
+      return !subjectPronouns.has(words[index - 2]);
+    });
+  }
+
   function analyzeWord(rawWord, sentence = "") {
-    return analyzeWithMorphology(rawWord, sentence) || fallbackAnalysis(rawWord);
+    const analysis = analyzeWithMorphology(rawWord, sentence) || fallbackAnalysis(rawWord);
+    const hasNominalLexiconReading = lexicalGroups(rawWord).some((group) => group === "noun" || group === "adjective");
+    if (
+      analysis &&
+      hasNominalDeterminer(rawWord, sentence) &&
+      (analysis.mood === "participle" || hasNominalLexiconReading)
+    ) {
+      const readings = [analysis, ...(analysis.alternatives || [])];
+      const seenLemmas = new Set();
+      return {
+        surface: analysis.surface,
+        lemma: likelyNominalLemma(rawWord),
+        partOfSpeech: "nominal",
+        confidence: "context",
+        alternatives: [],
+        verbReadings: readings.filter((reading) => {
+          if (!reading?.lemma || seenLemmas.has(reading.lemma)) return false;
+          seenLemmas.add(reading.lemma);
+          return true;
+        }).slice(0, 3)
+      };
+    }
+    return analysis;
+  }
+
+  function classifyWord(rawWord, sentence = "", suppliedAnalysis = null) {
+    const analysis = suppliedAnalysis || analyzeWord(rawWord, sentence);
+    const groups = lexicalGroups(rawWord);
+    if (analysis?.partOfSpeech === "nominal") {
+      const contextualGroup = groups.find((group) => group === "noun" || group === "adjective") || "noun";
+      return {
+        group: contextualGroup,
+        alternatives: Array.from(new Set([...groups, "verb"])).filter((group) => group !== contextualGroup),
+        confidence: "context"
+      };
+    }
+    if (analysis?.partOfSpeech === "verb") {
+      return {
+        group: "verb",
+        alternatives: groups.filter((group) => group !== "verb"),
+        confidence: analysis.confidence || "verified"
+      };
+    }
+    return {
+      group: groups[0] || "unknown",
+      alternatives: groups.slice(1),
+      confidence: groups.length ? "lexicon" : "unknown"
+    };
   }
 
   function describe(analysis) {
     if (!analysis) return "";
+    if (analysis.partOfSpeech === "nominal") return "noun or adjective in this context";
     const person = analysis.person && analysis.number ? `${analysis.person} person ${analysis.number}` : "";
     return [analysis.mood, analysis.tense, person].filter(Boolean).join(" · ");
   }
 
-  initializeMorphology();
+  const ready = initializeResources();
   globalThis.DualSubFrench = Object.freeze({
     analyzeWord,
+    classifyWord,
     describe,
-    get engineState() { return morphologyState; }
+    ready,
+    get engineState() { return morphologyState; },
+    get wordGroupState() { return wordGroupState; }
   });
 })();

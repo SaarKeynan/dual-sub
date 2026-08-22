@@ -4,8 +4,9 @@ let saveTimer;
 
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
-  "hoverLookup", "wordAlignment", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
+  "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
   "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
+  "pronunciationVoiceURI", "pronunciationRate",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
   "targetFontSize", "targetTextColor", "targetBackgroundColor", "targetBackgroundOpacity",
@@ -39,6 +40,19 @@ function activateAppearance(name) {
   sessionStorage.setItem("dualsub-appearance-language", selected);
 }
 
+function activateToolPane(name) {
+  const selected = document.querySelector(`[data-tool-content="${name}"]`) ? name : "lookup";
+  document.querySelectorAll(".tool-button").forEach((button) => {
+    const active = button.dataset.toolPane === selected;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-tool-content]").forEach((pane) => {
+    pane.hidden = pane.dataset.toolContent !== selected;
+  });
+  sessionStorage.setItem("dualsub-tools-pane", selected);
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -65,6 +79,7 @@ function setFormValues() {
   element("selectionTranslation").checked = settings.selectionTranslation;
   element("hoverLookup").checked = settings.hoverLookup;
   element("wordAlignment").checked = settings.wordAlignment;
+  element("colorFrenchWordGroups").checked = settings.colorFrenchWordGroups;
   element("pauseOnLookup").checked = settings.pauseOnLookup;
   element("recallMode").checked = settings.recallMode;
   element("autoPause").checked = settings.autoPause;
@@ -75,6 +90,8 @@ function setFormValues() {
   element("mymemoryEmail").value = settings.mymemoryEmail || "";
   element("translationProvider").value = settings.translationProvider || "google";
   element("lookupCardPosition").value = settings.lookupCardPosition || "smart";
+  element("pronunciationVoiceURI").value = settings.pronunciationVoiceURI || "";
+  element("pronunciationRate").value = settings.pronunciationRate || 0.88;
 
   for (const prefix of ["source", "target"]) {
     const style = settings[`${prefix}Style`];
@@ -98,6 +115,7 @@ function readFormValues() {
   settings.selectionTranslation = element("selectionTranslation").checked;
   settings.hoverLookup = element("hoverLookup").checked;
   settings.wordAlignment = element("wordAlignment").checked;
+  settings.colorFrenchWordGroups = element("colorFrenchWordGroups").checked;
   settings.pauseOnLookup = element("pauseOnLookup").checked;
   settings.recallMode = element("recallMode").checked;
   settings.autoPause = element("autoPause").checked;
@@ -108,6 +126,8 @@ function readFormValues() {
   settings.mymemoryEmail = element("mymemoryEmail").value.trim();
   settings.translationProvider = element("translationProvider").value;
   settings.lookupCardPosition = element("lookupCardPosition").value;
+  settings.pronunciationVoiceURI = element("pronunciationVoiceURI").value;
+  settings.pronunciationRate = Number(element("pronunciationRate").value);
 
   for (const prefix of ["source", "target"]) {
     settings[`${prefix}Style`] = {
@@ -134,6 +154,7 @@ function updateOutputs() {
     ? "On time"
     : `${Math.abs(captionOffset)}ms ${captionOffset > 0 ? "earlier" : "later"}`;
   element("hoverDelayOutput").textContent = `${element("hoverDelay").value}ms`;
+  element("pronunciationRateOutput").textContent = `${Number(element("pronunciationRate").value).toFixed(2)}×`;
   document.body.classList.toggle("is-disabled", !element("enabled").checked);
   updatePreview("source");
   updatePreview("target");
@@ -158,6 +179,49 @@ function updatePreview(prefix) {
   preview.style.fontFamily = element(`${prefix}FontFamily`).value;
   preview.style.fontWeight = element(`${prefix}FontWeight`).value;
   preview.style.fontStyle = element(`${prefix}Italic`).checked ? "italic" : "normal";
+}
+
+function isFrenchVoice(voice) {
+  return /^fr(?:[-_]|$)/i.test(voice.lang || "") || /french|fran[cç]ais|france/i.test(voice.name || "");
+}
+
+function frenchVoiceScore(voice) {
+  return (/^fr-FR$/i.test(voice.lang || "") ? 500 : 300) +
+    (/natural|neural|premium/i.test(voice.name || "") ? 120 : 0) +
+    (voice.localService ? 30 : 0) +
+    (voice.default ? 10 : 0);
+}
+
+function loadPronunciationVoices() {
+  const select = element("pronunciationVoiceURI");
+  const preferred = settings?.pronunciationVoiceURI || select.value || "";
+  const voices = Array.from(window.speechSynthesis?.getVoices?.() || [])
+    .filter(isFrenchVoice)
+    .sort((left, right) => frenchVoiceScore(right) - frenchVoiceScore(left) || left.name.localeCompare(right.name));
+  select.replaceChildren(new Option("Best available French voice", ""));
+  voices.forEach((voice) => {
+    const quality = /natural|neural|premium/i.test(voice.name) ? " · natural" : "";
+    select.add(new Option(`${voice.name} — ${voice.lang}${quality}`, voice.voiceURI));
+  });
+  if (preferred && voices.some((voice) => voice.voiceURI === preferred)) select.value = preferred;
+  const preview = element("previewPronunciation");
+  preview.disabled = voices.length === 0;
+  preview.textContent = voices.length ? "Preview French voice" : "No French system voice found";
+}
+
+function previewPronunciation() {
+  const synthesis = window.speechSynthesis;
+  if (!synthesis || typeof SpeechSynthesisUtterance !== "function") return;
+  const voices = synthesis.getVoices();
+  const preferred = element("pronunciationVoiceURI").value;
+  const voice = voices.find((candidate) => candidate.voiceURI === preferred) || voices.find(isFrenchVoice);
+  if (!voice) return;
+  const utterance = new SpeechSynthesisUtterance("Bonjour, comment allez-vous aujourd’hui ?");
+  utterance.lang = voice?.lang || "fr-FR";
+  utterance.voice = voice || null;
+  utterance.rate = Number(element("pronunciationRate").value) || 0.88;
+  synthesis.cancel();
+  synthesis.speak(utterance);
 }
 
 function scheduleSave() {
@@ -200,6 +264,10 @@ async function initialize() {
     button.addEventListener("click", () => activateAppearance(button.dataset.appearance));
   });
   activateAppearance(sessionStorage.getItem("dualsub-appearance-language") || "source");
+  document.querySelectorAll(".tool-button").forEach((button) => {
+    button.addEventListener("click", () => activateToolPane(button.dataset.toolPane));
+  });
+  activateToolPane(sessionStorage.getItem("dualsub-tools-pane") || "lookup");
   const defaultResponse = await browser.runtime.sendMessage({ type: "get-default-settings" });
   defaults = defaultResponse.settings;
   const stored = await browser.storage.sync.get("settings");
@@ -209,6 +277,7 @@ async function initialize() {
     sourceStyle: { ...defaults.sourceStyle, ...(stored.settings?.sourceStyle || {}) },
     targetStyle: { ...defaults.targetStyle, ...(stored.settings?.targetStyle || {}) }
   };
+  loadPronunciationVoices();
   setFormValues();
   ids.forEach((id) => {
     element(id).addEventListener("input", scheduleSave);
@@ -229,6 +298,9 @@ async function initialize() {
     browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
     window.close();
   });
+  element("previewPronunciation").addEventListener("click", previewPronunciation);
+  window.speechSynthesis?.addEventListener?.("voiceschanged", loadPronunciationVoices);
+  setTimeout(loadPronunciationVoices, 250);
   element("copyDiagnostics").addEventListener("click", async () => {
     const button = element("copyDiagnostics");
     try {

@@ -42,13 +42,24 @@ interactive study surface.
   then checked against a 7,820-infinitive Lefff derivative. The lookup card
   shows likely infinitives, tense, person, and number, including alternatives
   for genuinely ambiguous forms such as `suis` (`être` / `suivre`).
+- An offline Lexique 3.83 derivative identifies grammatical word groups for
+  125,132 French forms. Lookup cards show a color-coded noun, verb, adjective,
+  adverb, pronoun, determiner, preposition, conjunction, or interjection label;
+  the same colors can optionally be applied to every French subtitle word.
+- Determiner context suppresses misleading verb-first readings for nominal
+  forms; for example, `une psychée` favors the attested noun `psyché` while
+  retaining `psycher` as an explicitly secondary possible verb reading.
 - Select any French phrase or sentence for lookup; lookup cards include the
   complete bilingual line, pronunciation, sentence translation, replay, and a
   Google Translate and Wiktionary links. Cards can appear intelligently above
   the subtitles, beside the pointer, or in the upper-right; they close after
   the pointer leaves unless pinned and resume playback if lookup paused it.
 - Lookup cards can copy the bilingual pair, step to the previous or next French
-  word, replay at 0.75× speed, and loop the current caption for shadowing.
+  word, build a multi-word phrase by choosing its final word, replay at 0.75×
+  speed, and loop the current caption for shadowing. Drag-selection also looks
+  up arbitrary French phrases.
+- Pronunciation uses a selectable French system voice, preferring French
+  natural or neural voices when available, with adjustable rate and preview.
 - Optional active-recall mode hides English until the French row is hovered.
 - Optional auto-pause mode stops at each new line for intensive listening.
 - Save words with their translation, complete sentence, video, and timestamp.

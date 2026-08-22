@@ -61,9 +61,20 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 }
 
 .dualsub-word {
+  --dualsub-group-color: #fef08a;
   border-radius: 0.16em;
   transition: color 90ms ease, background-color 90ms ease, box-shadow 90ms ease;
 }
+
+.dualsub-word[data-word-group="noun"], .dualsub-card-group[data-group="noun"] { --dualsub-group-color: #93c5fd; }
+.dualsub-word[data-word-group="verb"], .dualsub-card-group[data-group="verb"] { --dualsub-group-color: #fca5a5; }
+.dualsub-word[data-word-group="adjective"], .dualsub-card-group[data-group="adjective"] { --dualsub-group-color: #c4b5fd; }
+.dualsub-word[data-word-group="adverb"], .dualsub-card-group[data-group="adverb"] { --dualsub-group-color: #fcd34d; }
+.dualsub-word[data-word-group="pronoun"], .dualsub-card-group[data-group="pronoun"] { --dualsub-group-color: #67e8f9; }
+.dualsub-word[data-word-group="determiner"], .dualsub-card-group[data-group="determiner"] { --dualsub-group-color: #86efac; }
+.dualsub-word[data-word-group="preposition"], .dualsub-card-group[data-group="preposition"] { --dualsub-group-color: #fdba74; }
+.dualsub-word[data-word-group="conjunction"], .dualsub-card-group[data-group="conjunction"] { --dualsub-group-color: #f9a8d4; }
+.dualsub-word[data-word-group="interjection"], .dualsub-card-group[data-group="interjection"] { --dualsub-group-color: #e5e7eb; }
 
 .dualsub-source .dualsub-word {
   cursor: help;
@@ -71,8 +82,19 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 
 .dualsub-source .dualsub-word.is-hovered {
   color: #0f172a;
-  background: #fef08a;
-  box-shadow: 0 0 0 0.1em rgba(254, 240, 138, 0.85);
+  background: var(--dualsub-group-color);
+  box-shadow: 0 0 0 0.1em var(--dualsub-group-color);
+}
+
+.dualsub-root.dualsub-color-word-groups .dualsub-source .dualsub-word {
+  color: var(--dualsub-group-color);
+}
+
+.dualsub-source .dualsub-word.is-range-anchor,
+.dualsub-source .dualsub-word.is-range-selected {
+  color: #0f172a;
+  background: var(--dualsub-group-color);
+  box-shadow: 0 0 0 0.08em var(--dualsub-group-color);
 }
 
 .dualsub-source .dualsub-word:focus-visible {
@@ -219,6 +241,20 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   margin-bottom: 8px;
   color: #f8fafc;
 }
+
+.dualsub-card-group {
+  --dualsub-group-color: #fef08a;
+  display: inline-block;
+  margin: -2px 0 8px;
+  padding: 3px 7px;
+  border: 1px solid var(--dualsub-group-color);
+  border-radius: 999px;
+  color: var(--dualsub-group-color);
+  background: rgba(15, 23, 42, 0.72);
+  font: 700 11px/1.2 system-ui, sans-serif;
+}
+
+.dualsub-card-group[hidden] { display: none; }
 
 .dualsub-card-result {
   color: #fde68a;

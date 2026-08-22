@@ -18,3 +18,13 @@ LGPL-LR, included as `vendor/lefff/LICENSE-LGPLLR`.
 
 Lefff reference: Benoît Sagot, “The Lefff, a freely available and large-coverage
 morphological and syntactic lexicon for French,” LREC 2010.
+
+## Lexique 3.83
+
+DualSub includes a reduced grammatical-category index derived from Lexique
+3.83 by Boris New, Christophe Pallier, and contributors. The transformation,
+source checksum, and retained fields are documented in
+`vendor/lexique/SOURCE.md`. The derivative remains under CC BY-SA 4.0, included
+as `vendor/lexique/LICENSE-CC-BY-SA-4.0`.
+
+Project: https://www.lexique.org/

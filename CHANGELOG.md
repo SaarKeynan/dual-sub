@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0 — word groups, French voices, and phrase lookup
+
+- Added an offline 125,132-form grammatical-category index derived from
+  Lexique 3.83. Word cards now identify nouns, verbs, adjectives, adverbs,
+  pronouns, determiners, prepositions, conjunctions, and interjections.
+- Added consistent category-specific hover colors and an optional setting that
+  applies the same colors to all French subtitle words.
+- Used determiner and sentence context to avoid presenting nominal participles
+  as verbs. In “une psychée,” the card now favors the attested noun `psyché`
+  while retaining `psycher` as a possible verb reading.
+- Added a French system-voice selector, automatic preference for French natural
+  or neural voices, adjustable speech rate, and a pronunciation preview.
+- Replaced the redundant Translate line action with Select phrase: start from a
+  word and click the final word to translate the complete range. Drag-selection
+  remains available.
+- Split Tools internally into compact Lookup & colors and Pronunciation panes
+  so the popup remains scrollbar-free.
+
 ## 0.5.3 — persistent precise-timing recovery
 
 - Kept the loading indicator visible after live translation becomes usable;

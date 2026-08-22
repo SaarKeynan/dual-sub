@@ -110,9 +110,13 @@ async function testCaptionProcessing() {
   assert(context.isNativeCaptionSystemMessage("French (auto-generated)", 2000));
   assert(!context.isNativeCaptionSystemMessage("French (auto-generated)", 12000));
   assert(!context.isNativeCaptionSystemMessage("On parle des param\u00e8tres du t\u00e9l\u00e9phone", 1000));
-  for (const action of ["pin", "copy", "previous", "next", "slow", "loop"]) {
+  for (const action of ["pin", "copy", "previous", "next", "slow", "loop", "phrase"]) {
     assert(source.includes(`data-action="${action}"`), `Lookup action ${action} should be present`);
   }
+  assert(!source.includes('data-action="sentence"'));
+  assert(!source.includes("Translate line"));
+  assert(source.includes("chooseFrenchVoice"));
+  assert(source.includes("colorFrenchWordGroups"));
 }
 
 async function testFrenchConjugation() {
@@ -139,6 +143,11 @@ async function testFrenchConjugation() {
   assert(analyze("fait").alternatives.length, "fait should retain its participle alternative");
   assert.strictEqual(analyze("TikTok"), null);
   assert.strictEqual(analyze("maintenant"), null, "ordinary adverbs must not be guessed as verbs");
+  const psychee = analyze("psychée", "une psychée");
+  assert.strictEqual(psychee.partOfSpeech, "nominal");
+  assert(psychee.verbReadings.some((reading) => reading.lemma === "psycher"));
+  assert.strictEqual(analyze("psychée").lemma, "psycher");
+  assert.strictEqual(context.DualSubFrench.classifyWord("psychée", "une psychée", psychee).group, "noun");
 }
 
 async function testAblautMorphology() {
@@ -171,10 +180,16 @@ async function testAblautMorphology() {
   assert(lemmas("maintenant").includes("maintenir"), "The engine should retain the real participle reading");
 
   context.browser = { runtime: { getURL: (value) => value } };
-  context.fetch = async () => ({ ok: true, async json() { return Array.from(attested); } });
+  context.fetch = async (url) => ({
+    ok: true,
+    async json() {
+      return String(url).includes("french-word-groups")
+        ? { maison: "n", belle: "j", rapidement: "r", psyché: "n", psychée: "v", fait: "nv" }
+        : Array.from(attested);
+    }
+  });
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
+  await context.DualSubFrench.ready;
   const received = context.DualSubFrench.analyzeWord("recevront", "ils recevront une lettre");
   assert.strictEqual(received.lemma, "recevoir");
   assert.strictEqual(context.DualSubFrench.analyzeWord("maintenant", "il parle maintenant"), null);
@@ -182,6 +197,21 @@ async function testAblautMorphology() {
     context.DualSubFrench.analyzeWord("maintenant", "en maintenant la pression").lemma,
     "maintenir"
   );
+  assert.strictEqual(context.DualSubFrench.classifyWord("maison").group, "noun");
+  assert.strictEqual(context.DualSubFrench.classifyWord("belle").group, "adjective");
+  assert.strictEqual(context.DualSubFrench.classifyWord("rapidement").group, "adverb");
+  assert.strictEqual(context.DualSubFrench.analyzeWord("psychée", "une psychée").lemma, "psyché");
+  assert.strictEqual(context.DualSubFrench.analyzeWord("fait", "le fait est clair").partOfSpeech, "nominal");
+  assert.strictEqual(context.DualSubFrench.analyzeWord("fait", "il la fait souvent").partOfSpeech, "verb");
+}
+
+async function testWordGroupResource() {
+  const groups = JSON.parse(fs.readFileSync(
+    path.join(projectRoot, "vendor", "lexique", "french-word-groups.json"), "utf8"
+  ));
+  assert(Object.keys(groups).length > 120000, "The offline word-group index should cover common French forms");
+  assert(groups.maison?.includes("n"));
+  assert(groups.rapidement?.includes("r"));
 }
 
 async function testVocabularyStorage() {
@@ -226,6 +256,9 @@ async function testVocabularyStorage() {
   const defaultSettings = await messageListener({ type: "get-default-settings" });
   assert.strictEqual(defaultSettings.settings.captionOffsetMs, 0);
   assert.strictEqual(defaultSettings.settings.subtitleLeadMs, undefined);
+  assert.strictEqual(defaultSettings.settings.colorFrenchWordGroups, false);
+  assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
+  assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
 
   const translations = await Promise.all([
     messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en" }),
@@ -271,6 +304,7 @@ Promise.resolve()
   .then(testCaptionProcessing)
   .then(testFrenchConjugation)
   .then(testAblautMorphology)
+  .then(testWordGroupResource)
   .then(testVocabularyStorage)
   .then(() => console.log("DualSub smoke tests passed"))
   .catch((error) => {
