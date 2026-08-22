@@ -8,6 +8,10 @@
     hideNativeCaptions: true,
     selectionTranslation: true,
     wholeLiveLines: true,
+    hoverLookup: true,
+    wordAlignment: true,
+    pauseOnLookup: false,
+    hoverDelay: 420,
     translationProvider: "google",
     bottomOffset: 72,
     maxWidth: 88,
@@ -44,6 +48,11 @@
   let currentVideoId = "";
   let currentSourceText = "";
   let currentTargetText = "";
+  let currentSourceCue = null;
+  let currentTargetCue = null;
+  let currentSourceCueIndex = -1;
+  let currentVideoTitle = "";
+  let alignedTargetCues = [];
   let loadGeneration = 0;
   let usingNativeTranslation = false;
   let usingNativeSource = false;
@@ -62,6 +71,7 @@
   let statusTimer;
   let pageCaptionRequestId = 0;
   const pendingPageCaptionRequests = new Map();
+  const captionPayloadCache = new Map();
   let transcriptRequestId = 0;
   const pendingTranscriptRequests = new Map();
   let playerCaptionUrlRequestId = 0;
@@ -260,7 +270,7 @@
       const timeout = setTimeout(() => {
         pendingPageCaptionRequests.delete(id);
         reject(new Error("YouTube page-context caption request timed out."));
-      }, 8000);
+      }, 4500);
       pendingPageCaptionRequests.set(id, { resolve, reject, timeout });
       window.dispatchEvent(new CustomEvent("dualsub:fetch-caption-track", {
         detail: JSON.stringify({ id, url })
@@ -269,24 +279,29 @@
   }
 
   async function requestCaptionPayload(url) {
-    let pageError;
-    try {
-      const text = await requestCaptionFromPage(url);
-      if (text.trim()) return text;
-      pageError = new Error("YouTube returned an empty page-context response.");
-    } catch (error) {
-      pageError = error;
-    }
+    if (captionPayloadCache.has(url)) return captionPayloadCache.get(url);
 
-    // Retain the privileged extension request as a fallback for sessions where
-    // the page bridge is unavailable or YouTube changes its page CSP.
-    try {
-      const response = await browser.runtime.sendMessage({ type: "fetch-captions", url });
+    const requireCaptionText = (text, origin) => {
+      if (String(text || "").trim()) return text;
+      throw new Error(`YouTube returned an empty ${origin} response.`);
+    };
+    const backgroundRequest = browser.runtime.sendMessage({ type: "fetch-captions", url }).then((response) => {
       if (!response?.ok) throw new Error(response?.error || "Could not fetch captions.");
-      return response.text;
-    } catch (error) {
-      throw new Error(`${pageError.message} ${error.message}`);
+      return requireCaptionText(response.text, "extension-context");
+    });
+    const request = Promise.any([
+      requestCaptionFromPage(url).then((text) => requireCaptionText(text, "page-context")),
+      backgroundRequest
+    ]).catch((error) => {
+      captionPayloadCache.delete(url);
+      const messages = Array.from(error?.errors || []).map((item) => item?.message).filter(Boolean);
+      throw new Error(messages.join(" ") || error.message || "Could not fetch captions.");
+    });
+    captionPayloadCache.set(url, request);
+    if (captionPayloadCache.size > 32) {
+      captionPayloadCache.delete(captionPayloadCache.keys().next().value);
     }
+    return request;
   }
 
   function requestFullTranscript() {
@@ -346,6 +361,7 @@
       sourceCues = sourceResult.value.cues;
       if (targetResult.status === "fulfilled") {
         targetCues = targetResult.value.cues;
+        refreshCueAlignment();
         stopNativeCapture(true);
         stopAheadTranslation();
         setStatus("ready", "French + English ready (authenticated YouTube tracks).", 2600);
@@ -432,20 +448,29 @@
     const attemptedUrls = new Set();
     let lastError;
 
-    // Auto-generated tracks do not always return the requested serialization.
-    // Try JSON first, then both XML variants instead of treating an empty 200
-    // response as a definitive absence of captions.
-    for (const format of attempts) {
+    const tryFormat = async (format) => {
       const url = buildCaptionUrl(track.baseUrl, translatedLanguage, format);
-      if (attemptedUrls.has(url)) continue;
+      if (attemptedUrls.has(url)) throw new Error("Duplicate caption format URL.");
       attemptedUrls.add(url);
-      try {
-        const rawText = await requestCaptionPayload(url);
-        const cues = parseCaptionPayload(rawText);
-        if (cues.length) return { cues, format };
-      } catch (error) {
-        lastError = error;
-      }
+      const rawText = await requestCaptionPayload(url);
+      const cues = parseCaptionPayload(rawText);
+      if (!cues.length) throw new Error("YouTube returned an empty parsed caption track.");
+      return { cues, format };
+    };
+
+    // JSON is overwhelmingly the common successful path. If it fails, race
+    // the legacy serializations instead of waiting for three sequential
+    // network timeouts.
+    try {
+      return await tryFormat(attempts[0]);
+    } catch (error) {
+      lastError = error;
+    }
+    try {
+      return await Promise.any(attempts.slice(1).map((format) => tryFormat(format)));
+    } catch (error) {
+      const errors = Array.from(error?.errors || []).filter(Boolean);
+      lastError = errors[errors.length - 1] || error || lastError;
     }
 
     const trackDescription = track.kind === "asr" ? " auto-generated" : "";
@@ -654,6 +679,7 @@
     currentVideoId = payload.videoId || "";
     sourceCues = [];
     targetCues = [];
+    alignedTargetCues = [];
     renderCueText("", "");
 
     const sourceTrack = chooseTrack(payload.tracks || [], settings.sourceLanguage);
@@ -695,6 +721,7 @@
         if (generation !== loadGeneration) return;
         if (targetResult.status === "fulfilled") {
           targetCues = targetResult.value.cues;
+          refreshCueAlignment();
           stopAheadTranslation();
           setStatus("ready", "French transcript + English captions ready.", 2200);
           status = { state: "ready", message: "French + English active · full tracks loaded" };
@@ -714,6 +741,7 @@
       stopNativeCapture(true);
       stopAheadTranslation();
       targetCues = targetResult.value.cues;
+      refreshCueAlignment();
 
       const targetMode = nativeTargetTrack ? "native English track" : "YouTube auto-translation";
       setStatus("ready", `French + English ready (${targetMode}).`, 2200);
@@ -760,6 +788,39 @@
     return Math.max(0, Math.min(cues.length - 1, low));
   }
 
+  function refreshCueAlignment() {
+    alignedTargetCues = [];
+    if (!sourceCues.length || !targetCues.length) return;
+
+    let targetCursor = 0;
+    for (const sourceCue of sourceCues) {
+      while (
+        targetCursor + 1 < targetCues.length &&
+        targetCues[targetCursor + 1].end <= sourceCue.start
+      ) {
+        targetCursor += 1;
+      }
+
+      let bestCue = null;
+      let bestScore = Number.NEGATIVE_INFINITY;
+      const sourceMidpoint = (sourceCue.start + sourceCue.end) / 2;
+      for (let index = Math.max(0, targetCursor - 1); index < targetCues.length; index += 1) {
+        const targetCue = targetCues[index];
+        if (targetCue.start > sourceCue.end + 2500) break;
+        const overlap = Math.max(0, Math.min(sourceCue.end, targetCue.end) - Math.max(sourceCue.start, targetCue.start));
+        const targetMidpoint = (targetCue.start + targetCue.end) / 2;
+        const distance = Math.abs(sourceMidpoint - targetMidpoint);
+        const score = overlap * 4 - distance;
+        if (score > bestScore) {
+          bestScore = score;
+          bestCue = targetCue;
+          targetCursor = index;
+        }
+      }
+      alignedTargetCues.push(bestCue);
+    }
+  }
+
   function stopAheadTranslation() {
     usingAheadTranslation = false;
     aheadTranslationGeneration += 1;
@@ -775,12 +836,12 @@
     stopAheadTranslation();
     usingAheadTranslation = true;
     const timeMs = (video?.currentTime || 0) * 1000;
-    prefetchAheadTranslations(timeMs, 45000);
+    prefetchAheadTranslations(timeMs, 90000);
     setStatus("loading", "Transcript loaded; translating upcoming lines in advance…");
     status = { state: "loading", message: "Full transcript loaded · pre-translating upcoming lines" };
   }
 
-  function prefetchAheadTranslations(timeMs, leadMs = 30000) {
+  function prefetchAheadTranslations(timeMs, leadMs = 60000) {
     if (!usingAheadTranslation || !sourceCues.length) return;
     const firstIndex = cueIndexAt(sourceCues, Math.max(0, timeMs - 1000));
     for (let index = firstIndex; index < sourceCues.length; index += 1) {
@@ -798,7 +859,7 @@
 
   function pumpAheadTranslationQueue() {
     const generation = aheadTranslationGeneration;
-    while (usingAheadTranslation && aheadTranslationActive < 4 && aheadTranslationQueue.length) {
+    while (usingAheadTranslation && aheadTranslationActive < 6 && aheadTranslationQueue.length) {
       const index = aheadTranslationQueue.shift();
       const cue = sourceCues[index];
       if (!cue) {
@@ -832,16 +893,52 @@
     }
   }
 
-  function renderCueText(sourceText, targetText) {
+  function renderTokenizedText(line, text, language) {
+    const fragment = document.createDocumentFragment();
+    let segments;
+    try {
+      const segmenter = new Intl.Segmenter(language, { granularity: "word" });
+      segments = Array.from(segmenter.segment(text), (item) => ({
+        text: item.segment,
+        isWordLike: item.isWordLike
+      }));
+    } catch (_error) {
+      segments = text.split(/([\p{L}\p{N}]+(?:['\u2019-][\p{L}\p{N}]+)*)/gu).filter(Boolean).map((part) => ({
+        text: part,
+        isWordLike: /[\p{L}\p{N}]/u.test(part)
+      }));
+    }
+
+    let wordIndex = 0;
+    for (const segment of segments) {
+      if (!segment.isWordLike) {
+        fragment.appendChild(document.createTextNode(segment.text));
+        continue;
+      }
+      const word = document.createElement("span");
+      word.className = "dualsub-word";
+      word.dataset.wordIndex = String(wordIndex);
+      word.dataset.word = segment.text;
+      word.textContent = segment.text;
+      fragment.appendChild(word);
+      wordIndex += 1;
+    }
+    line.replaceChildren(fragment);
+  }
+
+  function renderCueText(sourceText, targetText, sourceCue = null, targetCue = null, sourceIndex = -1) {
     if (!sourceLine || !targetLine) return;
     if (sourceText !== currentSourceText) {
-      sourceLine.textContent = sourceText;
+      renderTokenizedText(sourceLine, sourceText, settings.sourceLanguage);
       currentSourceText = sourceText;
     }
     if (targetText !== currentTargetText) {
-      targetLine.textContent = targetText;
+      renderTokenizedText(targetLine, targetText, settings.targetLanguage);
       currentTargetText = targetText;
     }
+    currentSourceCue = sourceCue;
+    currentTargetCue = targetCue;
+    currentSourceCueIndex = sourceIndex;
     sourceLine.parentElement.classList.toggle(
       "is-visible",
       settings.enabled && settings.showSource && Boolean(sourceText)
@@ -864,13 +961,16 @@
       (targetCues.length || usingNativeTranslation || usingAheadTranslation)
     ) {
       const timeMs = video.currentTime * 1000;
-      let targetText = targetCues.length ? (cueAt(targetCues, timeMs)?.text || "") : "";
+      const sourceIndex = cueIndexAt(sourceCues, timeMs);
+      const sourceCue = sourceCues[sourceIndex];
+      const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end;
+      let targetCue = sourceCueIsActive ? alignedTargetCues[sourceIndex] : null;
+      let targetText = targetCue?.text || (targetCues.length ? (cueAt(targetCues, timeMs)?.text || "") : "");
       if (usingAheadTranslation) {
         prefetchAheadTranslations(timeMs);
-        const sourceIndex = cueIndexAt(sourceCues, timeMs);
-        const sourceCue = sourceCues[sourceIndex];
         if (sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end) {
           targetText = aheadTranslations.get(sourceIndex) || "";
+          targetCue = targetText ? { start: sourceCue.start, end: sourceCue.end, text: targetText } : null;
         }
       }
       if (usingNativeTranslation && performance.now() - nativeTranslationActivatedAt > 350) {
@@ -886,7 +986,7 @@
           }
         }
       }
-      renderCueText(cueAt(sourceCues, timeMs)?.text || "", targetText);
+      renderCueText(sourceCueIsActive ? sourceCue.text : "", targetText, sourceCueIsActive ? sourceCue : null, targetCue, sourceIndex);
     }
     animationFrame = requestAnimationFrame(renderLoop);
   }
@@ -955,6 +1055,7 @@
     currentVideoId = "";
     sourceCues = [];
     targetCues = [];
+    alignedTargetCues = [];
     loadGeneration += 1;
     renderCueText("", "");
     hideSelectionCard();
