@@ -18,9 +18,10 @@ async function testCaptionProcessing() {
   const helpers = extract(source, "  function joinCaptionParts", "  function requestCaptionFromPage");
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
   const cueTools = extract(source, "  function cueAt", "  function stopAheadTranslation");
+  const wordMatching = extract(source, "  function normalizeLookupWord", "  function handleWordPointerOver");
   const context = { console };
   vm.createContext(context);
-  vm.runInContext(`${helpers}\n${parser}\n${cueTools}`, context);
+  vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}`, context);
 
   const payload = JSON.stringify({ events: [
     { tStartMs: 793000, dDurationMs: 3000, segs: [{ utf8: "alors là on fait un micro trottoir sur" }] },
@@ -51,6 +52,9 @@ async function testCaptionProcessing() {
     refreshCueAlignment();
   `, context);
   assert.deepStrictEqual(Array.from(context.alignedTargetCues, (cue) => cue.text), ["hello everyone", "how are you"]);
+  assert(context.wordSimilarity("do", "doing") >= 0.78, "Inflected verbs should match");
+  assert(context.wordSimilarity("thing", "things") >= 0.78, "Simple plurals should match");
+  assert(context.wordSimilarity("chat", "cat") < 0.78, "Different words should not be selected");
 }
 
 async function testVocabularyStorage() {

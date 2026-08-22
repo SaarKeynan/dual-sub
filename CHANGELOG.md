@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1 — normal-player and word-matching fix
+
+- Removed video-overlaid backdrop blur, filtered shadows, transform animation,
+  and recall-mode blur that could trigger unstable Firefox compositing outside
+  fullscreen.
+- Removed positional English-word guesses. English highlighting now appears
+  only after an exact translated phrase or a strong inflection match is found.
+- Added conservative English stemming, edit-distance matching, and regression
+  tests for accepted and rejected word pairs.
+
 ## 0.3.0 — staged learning workspace
 
 - Faster caption loading, cached payloads, and parallel format fallback.

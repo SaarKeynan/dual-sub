@@ -31,9 +31,9 @@ interactive study surface.
   final words do not wait until the end of the sentence to appear.
 - Independent font size, color, background, opacity, font, weight, and italic
   controls for each language, with live previews in the popup.
-- Hover or click a French word for an instant translation. The approximately
-  corresponding English word is highlighted, then refined to an exact textual
-  match when possible.
+- Hover or click a French word for an instant translation. A corresponding
+  English word is highlighted only when an exact or strong inflection match is
+  found; uncertain matches are intentionally left unmarked.
 - Select any French phrase or sentence for lookup; lookup cards include the
   complete bilingual line, pronunciation, sentence translation, replay, and a
   Google Translate link.
@@ -70,7 +70,7 @@ text are sent to the selected provider.
 Vocabulary, review progress, notes, video IDs, and timestamps are stored locally
 in Firefox. They are not sent to a DualSub server. JSON backup and CSV export
 only occur after an explicit click. Pronunciation uses Firefox's local Web
-Speech support when available. Approximate word alignment is computed locally.
+Speech support when available. Word matching is computed locally.
 
 YouTube caption endpoints are not a public, stable API. If YouTube changes its
 player response or timed-text format, the caption loader may need an update.

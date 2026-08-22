@@ -102,14 +102,14 @@
           <button id="openVocabulary" class="primary-button" type="button">Vocabulary <span id="vocabularyCount">0</span></button>
         </div>
         <label class="check-row"><input id="hoverLookup" type="checkbox"> Automatically look up a French word after hovering</label>
-        <label class="check-row"><input id="wordAlignment" type="checkbox"> Highlight the approximately matching English word</label>
+        <label class="check-row"><input id="wordAlignment" type="checkbox"> Highlight a matching English word when one is found</label>
         <label class="check-row"><input id="pauseOnLookup" type="checkbox"> Pause while a lookup card is open</label>
         <label class="check-row"><input id="recallMode" type="checkbox"> Hide English until the French line is hovered</label>
         <label class="check-row"><input id="autoPause" type="checkbox"> Pause automatically at each new subtitle line</label>
         <label class="range-row">Hover delay <output id="hoverDelayOutput"></output>
           <input id="hoverDelay" type="range" min="120" max="1200" step="20">
         </label>
-        <p class="privacy">Hover alignment is an on-device visual estimate. Saved vocabulary stays in Firefox local storage.</p>
+        <p class="privacy">Word matching is computed locally and is omitted when no reliable match is found. Saved vocabulary stays in Firefox local storage.</p>
       </section>
 
       <section>

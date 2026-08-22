@@ -14,6 +14,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   overflow: hidden;
   pointer-events: none;
   font-synthesis: none;
+  contain: layout style paint;
 }
 
 .dualsub-stack {
@@ -27,7 +28,6 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   align-items: center;
   gap: 6px;
   text-align: center;
-  filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.28));
 }
 
 .dualsub-line {
@@ -50,7 +50,6 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-  backdrop-filter: blur(7px);
   pointer-events: auto;
   user-select: text;
   -moz-user-select: text;
@@ -88,20 +87,19 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 }
 
 .dualsub-root.dualsub-recall-mode .dualsub-target {
-  opacity: 0.16;
-  filter: blur(7px);
-  transition: opacity 150ms ease, filter 150ms ease;
+  visibility: hidden;
+  opacity: 0;
 }
 
 .dualsub-root.dualsub-recall-mode .dualsub-source:hover + .dualsub-target,
 .dualsub-root.dualsub-recall-mode.dualsub-learning-open .dualsub-target {
+  visibility: visible;
   opacity: 1;
-  filter: none;
 }
 
 @keyframes dualsub-line-in {
-  from { opacity: 0.55; transform: translateY(2px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.55; }
+  to { opacity: 1; }
 }
 
 .dualsub-status {
@@ -139,7 +137,6 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   text-align: left;
   pointer-events: auto;
   user-select: text;
-  backdrop-filter: blur(16px);
 }
 
 .dualsub-selection-card.is-visible {
@@ -248,7 +245,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 
 @media (prefers-reduced-motion: reduce) {
   .dualsub-line.is-visible { animation: none; }
-  .dualsub-word, .dualsub-root.dualsub-recall-mode .dualsub-target { transition: none; }
+  .dualsub-word { transition: none; }
 }
 
 .dualsub-card-link {

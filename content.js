@@ -1077,16 +1077,6 @@
   function highlightAlignedWord(sourceWord) {
     clearWordHighlights();
     sourceWord.classList.add("is-hovered");
-    if (!settings.wordAlignment) return;
-    const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
-    const targetWords = Array.from(targetLine.querySelectorAll(".dualsub-word"));
-    const sourceIndex = sourceWords.indexOf(sourceWord);
-    if (sourceIndex < 0 || !targetWords.length) return;
-    const targetStart = Math.floor(sourceIndex * targetWords.length / sourceWords.length);
-    const targetEnd = Math.max(targetStart, Math.ceil((sourceIndex + 1) * targetWords.length / sourceWords.length) - 1);
-    for (let index = targetStart; index <= targetEnd; index += 1) {
-      targetWords[index]?.classList.add("is-aligned");
-    }
   }
 
   function normalizeLookupWord(value) {
@@ -1097,6 +1087,53 @@
       .toLocaleLowerCase();
   }
 
+  function stemEnglishWord(value) {
+    const word = normalizeLookupWord(value);
+    const irregular = {
+      being: "be", doing: "do", does: "do", did: "do", done: "do",
+      going: "go", went: "go", gone: "go", having: "have", making: "make",
+      taking: "take", coming: "come"
+    };
+    if (irregular[word]) return irregular[word];
+    if (word.length > 6 && word.endsWith("ing")) {
+      const stem = word.slice(0, -3);
+      return /(.)\1$/.test(stem) ? stem.slice(0, -1) : stem;
+    }
+    if (word.length > 4 && word.endsWith("ied")) return `${word.slice(0, -3)}y`;
+    if (word.length > 4 && word.endsWith("ed")) return word.slice(0, -2);
+    if (word.length > 4 && word.endsWith("es")) return word.slice(0, -2);
+    if (word.length > 3 && word.endsWith("s")) return word.slice(0, -1);
+    return word;
+  }
+
+  function editDistance(left, right) {
+    if (left === right) return 0;
+    if (!left.length) return right.length;
+    if (!right.length) return left.length;
+    let previous = Array.from({ length: right.length + 1 }, (_value, index) => index);
+    for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+      const current = [leftIndex];
+      for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+        current[rightIndex] = Math.min(
+          current[rightIndex - 1] + 1,
+          previous[rightIndex] + 1,
+          previous[rightIndex - 1] + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+        );
+      }
+      previous = current;
+    }
+    return previous[right.length];
+  }
+
+  function wordSimilarity(left, right) {
+    const normalizedLeft = normalizeLookupWord(left);
+    const normalizedRight = normalizeLookupWord(right);
+    if (!normalizedLeft || !normalizedRight) return 0;
+    if (normalizedLeft === normalizedRight) return 1;
+    if (stemEnglishWord(normalizedLeft) === stemEnglishWord(normalizedRight)) return 0.9;
+    return 1 - editDistance(normalizedLeft, normalizedRight) / Math.max(normalizedLeft.length, normalizedRight.length);
+  }
+
   function refineAlignedTargetWords(translatedText) {
     if (!settings.wordAlignment || lookupContext?.sentence !== currentSourceText) return;
     const translatedWords = (String(translatedText || "").match(/[\p{L}\p{N}]+/gu) || [])
@@ -1105,11 +1142,8 @@
     if (!translatedWords.length) return;
     const targetWords = Array.from(targetLine.querySelectorAll(".dualsub-word"));
     const targetValues = targetWords.map((word) => normalizeLookupWord(word.textContent));
-    const estimatedIndexes = targetWords
-      .map((word, index) => word.classList.contains("is-aligned") ? index : -1)
-      .filter((index) => index >= 0);
-    const estimatedCenter = estimatedIndexes.length
-      ? estimatedIndexes.reduce((sum, index) => sum + index, 0) / estimatedIndexes.length
+    const estimatedCenter = Number.isFinite(lookupContext?.alignmentRatio)
+      ? lookupContext.alignmentRatio * targetWords.length - 0.5
       : targetWords.length / 2;
     const matches = [];
     for (let start = 0; start <= targetValues.length - translatedWords.length; start += 1) {
@@ -1117,11 +1151,23 @@
         matches.push({ start, distance: Math.abs(start + (translatedWords.length - 1) / 2 - estimatedCenter) });
       }
     }
-    if (!matches.length) return;
-    matches.sort((left, right) => left.distance - right.distance);
-    const best = matches[0];
+    let best = null;
+    if (matches.length) {
+      matches.sort((left, right) => left.distance - right.distance);
+      best = { ...matches[0], length: translatedWords.length };
+    } else {
+      const fuzzyMatches = targetValues.map((targetWord, index) => ({
+        start: index,
+        length: 1,
+        score: Math.max(...translatedWords.map((translatedWord) => wordSimilarity(targetWord, translatedWord))),
+        distance: Math.abs(index - estimatedCenter)
+      })).filter((match) => match.score >= 0.78);
+      fuzzyMatches.sort((left, right) => right.score - left.score || left.distance - right.distance);
+      best = fuzzyMatches[0] || null;
+    }
+    if (!best) return;
     targetWords.forEach((word) => word.classList.remove("is-aligned"));
-    for (let index = best.start; index < best.start + translatedWords.length; index += 1) {
+    for (let index = best.start; index < best.start + best.length; index += 1) {
       targetWords[index]?.classList.add("is-aligned");
     }
   }
@@ -1174,6 +1220,9 @@
     const sentenceButton = selectionCard.querySelector('[data-action="sentence"]');
     const replayButton = selectionCard.querySelector('[data-action="replay"]');
     const sentence = currentSourceText || cleanText;
+    const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
+    const hoveredWord = sourceLine.querySelector(".dualsub-word.is-hovered");
+    const hoveredWordIndex = sourceWords.indexOf(hoveredWord);
     lookupContext = {
       kind,
       sourceText: cleanText,
@@ -1182,7 +1231,10 @@
       sentenceTranslation: currentTargetText || "",
       videoId: currentVideoId,
       videoTitle: currentVideoTitle,
-      timeMs: currentSourceCue?.start ?? Math.round((video?.currentTime || 0) * 1000)
+      timeMs: currentSourceCue?.start ?? Math.round((video?.currentTime || 0) * 1000),
+      alignmentRatio: hoveredWordIndex >= 0 && sourceWords.length
+        ? (hoveredWordIndex + 0.5) / sourceWords.length
+        : Number.NaN
     };
     sourceNode.textContent = cleanText;
     resultNode.textContent = "Translating…";
