@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS = {
   pauseOnLookup: false,
   recallMode: false,
   autoPause: false,
+  lookupCardPosition: "smart",
   hoverDelay: 420,
   subtitleLeadMs: 500,
   translationProvider: "google",

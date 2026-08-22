@@ -13,6 +13,7 @@
     pauseOnLookup: false,
     recallMode: false,
     autoPause: false,
+    lookupCardPosition: "smart",
     hoverDelay: 420,
     subtitleLeadMs: 500,
     translationProvider: "google",
@@ -98,7 +99,10 @@
   let lookupSequence = 0;
   let lookupContext = null;
   let lookupDismissTimer;
+  let lookupPinned = false;
   let pausedByLookup = false;
+  let loopCueRange = null;
+  let playbackRateBeforeSlow = 1;
   let lastPlaybackCueIndex = -1;
 
   function mergeSettings(value = {}) {
@@ -149,6 +153,7 @@
     applyLineStyle(targetLine, settings.targetStyle);
 
     if (!active) {
+      loopCueRange = null;
       sourceLine.parentElement.classList.remove("is-visible");
       targetLine.parentElement.classList.remove("is-visible");
       hideSelectionCard();
@@ -177,7 +182,10 @@
         <div class="dualsub-selection-card" role="dialog" aria-live="polite" aria-label="Subtitle lookup">
           <div class="dualsub-card-heading">
             <div class="dualsub-card-label">French lookup</div>
-            <button class="dualsub-card-close" type="button" data-action="close" aria-label="Close lookup">&times;</button>
+            <div class="dualsub-card-heading-actions">
+              <button class="dualsub-card-pin" type="button" data-action="pin" aria-label="Keep lookup open" title="Keep open">Pin</button>
+              <button class="dualsub-card-close" type="button" data-action="close" aria-label="Close lookup">&times;</button>
+            </div>
           </div>
           <div class="dualsub-card-source"></div>
           <div class="dualsub-card-result"></div>
@@ -192,12 +200,20 @@
             <div class="dualsub-card-sentence-target"></div>
           </div>
           <div class="dualsub-card-actions">
+            <button type="button" data-action="previous" title="Previous French word">← Word</button>
+            <button type="button" data-action="next" title="Next French word">Word →</button>
             <button type="button" data-action="speak">Pronounce</button>
+            <button type="button" data-action="copy">Copy</button>
             <button type="button" data-action="save">+ Vocabulary</button>
             <button type="button" data-action="sentence">Translate line</button>
             <button type="button" data-action="replay">Replay</button>
+            <button type="button" data-action="slow">0.75× replay</button>
+            <button type="button" data-action="loop">Loop line</button>
           </div>
-          <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>
+          <div class="dualsub-card-links">
+            <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>
+            <a class="dualsub-card-wiktionary" target="_blank" rel="noopener noreferrer">Wiktionary &nearr;</a>
+          </div>
         </div>`;
       player.appendChild(root);
       sourceLine = root.querySelector(".dualsub-source .dualsub-line-text");
@@ -1034,6 +1050,10 @@
   }
 
   function renderLoop() {
+    if (loopCueRange && video && video.currentTime * 1000 >= loopCueRange.end - 45) {
+      video.currentTime = Math.max(0, loopCueRange.start / 1000 - 0.08);
+      video.play().catch(() => {});
+    }
     if (settings.enabled && video && usingNativeSource) {
       const nativeSourceText = readNativeCaptionText();
       handleObservedNativeSource(nativeSourceText);
@@ -1238,11 +1258,12 @@
     hoverPrefetchTimer = setTimeout(async () => {
       try {
         const wordText = word.dataset.word || word.textContent;
-        const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText);
-        const evidenceTexts = [wordText];
-        if (conjugation?.lemma && normalizeLookupWord(conjugation.lemma) !== normalizeLookupWord(wordText)) {
-          evidenceTexts.push(conjugation.lemma);
-        }
+        const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText, currentSourceText);
+        const evidenceTexts = [
+          wordText,
+          conjugation?.lemma,
+          ...(conjugation?.alternatives || []).map((item) => item.lemma)
+        ].filter((text, index, values) => text && values.indexOf(text) === index).slice(0, 4);
         const results = await Promise.allSettled(evidenceTexts.map((text) => browser.runtime.sendMessage({
           type: "translate-selection", text,
           sourceLanguage: settings.sourceLanguage,
@@ -1280,19 +1301,36 @@
   function scheduleLookupDismiss(delay = 300) {
     clearTimeout(lookupDismissTimer);
     lookupDismissTimer = setTimeout(() => {
-      if (!selectionCard?.matches(":hover") && !sourceLine?.querySelector(".dualsub-word.is-hovered:hover")) {
+      if (!lookupPinned && !selectionCard?.matches(":hover") && !sourceLine?.querySelector(".dualsub-word.is-hovered:hover")) {
         hideSelectionCard();
       }
     }, delay);
   }
 
-  function positionSelectionCard() {
+  function positionSelectionCard(clientX, clientY) {
+    const mode = settings.lookupCardPosition || "smart";
+    const rootRect = root.getBoundingClientRect();
     selectionCard.style.left = "auto";
-    selectionCard.style.right = "12px";
+    selectionCard.style.right = mode === "top-right" ? "12px" : "auto";
     selectionCard.style.top = "12px";
+    if (mode === "top-right") return;
+    requestAnimationFrame(() => {
+      if (!selectionCard?.classList.contains("is-visible")) return;
+      const cardRect = selectionCard.getBoundingClientRect();
+      const stackRect = root.querySelector(".dualsub-stack").getBoundingClientRect();
+      const anchorX = Number.isFinite(clientX) ? clientX - rootRect.left : rootRect.width / 2;
+      let left = anchorX - cardRect.width / 2;
+      let top = mode === "cursor" && Number.isFinite(clientY)
+        ? clientY - rootRect.top - cardRect.height - 14
+        : stackRect.top - rootRect.top - cardRect.height - 14;
+      left = Math.max(12, Math.min(rootRect.width - cardRect.width - 12, left));
+      top = Math.max(12, Math.min(rootRect.height - cardRect.height - 12, top));
+      selectionCard.style.left = `${left}px`;
+      selectionCard.style.top = `${top}px`;
+    });
   }
 
-  async function showSelectionCard(text, _clientX, _clientY, kind = "selection") {
+  async function showSelectionCard(text, clientX, clientY, kind = "selection") {
     const cleanText = String(text || "").replace(/\s+/g, " ").trim();
     if (!cleanText) return;
     const sequence = ++lookupSequence;
@@ -1304,14 +1342,20 @@
     const lemmaNode = selectionCard.querySelector(".dualsub-card-lemma");
     const grammarNode = selectionCard.querySelector(".dualsub-card-grammar");
     const linkNode = selectionCard.querySelector(".dualsub-card-link");
+    const wiktionaryNode = selectionCard.querySelector(".dualsub-card-wiktionary");
+    const pinButton = selectionCard.querySelector('[data-action="pin"]');
     const saveButton = selectionCard.querySelector('[data-action="save"]');
     const sentenceButton = selectionCard.querySelector('[data-action="sentence"]');
     const replayButton = selectionCard.querySelector('[data-action="replay"]');
+    const previousButton = selectionCard.querySelector('[data-action="previous"]');
+    const nextButton = selectionCard.querySelector('[data-action="next"]');
+    const slowButton = selectionCard.querySelector('[data-action="slow"]');
+    const loopButton = selectionCard.querySelector('[data-action="loop"]');
     const sentence = currentSourceText || cleanText;
     const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
     const hoveredWord = sourceLine.querySelector(".dualsub-word.is-hovered");
     const hoveredWordIndex = sourceWords.indexOf(hoveredWord);
-    const conjugation = kind === "word" ? globalThis.DualSubFrench?.analyzeWord(cleanText) : null;
+    const conjugation = kind === "word" ? globalThis.DualSubFrench?.analyzeWord(cleanText, currentSourceText) : null;
     lookupContext = {
       kind,
       sourceText: cleanText,
@@ -1321,9 +1365,11 @@
       videoId: currentVideoId,
       videoTitle: currentVideoTitle,
       timeMs: currentSourceCue?.start ?? Math.round((video?.currentTime || 0) * 1000),
+      cueEndMs: currentSourceCue?.end ?? null,
       alignmentRatio: hoveredWordIndex >= 0 && sourceWords.length
         ? (hoveredWordIndex + 0.5) / sourceWords.length
         : Number.NaN,
+      wordIndex: hoveredWordIndex,
       conjugation
     };
     sourceNode.textContent = cleanText;
@@ -1332,11 +1378,13 @@
     sentenceTargetNode.textContent = lookupContext.sentenceTranslation || "Translation available on request";
     conjugationNode.hidden = !conjugation;
     if (conjugation) {
-      const confidenceLabel = conjugation.confidence === "high" ? "" : "Possible: ";
+      const confidenceLabel = conjugation.confidence === "high"
+        ? ""
+        : conjugation.confidence === "verified" ? "Verified: " : "Possible: ";
       lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${conjugation.lemma}`;
       const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
       grammarNode.textContent = conjugation.alternatives?.length
-        ? `${description} · also ${conjugation.alternatives.map((item) => globalThis.DualSubFrench.describe(item)).join(" / ")}`
+        ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma}: ${globalThis.DualSubFrench.describe(item)}`).join(" / ")}`
         : description;
     }
     saveButton.disabled = true;
@@ -1344,11 +1392,22 @@
     sentenceButton.disabled = !sentence;
     sentenceButton.textContent = "Translate line";
     replayButton.disabled = !video;
+    previousButton.disabled = hoveredWordIndex <= 0;
+    nextButton.disabled = hoveredWordIndex < 0 || hoveredWordIndex >= sourceWords.length - 1;
+    slowButton.disabled = !video;
+    slowButton.textContent = video?.playbackRate <= 0.76 ? "Normal speed" : "0.75× replay";
+    loopButton.disabled = !currentSourceCue || usingNativeSource;
+    loopButton.textContent = loopCueRange ? "Stop loop" : "Loop line";
+    loopButton.classList.toggle("is-active", Boolean(loopCueRange));
+    pinButton.textContent = lookupPinned ? "Pinned" : "Pin";
+    pinButton.classList.toggle("is-active", lookupPinned);
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
+    const dictionaryWord = conjugation?.lemma || cleanText;
+    wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
     selectionCard.classList.add("is-visible");
     cancelLookupDismiss();
     root.classList.add("dualsub-learning-open");
-    positionSelectionCard();
+    positionSelectionCard(clientX, clientY);
 
     if (settings.pauseOnLookup && video && !video.paused) {
       video.pause();
@@ -1361,14 +1420,16 @@
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
       });
-    const lemmaPromise = conjugation?.lemma && normalizeLookupWord(conjugation.lemma) !== normalizeLookupWord(cleanText)
-      ? browser.runtime.sendMessage({
+    const lemmaTexts = [conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.lemma)]
+      .filter((lemma, index, values) => lemma && values.indexOf(lemma) === index)
+      .filter((lemma) => normalizeLookupWord(lemma) !== normalizeLookupWord(cleanText))
+      .slice(0, 3);
+    const lemmaPromises = lemmaTexts.map((lemma) => browser.runtime.sendMessage({
         type: "translate-selection",
-        text: conjugation.lemma,
+        text: lemma,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
-      })
-      : Promise.resolve(null);
+      }));
     try {
       const response = await surfacePromise;
       if (sequence !== lookupSequence || !selectionCard.classList.contains("is-visible")) return;
@@ -1377,10 +1438,12 @@
         lookupContext.translatedText = response.translatedText;
         saveButton.disabled = false;
         refineAlignedTargetWords(response.translatedText);
-        const lemmaResponse = await lemmaPromise.catch(() => null);
+        const lemmaResponses = await Promise.allSettled(lemmaPromises);
         if (sequence !== lookupSequence || !selectionCard.classList.contains("is-visible")) return;
         const evidence = [response.translatedText];
-        if (lemmaResponse?.ok) evidence.push(lemmaResponse.translatedText);
+        lemmaResponses.forEach((result) => {
+          if (result.status === "fulfilled" && result.value?.ok) evidence.push(result.value.translatedText);
+        });
         refineAlignedTargetWords(evidence);
       }
     } catch (error) {
@@ -1410,10 +1473,84 @@
     }
     if (!lookupContext) return;
 
+    if (action === "pin") {
+      lookupPinned = !lookupPinned;
+      button.textContent = lookupPinned ? "Pinned" : "Pin";
+      button.classList.toggle("is-active", lookupPinned);
+      if (lookupPinned) cancelLookupDismiss();
+      else scheduleLookupDismiss(500);
+      return;
+    }
+
+    if (action === "previous" || action === "next") {
+      const words = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
+      const nextIndex = lookupContext.wordIndex + (action === "previous" ? -1 : 1);
+      const word = words[nextIndex];
+      if (!word) return;
+      highlightAlignedWord(word);
+      const rect = word.getBoundingClientRect();
+      showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+      return;
+    }
+
+    if (action === "copy") {
+      const value = [lookupContext.sourceText, lookupContext.translatedText].filter(Boolean).join(" — ");
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch (_error) {
+        const field = document.createElement("textarea");
+        field.value = value;
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        document.body.appendChild(field);
+        field.select();
+        document.execCommand("copy");
+        field.remove();
+      }
+      button.textContent = "Copied ✓";
+      setTimeout(() => {
+        if (button.isConnected) button.textContent = "Copy";
+      }, 1200);
+      return;
+    }
+
     if (action === "replay" && video) {
       video.currentTime = Math.max(0, lookupContext.timeMs / 1000 - 0.35);
       await video.play().catch(() => {});
       pausedByLookup = false;
+      return;
+    }
+
+    if (action === "slow" && video) {
+      if (video.playbackRate <= 0.76) {
+        video.playbackRate = Math.max(0.25, playbackRateBeforeSlow || 1);
+        button.textContent = "0.75× replay";
+      } else {
+        playbackRateBeforeSlow = video.playbackRate;
+        video.playbackRate = 0.75;
+        video.currentTime = Math.max(0, lookupContext.timeMs / 1000 - 0.35);
+        await video.play().catch(() => {});
+        pausedByLookup = false;
+        button.textContent = "Normal speed";
+      }
+      return;
+    }
+
+    if (action === "loop" && video && Number.isFinite(lookupContext.cueEndMs)) {
+      if (loopCueRange) {
+        loopCueRange = null;
+        button.textContent = "Loop line";
+        button.classList.remove("is-active");
+        setStatus("ready", "Caption loop stopped.", 1200);
+      } else {
+        loopCueRange = { start: lookupContext.timeMs, end: lookupContext.cueEndMs };
+        video.currentTime = Math.max(0, loopCueRange.start / 1000 - 0.15);
+        await video.play().catch(() => {});
+        pausedByLookup = false;
+        button.textContent = "Stop loop";
+        button.classList.add("is-active");
+        setStatus("ready", "Looping the current French line.", 1400);
+      }
       return;
     }
 
@@ -1472,6 +1609,7 @@
   function hideSelectionCard() {
     lookupSequence += 1;
     lookupContext = null;
+    lookupPinned = false;
     clearTimeout(lookupDismissTimer);
     clearTimeout(hoverLookupTimer);
     clearTimeout(hoverPrefetchTimer);
@@ -1503,6 +1641,7 @@
     sourceCues = [];
     targetCues = [];
     alignedTargetCues = [];
+    loopCueRange = null;
     loadGeneration += 1;
     renderCueText("", "");
     hideSelectionCard();
@@ -1623,7 +1762,7 @@
   document.addEventListener("yt-navigate-finish", handleNavigation);
   document.addEventListener("fullscreenchange", () => setTimeout(attachToPlayer, 50));
   document.addEventListener("mousedown", (event) => {
-    if (selectionCard?.classList.contains("is-visible") && !selectionCard.contains(event.target)) {
+    if (!lookupPinned && selectionCard?.classList.contains("is-visible") && !selectionCard.contains(event.target)) {
       hideSelectionCard();
     }
   }, true);

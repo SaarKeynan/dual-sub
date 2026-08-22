@@ -37,13 +37,17 @@ interactive study surface.
   English word is highlighted only when the translated surface form or inferred
   infinitive provides an exact or strong inflection match; uncertain matches are
   intentionally left unmarked.
-- Common French conjugations are analyzed locally. The lookup card shows the
-  likely infinitive, tense, person, and number, including alternatives for
-  ambiguous forms such as `fait`.
+- French conjugations are analyzed locally with ablaut's reverse morphology,
+  then checked against a 7,820-infinitive Lefff derivative. The lookup card
+  shows likely infinitives, tense, person, and number, including alternatives
+  for genuinely ambiguous forms such as `suis` (`être` / `suivre`).
 - Select any French phrase or sentence for lookup; lookup cards include the
   complete bilingual line, pronunciation, sentence translation, replay, and a
-  Google Translate link. Cards are docked above the captions and close after the
-  pointer leaves, resuming playback if the lookup paused it.
+  Google Translate and Wiktionary links. Cards can appear intelligently above
+  the subtitles, beside the pointer, or in the upper-right; they close after
+  the pointer leaves unless pinned and resume playback if lookup paused it.
+- Lookup cards can copy the bilingual pair, step to the previous or next French
+  word, replay at 0.75× speed, and loop the current caption for shadowing.
 - Optional active-recall mode hides English until the French row is hovered.
 - Optional auto-pause mode stops at each new line for intensive listening.
 - Save words with their translation, complete sentence, video, and timestamp.
@@ -53,8 +57,8 @@ interactive study surface.
 - In-flight translations are deduplicated and results are cached for the
   current browser session to reduce latency and free-service usage.
 - Fullscreen support and automatic handling of YouTube's single-page navigation.
-- A compact categorized settings menu separates General, French, English,
-  Learning, and Services controls without page-level scrollbars.
+- A compact categorized settings menu separates General, Appearance, and Tools
+  controls without page-level scrollbars.
 
 ## Shortcuts
 
@@ -80,6 +84,10 @@ Vocabulary, review progress, notes, video IDs, and timestamps are stored locally
 in Firefox. They are not sent to a DualSub server. JSON backup and CSV export
 only occur after an explicit click. Pronunciation uses Firefox's local Web
 Speech support when available. Word matching is computed locally.
+
+The offline morphology resources and their licenses are documented in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No conjugation request is
+sent to a remote service.
 
 YouTube caption endpoints are not a public, stable API. If YouTube changes its
 player response or timed-text format, the caption loader may need an update.
@@ -124,3 +132,6 @@ node --check page-bridge.js
 node --check popup/popup.js
 node --check vocabulary/vocabulary.js
 ```
+
+The smoke suite also initializes the packaged WebAssembly engine and checks
+irregular, regular, prefixed, and ambiguous French reverse analyses.

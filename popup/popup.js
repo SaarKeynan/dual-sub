@@ -5,7 +5,7 @@ let saveTimer;
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
   "hoverLookup", "wordAlignment", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
-  "bottomOffset", "maxWidth", "subtitleLeadMs", "mymemoryEmail", "translationProvider",
+  "bottomOffset", "maxWidth", "subtitleLeadMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
   "targetFontSize", "targetTextColor", "targetBackgroundColor", "targetBackgroundOpacity",
@@ -26,6 +26,17 @@ function activatePanel(name) {
   });
   available.forEach((panel) => { panel.hidden = panel.dataset.panelContent !== selected; });
   sessionStorage.setItem("dualsub-settings-panel", selected);
+}
+
+function activateAppearance(name) {
+  const selected = name === "target" ? "target" : "source";
+  document.querySelectorAll(".appearance-button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.appearance === selected);
+  });
+  document.querySelectorAll("[data-appearance-content]").forEach((panel) => {
+    panel.hidden = panel.dataset.appearanceContent !== selected;
+  });
+  sessionStorage.setItem("dualsub-appearance-language", selected);
 }
 
 async function copyText(text) {
@@ -63,6 +74,7 @@ function setFormValues() {
   element("subtitleLeadMs").value = settings.subtitleLeadMs;
   element("mymemoryEmail").value = settings.mymemoryEmail || "";
   element("translationProvider").value = settings.translationProvider || "google";
+  element("lookupCardPosition").value = settings.lookupCardPosition || "smart";
 
   for (const prefix of ["source", "target"]) {
     const style = settings[`${prefix}Style`];
@@ -95,6 +107,7 @@ function readFormValues() {
   settings.subtitleLeadMs = Number(element("subtitleLeadMs").value);
   settings.mymemoryEmail = element("mymemoryEmail").value.trim();
   settings.translationProvider = element("translationProvider").value;
+  settings.lookupCardPosition = element("lookupCardPosition").value;
 
   for (const prefix of ["source", "target"]) {
     settings[`${prefix}Style`] = {
@@ -180,6 +193,10 @@ async function initialize() {
     button.addEventListener("click", () => activatePanel(button.dataset.panel));
   });
   activatePanel(sessionStorage.getItem("dualsub-settings-panel") || "general");
+  document.querySelectorAll(".appearance-button").forEach((button) => {
+    button.addEventListener("click", () => activateAppearance(button.dataset.appearance));
+  });
+  activateAppearance(sessionStorage.getItem("dualsub-appearance-language") || "source");
   const defaultResponse = await browser.runtime.sendMessage({ type: "get-default-settings" });
   defaults = defaultResponse.settings;
   const stored = await browser.storage.sync.get("settings");

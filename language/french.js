@@ -1,5 +1,25 @@
 (() => {
   const formIndex = new Map();
+  let morphologyEngine = null;
+  let attestedLemmas = null;
+  let morphologyState = "fallback";
+
+  async function initializeMorphology() {
+    if (typeof wasm_bindgen !== "function" || typeof browser === "undefined") return;
+    morphologyState = "loading";
+    try {
+      const [, lemmaResponse] = await Promise.all([
+        wasm_bindgen({ module_or_path: browser.runtime.getURL("vendor/ablaut/ablaut_bg.wasm") }),
+        fetch(browser.runtime.getURL("vendor/lefff/french-verb-lemmas.json"))
+      ]);
+      if (!lemmaResponse.ok) throw new Error(`Lemma resource returned ${lemmaResponse.status}`);
+      attestedLemmas = new Set(await lemmaResponse.json());
+      morphologyEngine = wasm_bindgen;
+      morphologyState = "ready";
+    } catch (_error) {
+      morphologyState = "fallback";
+    }
+  }
 
   function normalize(value) {
     return String(value || "").trim().toLocaleLowerCase("fr").normalize("NFC");
@@ -194,7 +214,7 @@
     return null;
   }
 
-  function analyzeWord(rawWord) {
+  function fallbackAnalysis(rawWord) {
     const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
     if (!word || word.includes(" ")) return null;
     const known = formIndex.get(word);
@@ -208,11 +228,78 @@
     };
   }
 
+  const commonLemmaPriority = [
+    "être", "avoir", "aller", "faire", "pouvoir", "vouloir", "devoir", "savoir", "dire", "venir",
+    "voir", "prendre", "mettre", "suivre"
+  ];
+
+  function parseSlot(slot) {
+    const value = String(slot || "").trim();
+    const lower = value.toLocaleLowerCase("fr");
+    const personMatch = lower.match(/([123])(sg|pl)$/u);
+    let mood = "indicative";
+    if (lower.startsWith("subjunctive")) mood = "subjunctive";
+    else if (lower.startsWith("conditional")) mood = "conditional";
+    else if (lower.startsWith("imperative")) mood = "imperative";
+    else if (lower.includes("participle")) mood = "participle";
+    else if (lower === "infinitive") mood = "infinitive";
+    const tense = lower
+      .replace(/\s+[123](?:sg|pl)$/u, "")
+      .replace(/^(?:subjunctive|conditional|imperative)\s*/u, "") || mood;
+    return {
+      mood,
+      tense,
+      person: personMatch ? ({ 1: "1st", 2: "2nd", 3: "3rd" })[personMatch[1]] : "",
+      number: personMatch ? (personMatch[2] === "sg" ? "singular" : "plural") : ""
+    };
+  }
+
+  function analysisFromMatch(surface, match, slot, confidence = "verified") {
+    return {
+      surface,
+      lemma: match.infinitive,
+      partOfSpeech: "verb",
+      ...parseSlot(slot),
+      confidence,
+      source: "ablaut"
+    };
+  }
+
+  function analyzeWithMorphology(rawWord, sentence = "") {
+    if (!morphologyEngine) return null;
+    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    if (!word || word.includes(" ")) return null;
+    if (word === "maintenant" && !/\ben\s+maintenant\b/iu.test(String(sentence || ""))) return null;
+    const matches = morphologyEngine.reverseFrench(word)
+      .filter((match) => attestedLemmas?.has(match.infinitive));
+    if (!Array.isArray(matches) || !matches.length) return null;
+    matches.sort((left, right) => {
+      const leftRank = commonLemmaPriority.indexOf(left.infinitive);
+      const rightRank = commonLemmaPriority.indexOf(right.infinitive);
+      return (leftRank < 0 ? 999 : leftRank) - (rightRank < 0 ? 999 : rightRank) ||
+        left.infinitive.length - right.infinitive.length || left.infinitive.localeCompare(right.infinitive, "fr");
+    });
+    const analyses = matches.flatMap((match) => (match.slots || []).map((slot) => (
+      analysisFromMatch(word, match, slot)
+    )));
+    if (!analyses.length) return null;
+    return { ...analyses[0], alternatives: analyses.slice(1, 7) };
+  }
+
+  function analyzeWord(rawWord, sentence = "") {
+    return analyzeWithMorphology(rawWord, sentence) || fallbackAnalysis(rawWord);
+  }
+
   function describe(analysis) {
     if (!analysis) return "";
     const person = analysis.person && analysis.number ? `${analysis.person} person ${analysis.number}` : "";
     return [analysis.mood, analysis.tense, person].filter(Boolean).join(" · ");
   }
 
-  globalThis.DualSubFrench = Object.freeze({ analyzeWord, describe });
+  initializeMorphology();
+  globalThis.DualSubFrench = Object.freeze({
+    analyzeWord,
+    describe,
+    get engineState() { return morphologyState; }
+  });
 })();

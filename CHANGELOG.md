@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 — full morphology and focused tools
+
+- Replaced the small hand-maintained conjugation index with an offline hybrid:
+  ablaut 0.7 performs verified reverse morphology and a 7,820-lemma Lefff
+  derivative rejects unattested rule-generated infinitives.
+- Improved ambiguous matching by translating up to three distinct candidate
+  lemmas and using only visible English evidence for highlighting.
+- Added selectable smart, pointer-adjacent, and upper-right lookup positions;
+  smart mode centers the card near the word but above the subtitle block.
+- Consolidated settings into General, Appearance, and Tools. Appearance uses a
+  compact French/English switch and the popup has no page-level scrollbars.
+- Added card pinning, one-click bilingual copy, previous/next word navigation,
+  0.75× replay, caption looping, and a lemma-aware Wiktionary link.
+- Added third-party source, modification, and license notices for ablaut and
+  the Lefff-derived verb list.
+
 ## 0.4.0 — conjugation-aware learning UI
 
 - Added local French verb-form analysis for common irregular and regular verbs,

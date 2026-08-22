@@ -60,6 +60,9 @@ async function testCaptionProcessing() {
   assert(context.isNativeCaptionSystemMessage("French (auto-generated)", 2000));
   assert(!context.isNativeCaptionSystemMessage("French (auto-generated)", 12000));
   assert(!context.isNativeCaptionSystemMessage("On parle des param\u00e8tres du t\u00e9l\u00e9phone", 1000));
+  for (const action of ["pin", "copy", "previous", "next", "slow", "loop"]) {
+    assert(source.includes(`data-action="${action}"`), `Lookup action ${action} should be present`);
+  }
 }
 
 async function testFrenchConjugation() {
@@ -86,6 +89,49 @@ async function testFrenchConjugation() {
   assert(analyze("fait").alternatives.length, "fait should retain its participle alternative");
   assert.strictEqual(analyze("TikTok"), null);
   assert.strictEqual(analyze("maintenant"), null, "ordinary adverbs must not be guessed as verbs");
+}
+
+async function testAblautMorphology() {
+  const context = { console, TextDecoder, TextEncoder, WebAssembly };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "vendor", "ablaut", "ablaut.js"), "utf8"), context);
+  context.wasmBytes = fs.readFileSync(path.join(projectRoot, "vendor", "ablaut", "ablaut_bg.wasm"));
+  vm.runInContext(`
+    wasm_bindgen.initSync({ module: wasmBytes });
+    morphologyResults = {
+      suis: wasm_bindgen.reverseFrench("suis"),
+      apercevais: wasm_bindgen.reverseFrench("apercevais"),
+      mangeaient: wasm_bindgen.reverseFrench("mangeaient"),
+      finissions: wasm_bindgen.reverseFrench("finissions"),
+      recevront: wasm_bindgen.reverseFrench("recevront"),
+      maintenant: wasm_bindgen.reverseFrench("maintenant")
+    };
+  `, context);
+  const attested = new Set(JSON.parse(fs.readFileSync(
+    path.join(projectRoot, "vendor", "lefff", "french-verb-lemmas.json"), "utf8"
+  )));
+  assert(attested.size > 7500, "The bundled Lefff derivative should cover thousands of verbs");
+  const lemmas = (key) => Array.from(context.morphologyResults[key], (item) => item.infinitive)
+    .filter((lemma) => attested.has(lemma));
+  assert(lemmas("suis").includes("\u00eatre") && lemmas("suis").includes("suivre"));
+  assert(lemmas("apercevais").includes("apercevoir"));
+  assert(lemmas("mangeaient").includes("manger"));
+  assert(lemmas("finissions").includes("finir"));
+  assert(lemmas("recevront").includes("recevoir"));
+  assert(lemmas("maintenant").includes("maintenir"), "The engine should retain the real participle reading");
+
+  context.browser = { runtime: { getURL: (value) => value } };
+  context.fetch = async () => ({ ok: true, async json() { return Array.from(attested); } });
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const received = context.DualSubFrench.analyzeWord("recevront", "ils recevront une lettre");
+  assert.strictEqual(received.lemma, "recevoir");
+  assert.strictEqual(context.DualSubFrench.analyzeWord("maintenant", "il parle maintenant"), null);
+  assert.strictEqual(
+    context.DualSubFrench.analyzeWord("maintenant", "en maintenant la pression").lemma,
+    "maintenir"
+  );
 }
 
 async function testVocabularyStorage() {
@@ -171,6 +217,7 @@ async function testVocabularyStorage() {
 Promise.resolve()
   .then(testCaptionProcessing)
   .then(testFrenchConjugation)
+  .then(testAblautMorphology)
   .then(testVocabularyStorage)
   .then(() => console.log("DualSub smoke tests passed"))
   .catch((error) => {
