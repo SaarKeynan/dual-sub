@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.5 — larger status dismiss control
+
+- Enlarged the dismiss button to a 32-pixel circular hit target and explicitly
+  enabled pointer and touch interaction inside the video overlay.
+- Restyled the button as a deep-blue circle with a lighter-blue X, plus clear
+  hover, pressed, and keyboard-focus states.
+- Prevented the player beneath the overlay from intercepting the button's
+  initial pointer press.
+
 ## 0.6.4 — video word warm-up, compact grammar, and voice setup
 
 - Added an optional, enabled-by-default warm-up that preloads the 36 most

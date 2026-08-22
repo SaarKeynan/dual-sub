@@ -158,20 +158,47 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 
 .dualsub-status-close {
   display: none;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 auto;
+  position: relative;
+  z-index: 3;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  flex: 0 0 32px;
   padding: 0;
-  border: 0;
+  border: 1px solid #60a5fa;
   border-radius: 50%;
-  color: #cbd5e1;
-  background: rgba(148, 163, 184, 0.18);
-  font: 17px/18px system-ui, sans-serif;
+  color: #bfdbfe;
+  background: #1d4ed8;
+  box-shadow: 0 2px 8px rgba(30, 64, 175, 0.42);
+  font: 700 21px/1 system-ui, sans-serif;
   cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  user-select: none;
+  -moz-user-select: none;
 }
 
-.dualsub-status[data-state="error"] .dualsub-status-close { display: block; }
-.dualsub-status-close:hover { color: #fff; background: rgba(248, 113, 113, 0.32); }
+.dualsub-status[data-state="error"] .dualsub-status-close {
+  display: grid;
+  place-items: center;
+}
+
+.dualsub-status-close:hover {
+  color: #eff6ff;
+  background: #2563eb;
+  border-color: #93c5fd;
+}
+
+.dualsub-status-close:active {
+  background: #1e40af;
+  transform: scale(0.95);
+}
+
+.dualsub-status-close:focus-visible {
+  outline: 2px solid #bfdbfe;
+  outline-offset: 2px;
+}
 
 .dualsub-status[data-state="loading"]::before {
   content: "";

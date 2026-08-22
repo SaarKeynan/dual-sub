@@ -272,6 +272,9 @@
       statusNode = root.querySelector(".dualsub-status");
       statusTextNode = root.querySelector(".dualsub-status-text");
       statusCloseNode = root.querySelector(".dualsub-status-close");
+      statusCloseNode.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
       statusCloseNode.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();

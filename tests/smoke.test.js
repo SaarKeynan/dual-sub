@@ -159,6 +159,11 @@ async function testCaptionProcessing() {
   assert(contentCss.includes("var(--dualsub-group-adverb, #facc15)"));
   assert(contentCss.includes('.dualsub-card-translation[data-group="verb"]'));
   assert(contentCss.includes('.dualsub-status[data-state="error"] .dualsub-status-close'));
+  assert(contentCss.includes("width: 32px"), "The status close button should have a comfortable hit target");
+  assert(contentCss.includes("background: #1d4ed8"), "The status close button should use a blue circle");
+  assert(contentCss.includes("color: #bfdbfe"), "The status close icon should use a contrasting blue");
+  assert(contentCss.includes("touch-action: manipulation"));
+  assert(source.includes('statusCloseNode.addEventListener("pointerdown"'));
 }
 
 async function testFrenchConjugation() {
