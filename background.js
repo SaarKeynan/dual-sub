@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS = {
   autoPause: false,
   lookupCardPosition: "smart",
   hoverDelay: 420,
-  subtitleLeadMs: 500,
+  captionOffsetMs: 0,
   translationProvider: "google",
   bottomOffset: 72,
   maxWidth: 88,

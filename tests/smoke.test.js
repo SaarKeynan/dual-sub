@@ -33,12 +33,40 @@ async function testCaptionProcessing() {
   assert.strictEqual(cues.length, 2);
   assert.strictEqual(cues[0].text, "alors là on fait un micro trottoir sur TikTok");
 
+  const separateWordPayload = JSON.stringify({ events: [
+    { tStartMs: 1000, dDurationMs: 3000, segs: [{ utf8: "je pense que cette idée fonctionne" }] },
+    { tStartMs: 3800, dDurationMs: 1400, segs: [{ utf8: "Vraiment" }] },
+    { tStartMs: 4600, dDurationMs: 2600, segs: [{ utf8: "je ne crois pas" }] }
+  ] });
+  const separateWordCues = context.parseCaptionPayload(separateWordPayload);
+  assert.strictEqual(separateWordCues.length, 3, "A short overlapping caption must keep its own boundary");
+  assert.strictEqual(separateWordCues[1].text, "Vraiment");
+
+  const standaloneConnectorPayload = JSON.stringify({ events: [
+    { tStartMs: 1000, dDurationMs: 2400, segs: [{ utf8: "on en parle souvent avec" }] },
+    { tStartMs: 3400, dDurationMs: 1800, segs: [{ utf8: "Marie" }] },
+    { tStartMs: 5400, dDurationMs: 2200, segs: [{ utf8: "elle est experte" }] }
+  ] });
+  const standaloneConnectorCues = context.parseCaptionPayload(standaloneConnectorPayload);
+  assert.strictEqual(standaloneConnectorCues.length, 3, "Grammar alone must not erase a caption boundary");
+
+  const explicitAppendPayload = JSON.stringify({ events: [
+    { tStartMs: 1000, dDurationMs: 2000, segs: [{ utf8: "c'est vraiment" }] },
+    { tStartMs: 2500, dDurationMs: 1200, aAppend: 1, segs: [{ utf8: "important" }] },
+    { tStartMs: 4000, dDurationMs: 2000, segs: [{ utf8: "pour nous" }] }
+  ] });
+  const explicitAppendCues = context.parseCaptionPayload(explicitAppendPayload);
+  assert.strictEqual(explicitAppendCues.length, 2);
+  assert.strictEqual(explicitAppendCues[0].text, "c'est vraiment important");
+
   const overlaps = [
     { start: 1000, end: 5000, text: "old" },
     { start: 3000, end: 6000, text: "new" }
   ];
   assert.strictEqual(context.cueAt(overlaps, 3500).text, "new");
   assert.strictEqual(context.cueIndexAt(overlaps, 3500), 1);
+  assert(source.includes("video.currentTime * 1000 + Number(settings.captionOffsetMs || 0)"));
+  assert(!source.includes("Math.max(0, Number(settings.subtitleLeadMs)"));
 
   vm.runInContext(`
     sourceCues = [
@@ -173,6 +201,9 @@ async function testVocabularyStorage() {
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "background.js"), "utf8"), context);
   assert(messageListener, "Background message listener was not registered");
+  const defaultSettings = await messageListener({ type: "get-default-settings" });
+  assert.strictEqual(defaultSettings.settings.captionOffsetMs, 0);
+  assert.strictEqual(defaultSettings.settings.subtitleLeadMs, undefined);
 
   const translations = await Promise.all([
     messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en" }),

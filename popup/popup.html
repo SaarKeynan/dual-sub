@@ -35,9 +35,10 @@
           </div>
           <label class="check-row"><input id="hideNativeCaptions" type="checkbox"> Hide YouTube’s native captions</label>
           <label class="check-row"><input id="wholeLiveLines" type="checkbox"> Keep French and English live lines together</label>
-          <label class="range-row">Show subtitles early <output id="subtitleLeadOutput"></output>
-            <input id="subtitleLeadMs" type="range" min="0" max="1500" step="50">
+          <label class="range-row">Subtitle timing <output id="captionOffsetOutput"></output>
+            <input id="captionOffsetMs" type="range" min="-1500" max="1500" step="50">
           </label>
+          <p class="section-note">Translation is preloaded automatically. Use this only to correct a video that is out of sync.</p>
           <div class="divider"></div>
           <label class="field-label">Translation engine
             <select id="translationProvider"><option value="google">Google web translation</option><option value="mymemory">MyMemory documented API</option></select>

@@ -5,7 +5,7 @@ let saveTimer;
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
   "hoverLookup", "wordAlignment", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
-  "bottomOffset", "maxWidth", "subtitleLeadMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
+  "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
   "targetFontSize", "targetTextColor", "targetBackgroundColor", "targetBackgroundOpacity",
@@ -71,7 +71,7 @@ function setFormValues() {
   element("hoverDelay").value = settings.hoverDelay;
   element("bottomOffset").value = settings.bottomOffset;
   element("maxWidth").value = settings.maxWidth;
-  element("subtitleLeadMs").value = settings.subtitleLeadMs;
+  element("captionOffsetMs").value = settings.captionOffsetMs;
   element("mymemoryEmail").value = settings.mymemoryEmail || "";
   element("translationProvider").value = settings.translationProvider || "google";
   element("lookupCardPosition").value = settings.lookupCardPosition || "smart";
@@ -104,7 +104,7 @@ function readFormValues() {
   settings.hoverDelay = Number(element("hoverDelay").value);
   settings.bottomOffset = Number(element("bottomOffset").value);
   settings.maxWidth = Number(element("maxWidth").value);
-  settings.subtitleLeadMs = Number(element("subtitleLeadMs").value);
+  settings.captionOffsetMs = Number(element("captionOffsetMs").value);
   settings.mymemoryEmail = element("mymemoryEmail").value.trim();
   settings.translationProvider = element("translationProvider").value;
   settings.lookupCardPosition = element("lookupCardPosition").value;
@@ -129,7 +129,10 @@ function updateOutputs() {
   element("targetOpacityOutput").textContent = `${element("targetBackgroundOpacity").value}%`;
   element("bottomOffsetOutput").textContent = `${element("bottomOffset").value}px`;
   element("maxWidthOutput").textContent = `${element("maxWidth").value}%`;
-  element("subtitleLeadOutput").textContent = `${element("subtitleLeadMs").value}ms`;
+  const captionOffset = Number(element("captionOffsetMs").value);
+  element("captionOffsetOutput").textContent = captionOffset === 0
+    ? "On time"
+    : `${Math.abs(captionOffset)}ms ${captionOffset > 0 ? "earlier" : "later"}`;
   element("hoverDelayOutput").textContent = `${element("hoverDelay").value}ms`;
   document.body.classList.toggle("is-disabled", !element("enabled").checked);
   updatePreview("source");

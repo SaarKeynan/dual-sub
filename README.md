@@ -28,9 +28,9 @@ interactive study surface.
 - For videos whose auto-captions require YouTube proof-of-origin tokens, DualSub
   observes the native player's authenticated caption request and upgrades from
   live mode to complete synchronized tracks automatically.
-- YouTube's flagged and unflagged late auto-caption continuation fragments are
-  folded into the full line, and overlapping cues prefer the newest line, so
-  final words do not wait until the end of the sentence to appear.
+- YouTube's explicit append events and strongly identified transient roll-up
+  fragments are folded into the full line; independent short captions keep
+  their own boundaries, and overlapping cues prefer the newest line.
 - Independent font size, color, background, opacity, font, weight, and italic
   controls for each language, with live previews in the popup.
 - Hover or click a French word for an instant translation. A corresponding

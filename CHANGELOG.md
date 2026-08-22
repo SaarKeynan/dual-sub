@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1 — caption boundary and synchronization fix
+
+- Stopped treating arbitrary short overlapping captions as late words from the
+  previous line. Unmarked fragments now fold only when timing, grammar, and the
+  following roll-up event all identify a transient continuation.
+- Kept YouTube's explicit `aAppend` caption updates intact.
+- Separated translation preloading from display timing, removing the inherited
+  500 ms advance that could make complete tracks appear early.
+- Replaced the one-way early-display control with a neutral synchronization
+  correction that can move captions earlier or later when a specific video
+  needs it.
+
 ## 0.5.0 — full morphology and focused tools
 
 - Replaced the small hand-maintained conjugation index with an offline hybrid:

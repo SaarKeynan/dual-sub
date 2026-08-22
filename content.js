@@ -15,7 +15,7 @@
     autoPause: false,
     lookupCardPosition: "smart",
     hoverDelay: 420,
-    subtitleLeadMs: 500,
+    captionOffsetMs: 0,
     translationProvider: "google",
     bottomOffset: 72,
     maxWidth: 88,
@@ -291,7 +291,8 @@
       "dans", "par", "que", "qui", "un", "une", "le", "la", "les"
     ]);
 
-    for (const cue of cues) {
+    for (let cueIndex = 0; cueIndex < cues.length; cueIndex += 1) {
+      const cue = cues[cueIndex];
       const previous = folded[folded.length - 1];
       if (!previous) {
         folded.push({ ...cue });
@@ -301,18 +302,25 @@
       const previousWords = previous.text.match(/[\p{L}\p{N}]+(?:['\u2019][\p{L}\p{N}]+)*/gu) || [];
       const fragmentWords = cue.text.match(/[\p{L}\p{N}]+(?:['\u2019][\p{L}\p{N}]+)*/gu) || [];
       const lastPreviousWord = (previousWords[previousWords.length - 1] || "").toLocaleLowerCase();
-      const closeInTime = cue.start >= previous.start && cue.start - previous.start <= 7000;
       const previousLooksOpen = !/[.!?\u2026]["'\u2019\u201d)\]]*$/u.test(previous.text);
-      const followsConnector = connectingWords.has(lastPreviousWord) && fragmentWords.length <= 4;
-      const tinyOverlappingTail = fragmentWords.length <= 2 && previousWords.length >= 6 && cue.start <= previous.end + 1200;
+      const nextCue = cues[cueIndex + 1];
+      const followsConnector = connectingWords.has(lastPreviousWord);
+      const startsAtPreviousBoundary = Math.abs(cue.start - previous.end) <= 500;
+      const immediatelySuperseded = Boolean(
+        nextCue &&
+        nextCue.start > cue.start &&
+        nextCue.start <= cue.end &&
+        nextCue.start - cue.start <= 1600
+      );
 
       if (
-        closeInTime &&
         previousLooksOpen &&
-        previousWords.length >= 3 &&
+        previousWords.length >= 4 &&
         previousWords.length + fragmentWords.length <= 16 &&
-        fragmentWords.length > 0 &&
-        (followsConnector || tinyOverlappingTail)
+        fragmentWords.length > 0 && fragmentWords.length <= 3 &&
+        followsConnector &&
+        startsAtPreviousBoundary &&
+        immediatelySuperseded
       ) {
         previous.text = joinCaptionParts([previous.text, cue.text]);
         previous.end = Math.max(previous.end, cue.end);
@@ -457,11 +465,8 @@
           text
         };
 
-        // YouTube auto-captions frequently emit the final few words as
-        // separate `aAppend` events. The complete track is already available,
-        // so fold those continuations into their original cue. This lets whole
-        // lines appear at the line's start instead of revealing their last
-        // words only when the speaker reaches the end.
+        // `aAppend` is YouTube's explicit signal that this event extends the
+        // preceding caption rather than starting a new one.
         if (event.aAppend && provisional.length) {
           const previous = provisional[provisional.length - 1];
           previous.text = joinCaptionParts([previous.text, cue.text]);
@@ -1064,7 +1069,9 @@
       sourceCues.length &&
       (targetCues.length || usingNativeTranslation || usingAheadTranslation)
     ) {
-      const timeMs = video.currentTime * 1000 + Math.max(0, Number(settings.subtitleLeadMs) || 0);
+      // Translation is prefetched separately. Keep display timing tied to the
+      // media clock, with only the user's explicit synchronization correction.
+      const timeMs = video.currentTime * 1000 + Number(settings.captionOffsetMs || 0);
       const sourceIndex = cueIndexAt(sourceCues, timeMs);
       const sourceCue = sourceCues[sourceIndex];
       const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end;
@@ -1794,7 +1801,7 @@
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
           translationProvider: settings.translationProvider,
-          subtitleLeadMs: settings.subtitleLeadMs
+          captionOffsetMs: settings.captionOffsetMs
         }
       });
     }
