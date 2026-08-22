@@ -1218,14 +1218,46 @@
     conjunction: "Conjunction", interjection: "Interjection", unknown: "Word"
   });
 
+  function splitFrenchElision(value) {
+    const match = String(value || "").match(/^((?:qu|[jmtslncd])['’])([\p{L}\p{N}][\p{L}\p{N}-]*)$/iu);
+    if (!match) return null;
+    return { particle: match[1], base: match[2], compound: match[0] };
+  }
+
+  function lookupTextForWord(word) {
+    return word?.dataset.lookupWord || word?.dataset.word || word?.textContent || "";
+  }
+
   function tagFrenchWord(word, sentence = currentSourceText) {
     if (!word) return { group: "unknown", alternatives: [] };
     const text = word.dataset.word || word.textContent;
-    const analysis = globalThis.DualSubFrench?.analyzeWord(text, sentence);
+    const particle = word.dataset.elisionParticle === "true"
+      ? globalThis.DualSubFrench?.analyzeElisionParticle(text)
+      : null;
+    if (particle) {
+      const nextGroup = word.dataset.elisionNextGroup;
+      const group = particle.key === "l" && ["noun", "adjective"].includes(nextGroup)
+        ? "determiner"
+        : particle.group;
+      const alternatives = particle.key === "l"
+        ? [group === "determiner" ? "pronoun" : "determiner"]
+        : [];
+      word.dataset.lookupWord = text;
+      word.dataset.wordGroup = group;
+      word.dataset.wordGroupAlternatives = alternatives.join(",");
+      word.setAttribute("aria-label", `${text}, ${WORD_GROUP_LABELS[group]}: ${particle.expanded}`);
+      return { group, alternatives, confidence: "grammar", particle };
+    }
+    const compound = word.dataset.elisionCompound || "";
+    const compoundAnalysis = compound
+      ? globalThis.DualSubFrench?.analyzeWord(compound, sentence)
+      : null;
+    const analysis = compoundAnalysis || globalThis.DualSubFrench?.analyzeWord(text, sentence);
     const classification = globalThis.DualSubFrench?.classifyWord(text, sentence, analysis) || {
       group: analysis?.partOfSpeech === "verb" ? "verb" : "unknown",
       alternatives: []
     };
+    word.dataset.lookupWord = compoundAnalysis?.partOfSpeech === "verb" ? compound : text;
     word.dataset.wordGroup = classification.group;
     word.dataset.wordGroupAlternatives = (classification.alternatives || []).join(",");
     word.setAttribute(
@@ -1257,23 +1289,40 @@
     }
 
     let wordIndex = 0;
+    const appendWord = (displayText, options = {}) => {
+      const word = document.createElement("span");
+      word.className = "dualsub-word";
+      word.dataset.wordIndex = String(wordIndex);
+      word.dataset.word = displayText;
+      word.textContent = displayText;
+      if (options.particle) word.dataset.elisionParticle = "true";
+      if (options.compound) word.dataset.elisionCompound = options.compound;
+      if (line === sourceLine) {
+        word.tabIndex = 0;
+        word.setAttribute("role", "button");
+      }
+      fragment.appendChild(word);
+      wordIndex += 1;
+      return word;
+    };
     for (const segment of segments) {
       if (!segment.isWordLike) {
         fragment.appendChild(document.createTextNode(segment.text));
         continue;
       }
-      const word = document.createElement("span");
-      word.className = "dualsub-word";
-      word.dataset.wordIndex = String(wordIndex);
-      word.dataset.word = segment.text;
-      word.textContent = segment.text;
-      if (line === sourceLine) {
-        word.tabIndex = 0;
-        word.setAttribute("role", "button");
-        tagFrenchWord(word, text);
+      const elision = line === sourceLine && String(language).toLocaleLowerCase().startsWith("fr")
+        ? splitFrenchElision(segment.text)
+        : null;
+      if (elision) {
+        const particleWord = appendWord(elision.particle, { particle: true, compound: elision.compound });
+        const baseWord = appendWord(elision.base, { compound: elision.compound });
+        const baseClassification = tagFrenchWord(baseWord, text);
+        particleWord.dataset.elisionNextGroup = baseClassification.group;
+        tagFrenchWord(particleWord, text);
+      } else {
+        const word = appendWord(segment.text);
+        if (line === sourceLine) tagFrenchWord(word, text);
       }
-      fragment.appendChild(word);
-      wordIndex += 1;
     }
     line.replaceChildren(fragment);
   }
@@ -1555,9 +1604,9 @@
       sentence: currentSourceText,
       alignmentRatio: wordIndex >= 0 && sourceWords.length ? (wordIndex + 0.5) / sourceWords.length : Number.NaN
     };
-    hoverPrefetchTimer = setTimeout(async () => {
+    if (word.dataset.elisionParticle !== "true") hoverPrefetchTimer = setTimeout(async () => {
       try {
-        const wordText = word.dataset.word || word.textContent;
+        const wordText = lookupTextForWord(word);
         const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText, currentSourceText);
         const evidenceTexts = [
           wordText,
@@ -1587,7 +1636,7 @@
     }, 90);
     const delay = Math.max(120, Math.min(1500, Number(settings.hoverDelay) || 420));
     hoverLookupTimer = setTimeout(() => {
-      showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+      showSelectionCard(lookupTextForWord(word), rect.left + rect.width / 2, rect.bottom, "word");
     }, delay);
   }
 
@@ -1636,10 +1685,41 @@
     });
   }
 
+  function showElisionParticleCard(word, particle, clientX, clientY) {
+    lookupContext = null;
+    lookupPinned = false;
+    if (pausedByLookup && video?.paused) video.play().catch(() => {});
+    pausedByLookup = false;
+    const group = word.dataset.wordGroup || particle.group || "unknown";
+    selectionCard.classList.add("is-particle-card");
+    selectionCard.querySelector(".dualsub-card-source").textContent = particle.surface;
+    const translationNode = selectionCard.querySelector(".dualsub-card-translation");
+    translationNode.dataset.group = group;
+    const groupNode = selectionCard.querySelector(".dualsub-card-group");
+    groupNode.hidden = false;
+    groupNode.dataset.group = group;
+    groupNode.textContent = WORD_GROUP_LABELS[group] || "Particle";
+    selectionCard.querySelector(".dualsub-card-result").textContent = `${particle.expanded} · ${particle.role} · ${particle.meaning}`;
+    selectionCard.classList.add("is-visible");
+    root.classList.add("dualsub-learning-open");
+    cancelLookupDismiss();
+    positionSelectionCard(clientX, clientY);
+  }
+
   async function showSelectionCard(text, clientX, clientY, kind = "selection") {
     const cleanText = String(text || "").replace(/\s+/g, " ").trim();
     if (!cleanText) return;
     const sequence = ++lookupSequence;
+    const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
+    const hoveredWord = sourceLine.querySelector(".dualsub-word.is-hovered");
+    const particle = kind === "word" && hoveredWord?.dataset.elisionParticle === "true"
+      ? globalThis.DualSubFrench?.analyzeElisionParticle(hoveredWord.dataset.word || hoveredWord.textContent)
+      : null;
+    if (particle) {
+      showElisionParticleCard(hoveredWord, particle, clientX, clientY);
+      return;
+    }
+    selectionCard.classList.remove("is-particle-card");
     const sourceNode = selectionCard.querySelector(".dualsub-card-source");
     const translationNode = selectionCard.querySelector(".dualsub-card-translation");
     const groupNode = selectionCard.querySelector(".dualsub-card-group");
@@ -1662,8 +1742,6 @@
     const slowButton = selectionCard.querySelector('[data-action="slow"]');
     const loopButton = selectionCard.querySelector('[data-action="loop"]');
     const sentence = currentSourceText || cleanText;
-    const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
-    const hoveredWord = sourceLine.querySelector(".dualsub-word.is-hovered");
     const hoveredWordIndex = sourceWords.indexOf(hoveredWord);
     const conjugation = kind === "word" ? globalThis.DualSubFrench?.analyzeWord(cleanText, currentSourceText) : null;
     const wordGroup = kind === "word"
@@ -1825,7 +1903,7 @@
         clearTimeout(hoverLookupTimer);
         highlightAlignedWord(word);
         const rect = word.getBoundingClientRect();
-        showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+        showSelectionCard(lookupTextForWord(word), rect.left + rect.width / 2, rect.bottom, "word");
       }
       return;
     }
@@ -1854,7 +1932,7 @@
       if (!word) return;
       highlightAlignedWord(word);
       const rect = word.getBoundingClientRect();
-      showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+      showSelectionCard(lookupTextForWord(word), rect.left + rect.width / 2, rect.bottom, "word");
       return;
     }
 
@@ -1990,7 +2068,7 @@
     event.preventDefault();
     highlightAlignedWord(word);
     const rect = word.getBoundingClientRect();
-    showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+    showSelectionCard(lookupTextForWord(word), rect.left + rect.width / 2, rect.bottom, "word");
   }
 
   function handleNavigation() {

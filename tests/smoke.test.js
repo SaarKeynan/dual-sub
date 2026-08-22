@@ -24,10 +24,11 @@ async function testCaptionProcessing() {
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
   const cueTools = extract(source, "  function cueAt", "  function startAheadTranslation");
   const wordMatching = extract(source, "  function normalizeLookupWord", "  function handleWordPointerOver");
+  const elisionTools = extract(source, "  function splitFrenchElision", "  function tagFrenchWord");
   const nativeMessageFilter = extract(source, "  function isNativeCaptionSystemMessage", "  function readNativeCaptionText");
   const context = { console };
   vm.createContext(context);
-  vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${nativeMessageFilter}`, context);
+  vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${elisionTools}\n${nativeMessageFilter}`, context);
 
   const payload = JSON.stringify({ events: [
     { tStartMs: 793000, dDurationMs: 3000, segs: [{ utf8: "alors là on fait un micro trottoir sur" }] },
@@ -116,6 +117,12 @@ async function testCaptionProcessing() {
   assert(context.wordSimilarity("do", "doing") >= 0.78, "Inflected verbs should match");
   assert(context.wordSimilarity("thing", "things") >= 0.78, "Simple plurals should match");
   assert(context.wordSimilarity("chat", "cat") < 0.78, "Different words should not be selected");
+  const reflexiveElision = context.splitFrenchElision("s'habiller");
+  assert.strictEqual(reflexiveElision.particle, "s'");
+  assert.strictEqual(reflexiveElision.base, "habiller");
+  assert.strictEqual(context.splitFrenchElision("d’accord").particle, "d’");
+  assert.strictEqual(context.splitFrenchElision("l’homme").base, "homme");
+  assert.strictEqual(context.splitFrenchElision("aujourd'hui"), null, "Lexical apostrophes must stay intact");
   assert(context.isNativeCaptionSystemMessage("French (auto-translated) Click for settings", 500));
   assert(context.isNativeCaptionSystemMessage("French (auto-generated)", 2000));
   assert(!context.isNativeCaptionSystemMessage("French (auto-generated)", 12000));
@@ -166,6 +173,9 @@ async function testCaptionProcessing() {
   assert(source.includes('statusCloseNode.addEventListener("pointerdown", dismissStatus)'));
   assert(source.includes("dismissedStatusKeys.add(displayedStatusKey)"));
   assert(source.includes("!dismissedStatusKeys.has(statusKey)"));
+  assert(source.includes('word.dataset.elisionParticle = "true"'));
+  assert(source.includes("showElisionParticleCard"));
+  assert(contentCss.includes(".dualsub-selection-card.is-particle-card"));
 }
 
 async function testFrenchConjugation() {
@@ -210,6 +220,13 @@ async function testFrenchConjugation() {
   assert.strictEqual(taime.clitic.role, "object pronoun");
   assert.strictEqual(Boolean(taime.pronominal), false, "je t'aime is not reflexive");
   assert.strictEqual(context.DualSubFrench.describe(taime), "present · 1st person singular · t’ = te (object pronoun)");
+  const shabiller = analyze("s'habiller", "Il faut s'habiller");
+  assert.strictEqual(shabiller.lemma, "habiller");
+  assert.strictEqual(shabiller.pronominalLemma, "s’habiller");
+  assert.strictEqual(shabiller.clitic.role, "reflexive pronoun");
+  const particle = context.DualSubFrench.analyzeElisionParticle("d'");
+  assert.strictEqual(particle.group, "preposition");
+  assert.strictEqual(particle.meaning, "of / from");
   const sappelle = analyze("s'appelle", "Il s'appelle Louis");
   assert.strictEqual(sappelle.lemma, "appeler");
   assert.strictEqual(sappelle.person, "3rd");
@@ -289,6 +306,9 @@ async function testAblautMorphology() {
   const fullSappelle = context.DualSubFrench.analyzeWord("s’appelle", "elle s’appelle Marie");
   assert.strictEqual(fullSappelle.pronominalLemma, "s’appeler");
   assert.strictEqual(fullSappelle.person, "3rd");
+  const fullShabiller = context.DualSubFrench.analyzeWord("s’habiller", "il faut s’habiller");
+  assert.strictEqual(fullShabiller.pronominalLemma, "s’habiller");
+  assert.strictEqual(fullShabiller.mood, "infinitive");
 }
 
 async function testWordGroupResource() {

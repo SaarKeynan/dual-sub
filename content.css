@@ -76,6 +76,14 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   transition: color 90ms ease, background-color 90ms ease, box-shadow 90ms ease;
 }
 
+.dualsub-word[data-elision-particle="true"] {
+  border-radius: 0.16em 0 0 0.16em;
+}
+
+.dualsub-word[data-elision-particle="true"] + .dualsub-word {
+  border-radius: 0 0.16em 0.16em 0;
+}
+
 .dualsub-word[data-word-group="unknown"], .dualsub-card-translation[data-group="unknown"] { --dualsub-group-color: var(--dualsub-group-unknown, #ffffff); }
 .dualsub-word[data-word-group="noun"], .dualsub-card-translation[data-group="noun"] { --dualsub-group-color: var(--dualsub-group-noun, #60a5fa); }
 .dualsub-word[data-word-group="verb"], .dualsub-card-translation[data-group="verb"] { --dualsub-group-color: var(--dualsub-group-verb, #a78bfa); }
@@ -263,6 +271,38 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 
 .dualsub-selection-card.is-visible {
   display: block;
+}
+
+.dualsub-selection-card.is-particle-card {
+  width: max-content;
+  max-width: min(260px, calc(100% - 24px));
+  padding: 8px;
+  border-radius: 9px;
+}
+
+.dualsub-selection-card.is-particle-card .dualsub-card-heading,
+.dualsub-selection-card.is-particle-card .dualsub-card-conjugation,
+.dualsub-selection-card.is-particle-card .dualsub-card-context,
+.dualsub-selection-card.is-particle-card .dualsub-card-actions,
+.dualsub-selection-card.is-particle-card .dualsub-card-links {
+  display: none;
+}
+
+.dualsub-selection-card.is-particle-card .dualsub-card-source {
+  margin: 0 0 5px;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.dualsub-selection-card.is-particle-card .dualsub-card-translation {
+  margin: 0;
+  padding: 6px 8px;
+}
+
+.dualsub-selection-card.is-particle-card .dualsub-card-result {
+  max-width: 230px;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 .dualsub-card-label {

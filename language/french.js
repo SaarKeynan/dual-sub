@@ -73,6 +73,13 @@
     });
   }
 
+  function addInfinitive(lemma) {
+    indexForm(lemma, {
+      lemma, partOfSpeech: "verb", mood: "infinitive", tense: "",
+      person: "", number: "", confidence: "high"
+    });
+  }
+
   // Small synchronous fallback tables keep common lookups useful while the
   // full WASM morphology engine and lemma list are still loading.
   const fallbackIrregularParadigms = {
@@ -157,6 +164,7 @@
   };
 
   Object.entries(fallbackIrregularParadigms).forEach(([lemma, tenses]) => {
+    addInfinitive(lemma);
     Object.entries(tenses).forEach(([tense, forms]) => {
       if (tense === "conditional") addForms(lemma, "present", forms, "conditional");
       else addForms(lemma, tense, forms);
@@ -165,10 +173,11 @@
 
   const fallbackRegularErLemmas = [
     "aimer", "arriver", "continuer", "demander", "donner", "écouter", "essayer", "expliquer", "jouer",
-    "parler", "passer", "penser",
+    "habiller", "parler", "passer", "penser",
     "regarder", "rester", "travailler", "trouver", "utiliser"
   ];
   fallbackRegularErLemmas.forEach((lemma) => {
+    addInfinitive(lemma);
     const stem = lemma.slice(0, -2);
     addForms(lemma, "present", [
       `${stem}e`, `${stem}es`, `${stem}e`, `${stem}ons`, `${stem}ez`, `${stem}ent`
@@ -197,11 +206,13 @@
     }
   };
   Object.entries(fallbackSpellingChangeParadigms).forEach(([lemma, tenses]) => {
+    addInfinitive(lemma);
     Object.entries(tenses).forEach(([tense, forms]) => addForms(lemma, tense, forms));
   });
 
   const fallbackRegularIrLemmas = ["choisir", "finir", "réfléchir", "remplir", "réussir"];
   fallbackRegularIrLemmas.forEach((lemma) => {
+    addInfinitive(lemma);
     const stem = lemma.slice(0, -2);
     addForms(lemma, "present", [
       `${stem}is`, `${stem}is`, `${stem}it`, `${stem}issons`, `${stem}issez`, `${stem}issent`
@@ -239,17 +250,29 @@
     ["nous", ["1st", "plural"]], ["vous", ["2nd", "plural"]],
     ["ils", ["3rd", "plural"]], ["elles", ["3rd", "plural"]]
   ]);
-  const elidedCliticLabels = Object.freeze({
-    j: ["je", "subject pronoun"],
-    m: ["me", "object pronoun"],
-    t: ["te", "object pronoun"],
-    s: ["se", "reflexive pronoun"],
-    l: ["le / la", "object pronoun"],
-    n: ["ne", "negation"],
-    c: ["ce", "demonstrative pronoun"],
-    d: ["de", "preposition"],
-    qu: ["que", "conjunction or pronoun"]
+  const elisionParticles = Object.freeze({
+    j: { expanded: "je", role: "subject pronoun", group: "pronoun", meaning: "I" },
+    m: { expanded: "me", role: "object or reflexive pronoun", group: "pronoun", meaning: "me / myself" },
+    t: { expanded: "te", role: "object or reflexive pronoun", group: "pronoun", meaning: "you / yourself" },
+    s: { expanded: "se", role: "reflexive pronoun", group: "pronoun", meaning: "oneself / himself / herself" },
+    l: { expanded: "le / la", role: "article or object pronoun", group: "pronoun", meaning: "the / him / her / it" },
+    n: { expanded: "ne", role: "negation marker", group: "adverb", meaning: "marks a negative verb" },
+    c: { expanded: "ce", role: "demonstrative pronoun", group: "pronoun", meaning: "this / it" },
+    d: { expanded: "de", role: "preposition", group: "preposition", meaning: "of / from" },
+    qu: { expanded: "que", role: "conjunction or pronoun", group: "conjunction", meaning: "that / which" }
   });
+
+  function analyzeElisionParticle(rawParticle) {
+    const canonical = normalize(rawParticle).replace(/’/gu, "'").replace(/\s+/gu, "");
+    const match = canonical.match(/^(j|m|t|s|l|n|c|d|qu)'$/u);
+    if (!match) return null;
+    const key = match[1];
+    return {
+      key,
+      surface: `${key}’`,
+      ...elisionParticles[key]
+    };
+  }
 
   function splitElidedClitic(rawWord) {
     const surface = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
@@ -309,14 +332,17 @@
       if (["me", "te", "se"].includes(candidate)) cliticForm = candidate;
       else if (["nous", "vous"].includes(candidate) && findSubjectBefore(tokens, index - 1)) cliticForm = candidate;
     }
-    const reflexive = cliticMatchesSubject(cliticForm, subject);
+    const reflexive = cliticForm === "s" || cliticForm === "se" || cliticMatchesSubject(cliticForm, subject);
     let clitic = null;
     if (cliticForm) {
-      const label = elidedCliticLabels[cliticForm] || [cliticForm, "object pronoun"];
+      const particle = elisionParticles[cliticForm];
+      const contextualRole = !reflexive && ["m", "t", "l"].includes(cliticForm)
+        ? "object pronoun"
+        : (particle?.role || "object pronoun");
       clitic = {
         surface: cliticAttached ? `${cliticForm}’` : cliticForm,
-        expanded: label[0],
-        role: reflexive ? "reflexive pronoun" : label[1],
+        expanded: particle?.expanded || cliticForm,
+        role: reflexive ? "reflexive pronoun" : contextualRole,
         reflexive,
         attached: cliticAttached
       };
@@ -590,6 +616,7 @@
   const ready = initializeResources();
   globalThis.DualSubFrench = Object.freeze({
     analyzeWord,
+    analyzeElisionParticle,
     classifyWord,
     describe,
     example,

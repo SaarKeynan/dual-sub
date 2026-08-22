@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.8 — elision-aware subtitle words and compact particles
+
+- Split French elisions into adjacent grammatical targets without changing the
+  displayed spelling: `s’` is now a pronoun and `habiller` is the verb in
+  `s’habiller`; `d’`, `l’`, `j’`, and similar particles are handled likewise.
+- Kept the complete compound attached to verb lookup and translation, so the
+  main word still resolves to forms such as `s’habiller` and `t’aimer`.
+- Added a small, non-pausing, request-free particle tooltip instead of opening
+  the full learning card for a one- or two-letter particle.
+- Classified `l’` contextually as a determiner before nouns and adjectives, or
+  as a pronoun before verbs.
+- Recognized standalone `s’/se` infinitives as pronominal even when there is no
+  explicit sentence subject.
+
 ## 0.6.7 — reliable compact status close button
 
 - Reduced the status close button from 32 to 22 pixels.
