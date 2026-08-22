@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   hoverLookup: true,
   wordAlignment: true,
   pauseOnLookup: false,
+  recallMode: false,
   hoverDelay: 420,
   translationProvider: "google",
   bottomOffset: 72,
@@ -36,6 +37,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const translationCache = new Map();
+const translationPending = new Map();
 const VOCABULARY_KEY = "vocabulary";
 
 async function getVocabulary() {
@@ -66,7 +68,8 @@ async function addVocabularyEntry(rawEntry = {}) {
     sentenceTranslation: cleanVocabularyText(rawEntry.sentenceTranslation),
     videoId: cleanVocabularyText(rawEntry.videoId, 32),
     videoTitle: cleanVocabularyText(rawEntry.videoTitle, 240),
-    timeMs: Math.max(0, Number(rawEntry.timeMs) || 0)
+    timeMs: Math.max(0, Number(rawEntry.timeMs) || 0),
+    notes: cleanVocabularyText(rawEntry.notes, 600)
   };
 
   if (existing) {
@@ -95,7 +98,7 @@ async function addVocabularyEntry(rawEntry = {}) {
     dueAt: now
   };
   vocabulary.unshift(entry);
-  await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary.slice(0, 5000) });
+  await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary.slice(0, 2000) });
   return { entry, added: true };
 }
 
@@ -104,6 +107,23 @@ async function removeVocabularyEntry(id) {
   const filtered = vocabulary.filter((item) => item.id !== id);
   await browser.storage.local.set({ [VOCABULARY_KEY]: filtered });
   return { removed: filtered.length !== vocabulary.length };
+}
+
+async function updateVocabularyEntry(id, updates = {}) {
+  const vocabulary = await getVocabulary();
+  const entry = vocabulary.find((item) => item.id === id);
+  if (!entry) throw new Error("Vocabulary entry not found.");
+  if (Object.prototype.hasOwnProperty.call(updates, "translatedText")) {
+    const translatedText = cleanVocabularyText(updates.translatedText, 300);
+    if (!translatedText) throw new Error("The translation cannot be empty.");
+    entry.translatedText = translatedText;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, "notes")) {
+    entry.notes = cleanVocabularyText(updates.notes, 600);
+  }
+  entry.updatedAt = Date.now();
+  await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary });
+  return { entry };
 }
 
 async function reviewVocabularyEntry(id, rating) {
@@ -123,6 +143,60 @@ async function reviewVocabularyEntry(id, rating) {
   entry.dueAt = Date.now() + intervals[nextStage] * 86400000;
   await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary });
   return { entry };
+}
+
+async function importVocabularyEntries(rawEntries) {
+  if (!Array.isArray(rawEntries)) throw new Error("The backup does not contain a vocabulary list.");
+  const vocabulary = await getVocabulary();
+  const byKey = new Map(vocabulary.map((entry) => [
+    `${entry.sourceLanguage}|${entry.targetLanguage}|${entry.normalized}`,
+    entry
+  ]));
+  let imported = 0;
+  let updated = 0;
+  for (const rawEntry of rawEntries.slice(0, 5000)) {
+    const sourceText = cleanVocabularyText(rawEntry?.sourceText, 160);
+    const translatedText = cleanVocabularyText(rawEntry?.translatedText, 300);
+    if (!sourceText || !translatedText) continue;
+    const sourceLanguage = cleanVocabularyText(rawEntry.sourceLanguage, 20) || "fr";
+    const targetLanguage = cleanVocabularyText(rawEntry.targetLanguage, 20) || "en";
+    const normalized = sourceText.toLocaleLowerCase(sourceLanguage);
+    const key = `${sourceLanguage}|${targetLanguage}|${normalized}`;
+    const now = Date.now();
+    const sanitized = {
+      id: cleanVocabularyText(rawEntry.id, 80) || `${now}-${Math.random().toString(36).slice(2, 9)}`,
+      normalized,
+      sourceText,
+      translatedText,
+      sourceLanguage,
+      targetLanguage,
+      sentence: cleanVocabularyText(rawEntry.sentence),
+      sentenceTranslation: cleanVocabularyText(rawEntry.sentenceTranslation),
+      videoId: cleanVocabularyText(rawEntry.videoId, 32),
+      videoTitle: cleanVocabularyText(rawEntry.videoTitle, 240),
+      timeMs: Math.max(0, Number(rawEntry.timeMs) || 0),
+      createdAt: Math.max(0, Number(rawEntry.createdAt) || now),
+      updatedAt: now,
+      encounters: Math.max(1, Number(rawEntry.encounters) || 1),
+      stage: Math.max(0, Math.min(6, Number(rawEntry.stage) || 0)),
+      reviews: Math.max(0, Number(rawEntry.reviews) || 0),
+      dueAt: Math.max(0, Number(rawEntry.dueAt) || now),
+      lastReviewedAt: Math.max(0, Number(rawEntry.lastReviewedAt) || 0),
+      notes: cleanVocabularyText(rawEntry.notes, 600)
+    };
+    const existing = byKey.get(key);
+    if (existing) {
+      Object.assign(existing, sanitized, { id: existing.id, createdAt: existing.createdAt || sanitized.createdAt });
+      updated += 1;
+    } else {
+      vocabulary.push(sanitized);
+      byKey.set(key, sanitized);
+      imported += 1;
+    }
+  }
+  vocabulary.sort((left, right) => (right.createdAt || 0) - (left.createdAt || 0));
+  await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary.slice(0, 2000) });
+  return { imported, updated, total: Math.min(vocabulary.length, 2000) };
 }
 
 async function getSettings() {
@@ -223,24 +297,33 @@ async function translateSelection(text, sourceLanguage, targetLanguage) {
   const cleanText = trimToUtf8Bytes(rawText, provider === "google" ? 4500 : 490);
   const cacheKey = `${provider}|${source}|${target}|${cleanText}`;
   if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
+  if (translationPending.has(cacheKey)) return translationPending.get(cacheKey);
 
-  let translated;
-  if (provider === "mymemory") {
-    translated = await translateWithMyMemory(cleanText, source, target, settings);
-  } else {
-    try {
-      translated = await translateWithGoogle(cleanText, source, target);
-    } catch (_googleError) {
-      translated = await translateWithMyMemory(trimToUtf8Bytes(cleanText, 490), source, target, settings);
+  const request = (async () => {
+    let translated;
+    if (provider === "mymemory") {
+      translated = await translateWithMyMemory(cleanText, source, target, settings);
+    } else {
+      try {
+        translated = await translateWithGoogle(cleanText, source, target);
+      } catch (_googleError) {
+        translated = await translateWithMyMemory(trimToUtf8Bytes(cleanText, 490), source, target, settings);
+      }
     }
-  }
 
-  const result = { ...translated, sourceText: cleanText };
-  translationCache.set(cacheKey, result);
-  if (translationCache.size > 250) {
-    translationCache.delete(translationCache.keys().next().value);
+    const result = { ...translated, sourceText: cleanText };
+    translationCache.set(cacheKey, result);
+    if (translationCache.size > 1500) {
+      translationCache.delete(translationCache.keys().next().value);
+    }
+    return result;
+  })();
+  translationPending.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    translationPending.delete(cacheKey);
   }
-  return result;
 }
 
 browser.runtime.onInstalled.addListener(async () => {
@@ -265,10 +348,16 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 });
 
 browser.commands.onCommand.addListener(async (command) => {
-  if (command !== "toggle-dualsub") return;
-  const settings = await getSettings();
-  settings.enabled = !settings.enabled;
-  await saveSettings(settings);
+  if (command === "toggle-dualsub") {
+    const settings = await getSettings();
+    settings.enabled = !settings.enabled;
+    await saveSettings(settings);
+  } else if (command === "replay-current-caption") {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) browser.tabs.sendMessage(tab.id, { type: "replay-current-cue" }).catch(() => {});
+  } else if (command === "open-vocabulary") {
+    await browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
+  }
 });
 
 browser.runtime.onMessage.addListener((message) => {
@@ -298,8 +387,18 @@ browser.runtime.onMessage.addListener((message) => {
       .then((result) => ({ ok: true, ...result }))
       .catch((error) => ({ ok: false, error: error.message }));
   }
+  if (message?.type === "update-vocabulary") {
+    return updateVocabularyEntry(message.id, message.updates)
+      .then((result) => ({ ok: true, ...result }))
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
   if (message?.type === "review-vocabulary") {
     return reviewVocabularyEntry(message.id, message.rating)
+      .then((result) => ({ ok: true, ...result }))
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
+  if (message?.type === "import-vocabulary") {
+    return importVocabularyEntries(message.entries)
       .then((result) => ({ ok: true, ...result }))
       .catch((error) => ({ ok: false, error: error.message }));
   }

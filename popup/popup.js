@@ -4,7 +4,7 @@ let saveTimer;
 
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
-  "hoverLookup", "wordAlignment", "pauseOnLookup", "hoverDelay",
+  "hoverLookup", "wordAlignment", "pauseOnLookup", "recallMode", "hoverDelay",
   "bottomOffset", "maxWidth", "mymemoryEmail", "translationProvider",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
@@ -26,6 +26,7 @@ function setFormValues() {
   element("hoverLookup").checked = settings.hoverLookup;
   element("wordAlignment").checked = settings.wordAlignment;
   element("pauseOnLookup").checked = settings.pauseOnLookup;
+  element("recallMode").checked = settings.recallMode;
   element("hoverDelay").value = settings.hoverDelay;
   element("bottomOffset").value = settings.bottomOffset;
   element("maxWidth").value = settings.maxWidth;
@@ -55,6 +56,7 @@ function readFormValues() {
   settings.hoverLookup = element("hoverLookup").checked;
   settings.wordAlignment = element("wordAlignment").checked;
   settings.pauseOnLookup = element("pauseOnLookup").checked;
+  settings.recallMode = element("recallMode").checked;
   settings.hoverDelay = Number(element("hoverDelay").value);
   settings.bottomOffset = Number(element("bottomOffset").value);
   settings.maxWidth = Number(element("maxWidth").value);

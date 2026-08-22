@@ -11,6 +11,7 @@
     hoverLookup: true,
     wordAlignment: true,
     pauseOnLookup: false,
+    recallMode: false,
     hoverDelay: 420,
     translationProvider: "google",
     bottomOffset: 72,
@@ -56,6 +57,7 @@
   let loadGeneration = 0;
   let usingNativeTranslation = false;
   let usingNativeSource = false;
+  let nativeSourceTrack = null;
   let nativeTranslationActivatedAt = 0;
   let nativeTextBeforeFallback = "";
   let nativeFallbackTimer;
@@ -132,6 +134,7 @@
     );
     root.style.setProperty("--dualsub-bottom", `${settings.bottomOffset}px`);
     root.style.setProperty("--dualsub-width", `${settings.maxWidth}%`);
+    root.classList.toggle("dualsub-recall-mode", Boolean(settings.recallMode));
     applyLineStyle(sourceLine, settings.sourceStyle);
     applyLineStyle(targetLine, settings.targetStyle);
 
@@ -174,6 +177,7 @@
             <div class="dualsub-card-sentence-target"></div>
           </div>
           <div class="dualsub-card-actions">
+            <button type="button" data-action="speak">Pronounce</button>
             <button type="button" data-action="save">+ Vocabulary</button>
             <button type="button" data-action="sentence">Translate line</button>
             <button type="button" data-action="replay">Replay</button>
@@ -189,6 +193,7 @@
       root.addEventListener("pointerover", handleWordPointerOver);
       root.addEventListener("pointerout", handleWordPointerOut);
       root.addEventListener("click", handleLearningCardAction);
+      root.addEventListener("keydown", handleLearningKeydown);
       applySettings();
     }
     return true;
@@ -534,6 +539,7 @@
   function startNativeSourceCapture(sourceTrack) {
     stopNativeCapture(false);
     usingNativeSource = true;
+    nativeSourceTrack = sourceTrack;
     liveSourceText = "";
     liveTargetText = "";
     liveTranslationRequestText = "";
@@ -665,6 +671,7 @@
     if (!usingNativeTranslation && !usingNativeSource) return;
     usingNativeTranslation = false;
     usingNativeSource = false;
+    nativeSourceTrack = null;
     nativeTranslationActivatedAt = 0;
     nativeTextBeforeFallback = "";
     liveSourceText = "";
@@ -787,7 +794,7 @@
 
     // Auto-generated cues often overlap. Prefer the most recently started
     // active cue rather than whichever overlap a binary search encounters.
-    for (let index = high; index >= 0; index -= 1) {
+    for (let index = high, inspected = 0; index >= 0 && inspected < 24; index -= 1, inspected += 1) {
       if (timeMs < cues[index].end) return cues[index];
     }
     return null;
@@ -802,7 +809,7 @@
       if (cue.start <= timeMs) low = middle + 1;
       else high = middle - 1;
     }
-    for (let index = high; index >= 0; index -= 1) {
+    for (let index = high, inspected = 0; index >= 0 && inspected < 24; index -= 1, inspected += 1) {
       if (timeMs < cues[index].end) return index;
     }
     return Math.max(0, Math.min(cues.length - 1, low));
@@ -940,6 +947,11 @@
       word.dataset.wordIndex = String(wordIndex);
       word.dataset.word = segment.text;
       word.textContent = segment.text;
+      if (line === sourceLine) {
+        word.tabIndex = 0;
+        word.setAttribute("role", "button");
+        word.setAttribute("aria-label", `Look up ${segment.text}`);
+      }
       fragment.appendChild(word);
       wordIndex += 1;
     }
@@ -985,7 +997,9 @@
       const sourceCue = sourceCues[sourceIndex];
       const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end;
       let targetCue = sourceCueIsActive ? alignedTargetCues[sourceIndex] : null;
-      let targetText = targetCue?.text || (targetCues.length ? (cueAt(targetCues, timeMs)?.text || "") : "");
+      let targetText = sourceCueIsActive
+        ? (targetCue?.text || (targetCues.length ? (cueAt(targetCues, timeMs)?.text || "") : ""))
+        : "";
       if (usingAheadTranslation) {
         prefetchAheadTranslations(timeMs);
         if (sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end) {
@@ -1048,6 +1062,27 @@
     for (let index = targetStart; index <= targetEnd; index += 1) {
       targetWords[index]?.classList.add("is-aligned");
     }
+  }
+
+  function normalizeLookupWord(value) {
+    return String(value || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\p{L}\p{N}]/gu, "")
+      .toLocaleLowerCase();
+  }
+
+  function refineAlignedTargetWords(translatedText) {
+    if (!settings.wordAlignment || lookupContext?.sentence !== currentSourceText) return;
+    const translatedWords = (String(translatedText || "").match(/[\p{L}\p{N}]+/gu) || [])
+      .map(normalizeLookupWord)
+      .filter(Boolean);
+    if (!translatedWords.length) return;
+    const targetWords = Array.from(targetLine.querySelectorAll(".dualsub-word"));
+    const matching = targetWords.filter((word) => translatedWords.includes(normalizeLookupWord(word.textContent)));
+    if (!matching.length) return;
+    targetWords.forEach((word) => word.classList.remove("is-aligned"));
+    matching.forEach((word) => word.classList.add("is-aligned"));
   }
 
   function handleWordPointerOver(event) {
@@ -1119,6 +1154,7 @@
     replayButton.disabled = !video;
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
     selectionCard.classList.add("is-visible");
+    root.classList.add("dualsub-learning-open");
     positionSelectionCard(clientX, clientY);
 
     if (settings.pauseOnLookup && video && !video.paused) {
@@ -1137,6 +1173,7 @@
       resultNode.textContent = response?.ok ? response.translatedText : (response?.error || "Translation unavailable");
       if (response?.ok && lookupContext) {
         lookupContext.translatedText = response.translatedText;
+        refineAlignedTargetWords(response.translatedText);
         saveButton.disabled = false;
       }
     } catch (error) {
@@ -1147,7 +1184,17 @@
 
   async function handleLearningCardAction(event) {
     const button = event.target.closest?.("[data-action]");
-    if (!button || !selectionCard?.contains(button)) return;
+    if (!button) {
+      const word = event.target.closest?.(".dualsub-source .dualsub-word");
+      if (word && window.getSelection()?.isCollapsed) {
+        clearTimeout(hoverLookupTimer);
+        highlightAlignedWord(word);
+        const rect = word.getBoundingClientRect();
+        showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+      }
+      return;
+    }
+    if (!selectionCard?.contains(button)) return;
     event.preventDefault();
     const action = button.dataset.action;
     if (action === "close") {
@@ -1160,6 +1207,15 @@
       video.currentTime = Math.max(0, lookupContext.timeMs / 1000 - 0.35);
       await video.play().catch(() => {});
       pausedByLookup = false;
+      return;
+    }
+
+    if (action === "speak") {
+      window.speechSynthesis?.cancel();
+      const utterance = new SpeechSynthesisUtterance(lookupContext.sourceText);
+      utterance.lang = settings.sourceLanguage === "fr" ? "fr-FR" : settings.sourceLanguage;
+      utterance.rate = 0.88;
+      window.speechSynthesis?.speak(utterance);
       return;
     }
 
@@ -1212,8 +1268,22 @@
     clearTimeout(hoverLookupTimer);
     clearWordHighlights();
     selectionCard?.classList.remove("is-visible");
+    root?.classList.remove("dualsub-learning-open");
     if (pausedByLookup && video?.paused) video.play().catch(() => {});
     pausedByLookup = false;
+  }
+
+  function handleLearningKeydown(event) {
+    if (event.key === "Escape" && selectionCard?.classList.contains("is-visible")) {
+      hideSelectionCard();
+      return;
+    }
+    const word = event.target.closest?.(".dualsub-source .dualsub-word");
+    if (!word || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    highlightAlignedWord(word);
+    const rect = word.getBoundingClientRect();
+    showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
   }
 
   function handleNavigation() {
@@ -1301,6 +1371,17 @@
     else pending.reject(new Error(result.error || "Native player caption URL lookup failed."));
   });
 
+  window.addEventListener("dualsub:authenticated-caption-url", (event) => {
+    if (!usingNativeSource || !nativeSourceTrack) return;
+    try {
+      const result = JSON.parse(event.detail || "{}");
+      if (!languageMatches(result.language, nativeSourceTrack.languageCode || settings.sourceLanguage)) return;
+      recoverTracksFromNativePlayer(nativeSourceTrack);
+    } catch (_error) {
+      // The existing recovery loop remains active as a fallback.
+    }
+  });
+
   window.addEventListener("dualsub:native-translation-result", (event) => {
     try {
       const result = JSON.parse(event.detail || "{}");
@@ -1339,6 +1420,15 @@
 
   browser.runtime.onMessage.addListener((message) => {
     if (message?.type === "get-status") return Promise.resolve(status);
+    if (message?.type === "replay-current-cue") {
+      if (video) {
+        const startMs = currentSourceCue?.start ?? Math.max(0, (video.currentTime - 3) * 1000);
+        video.currentTime = Math.max(0, startMs / 1000 - 0.35);
+        video.play().catch(() => {});
+        return Promise.resolve({ ok: true });
+      }
+      return Promise.resolve({ ok: false });
+    }
     return undefined;
   });
 

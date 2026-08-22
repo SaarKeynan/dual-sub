@@ -47,6 +47,7 @@ function createWordCard(entry) {
   if (entry.sentenceTranslation) {
     context.appendChild(createTextElement("div", "sentence-translation", entry.sentenceTranslation));
   }
+  if (entry.notes) context.appendChild(createTextElement("div", "word-notes", entry.notes));
   const meta = document.createElement("div");
   meta.className = "meta";
   const level = createTextElement("span", "level", levelLabel(entry));
@@ -76,7 +77,11 @@ function createWordCard(entry) {
   remove.dataset.action = "remove";
   remove.className = "danger";
   remove.textContent = "Remove";
-  actions.append(review, remove);
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.dataset.action = "edit";
+  edit.textContent = "Edit";
+  actions.append(review, edit, remove);
   card.appendChild(actions);
   return card;
 }
@@ -85,7 +90,7 @@ function filteredEntries() {
   const query = element("search").value.trim().toLocaleLowerCase();
   const filter = element("filter").value;
   const result = entries.filter((entry) => {
-    const searchable = [entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation, entry.videoTitle]
+    const searchable = [entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation, entry.videoTitle, entry.notes]
       .join(" ").toLocaleLowerCase();
     if (query && !searchable.includes(query)) return false;
     if (filter === "due") return isDue(entry);
@@ -146,12 +151,27 @@ function renderReviewCard() {
   element("reviewTranslation").textContent = entry.translatedText;
   element("reviewSentenceTranslation").textContent = entry.sentenceTranslation || "";
   element("reviewAnswer").hidden = true;
+  element("typedAnswer").value = "";
+  element("typedAnswer").disabled = false;
+  element("answerFeedback").hidden = true;
+  element("answerFeedback").classList.remove("is-correct");
   element("revealAnswer").hidden = false;
   element("ratingButtons").hidden = true;
 }
 
 function revealAnswer() {
   answerVisible = true;
+  const entry = reviewQueue[reviewIndex];
+  const typed = element("typedAnswer").value.trim();
+  if (typed && entry) {
+    const normalize = (value) => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLocaleLowerCase();
+    const correct = normalize(typed) === normalize(entry.translatedText);
+    element("answerFeedback").textContent = correct ? "Exact match" : "Compare your answer with the saved translation below";
+    element("answerFeedback").classList.toggle("is-correct", correct);
+    element("answerFeedback").hidden = false;
+  }
+  element("typedAnswer").disabled = true;
   element("reviewAnswer").hidden = false;
   element("revealAnswer").hidden = true;
   element("ratingButtons").hidden = false;
@@ -171,7 +191,9 @@ function closeReview() {
 }
 
 function csvCell(value) {
-  return `"${String(value || "").replace(/"/g, '""')}"`;
+  let clean = String(value || "");
+  if (/^[=+\-@]/.test(clean)) clean = `'${clean}`;
+  return `"${clean.replace(/"/g, '""')}"`;
 }
 
 function downloadFile(name, type, content) {
@@ -184,9 +206,9 @@ function downloadFile(name, type, content) {
 }
 
 function exportCsv() {
-  const header = ["French", "English", "French sentence", "English sentence", "Video", "Timestamp seconds", "Encounters", "Level"];
+  const header = ["French", "English", "French sentence", "English sentence", "Notes", "Video", "Timestamp seconds", "Encounters", "Level"];
   const rows = entries.map((entry) => [
-    entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation,
+    entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation, entry.notes,
     entry.videoTitle, Math.floor((entry.timeMs || 0) / 1000), entry.encounters || 1, entry.stage || 0
   ]);
   downloadFile("dualsub-vocabulary.csv", "text/csv;charset=utf-8", [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n"));
@@ -203,12 +225,46 @@ element("exportCsv").addEventListener("click", exportCsv);
 element("exportJson").addEventListener("click", () => {
   downloadFile("dualsub-vocabulary-backup.json", "application/json", JSON.stringify({ version: 1, exportedAt: Date.now(), entries }, null, 2));
 });
+element("importJson").addEventListener("click", () => element("importFile").click());
+element("importFile").addEventListener("change", async () => {
+  const file = element("importFile").files?.[0];
+  element("importFile").value = "";
+  if (!file) return;
+  if (file.size > 2_000_000) {
+    alert("That backup is larger than the 2 MB import limit.");
+    return;
+  }
+  try {
+    const payload = JSON.parse(await file.text());
+    const importedEntries = Array.isArray(payload) ? payload : payload.entries;
+    const response = await browser.runtime.sendMessage({ type: "import-vocabulary", entries: importedEntries });
+    if (!response?.ok) throw new Error(response?.error || "Import failed.");
+    await loadEntries();
+    alert(`Vocabulary restored: ${response.imported} added, ${response.updated} updated.`);
+  } catch (error) {
+    alert(`Could not restore backup: ${error.message}`);
+  }
+});
 element("wordList").addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   const card = event.target.closest(".word-card");
   if (!button || !card) return;
-  if (button.dataset.action === "review") {
+    if (button.dataset.action === "review") {
     showReview([card.dataset.id]);
+  } else if (button.dataset.action === "edit") {
+    const entry = entries.find((item) => item.id === card.dataset.id);
+    if (!entry) return;
+    const translatedText = prompt(`Edit the English translation for “${entry.sourceText}”:`, entry.translatedText);
+    if (translatedText === null) return;
+    const notes = prompt("Add a personal note (usage, gender, mnemonic, etc.):", entry.notes || "");
+    if (notes === null) return;
+    const response = await browser.runtime.sendMessage({
+      type: "update-vocabulary",
+      id: entry.id,
+      updates: { translatedText, notes }
+    });
+    if (!response?.ok) alert(response?.error || "Could not update this word.");
+    await loadEntries();
   } else if (button.dataset.action === "remove") {
     const entry = entries.find((item) => item.id === card.dataset.id);
     if (!entry || !confirm(`Remove “${entry.sourceText}” from your vocabulary?`)) return;
@@ -218,6 +274,15 @@ element("wordList").addEventListener("click", async (event) => {
 });
 element("closeReview").addEventListener("click", closeReview);
 element("revealAnswer").addEventListener("click", revealAnswer);
+element("speakReview").addEventListener("click", () => {
+  const entry = reviewQueue[reviewIndex];
+  if (!entry || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(entry.sourceText);
+  utterance.lang = entry.sourceLanguage === "fr" ? "fr-FR" : (entry.sourceLanguage || "fr");
+  utterance.rate = 0.88;
+  window.speechSynthesis.speak(utterance);
+});
 element("ratingButtons").addEventListener("click", (event) => {
   const button = event.target.closest("[data-rating]");
   if (button) rateCurrent(button.dataset.rating);
@@ -225,7 +290,7 @@ element("ratingButtons").addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (element("reviewModal").hidden) return;
   if (event.key === "Escape") closeReview();
-  else if (event.code === "Space" && !answerVisible) { event.preventDefault(); revealAnswer(); }
+  else if ((event.code === "Space" && event.target !== element("typedAnswer") || event.key === "Enter") && !answerVisible) { event.preventDefault(); revealAnswer(); }
   else if (answerVisible && ["1", "2", "3"].includes(event.key)) {
     rateCurrent({ "1": "again", "2": "hard", "3": "good" }[event.key]);
   }

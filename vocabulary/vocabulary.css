@@ -66,6 +66,7 @@ button.primary {
   background: linear-gradient(145deg, #2563eb, #1d4ed8);
 }
 button.primary:hover { background: linear-gradient(145deg, #3b82f6, #2563eb); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
 button span { margin-left: 4px; font-variant-numeric: tabular-nums; }
 
 main { width: min(1120px, calc(100% - 44px)); margin: 30px auto 70px; }
@@ -115,6 +116,7 @@ main { width: min(1120px, calc(100% - 44px)); margin: 30px auto 70px; }
 .word-context { min-width: 0; }
 .sentence { overflow: hidden; color: #c4cfdf; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .sentence-translation { margin-top: 4px; color: #8191a8; font-size: 11px; }
+.word-notes { margin-top: 7px; color: #c4b5fd; font-size: 11px; font-style: italic; }
 .meta { display: flex; gap: 7px; margin-top: 7px; color: #65758d; font-size: 10px; }
 .meta a { color: #7db4ff; text-decoration: none; }
 .meta a:hover { text-decoration: underline; }
@@ -143,6 +145,20 @@ main { width: min(1120px, calc(100% - 44px)); margin: 30px auto 70px; }
 .eyebrow { margin-top: 24px; color: #60a5fa; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .review-card h2 { margin-top: 6px; font-size: 34px; }
 .review-sentence { margin-top: 14px; color: #aebbd0; line-height: 1.55; }
+.speak-button { margin-top: 14px; padding: 7px 10px; color: #bfdbfe; font-size: 12px; }
+.typed-answer {
+  width: 100%;
+  margin-top: 18px;
+  padding: 11px 12px;
+  border: 1px solid #344158;
+  border-radius: 9px;
+  outline: 0;
+  color: #eef2ff;
+  background: #0b1526;
+}
+.typed-answer:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(59, 130, 246, .13); }
+.answer-feedback { margin-top: 8px; color: #93c5fd; font-size: 12px; }
+.answer-feedback.is-correct { color: #86efac; }
 .review-answer { margin-top: 22px; padding-top: 2px; border-top: 1px solid rgba(148, 163, 184, .16); }
 .review-answer h3 { margin-top: 6px; color: #fde68a; font-size: 26px; }
 .review-answer p:last-child { margin-top: 10px; color: #93a4ba; }
@@ -160,4 +176,10 @@ kbd { margin-left: 5px; padding: 2px 5px; border: 1px solid rgba(148, 163, 184, 
   .summary div:nth-child(-n+2) { border-bottom: 1px solid rgba(148, 163, 184, .13); }
   .controls { align-items: stretch; flex-direction: column; }
   .word-card { grid-template-columns: 1fr; gap: 8px; }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .word-card { transition: none; }
+  .word-card:hover { transform: none; }
 }

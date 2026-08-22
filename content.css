@@ -76,10 +76,27 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   box-shadow: 0 0 0 0.1em rgba(254, 240, 138, 0.85);
 }
 
+.dualsub-source .dualsub-word:focus-visible {
+  outline: 0.1em solid #93c5fd;
+  outline-offset: 0.08em;
+}
+
 .dualsub-target .dualsub-word.is-aligned {
   color: #0f172a;
   background: #93c5fd;
   box-shadow: 0 0 0 0.1em rgba(147, 197, 253, 0.8);
+}
+
+.dualsub-root.dualsub-recall-mode .dualsub-target {
+  opacity: 0.16;
+  filter: blur(7px);
+  transition: opacity 150ms ease, filter 150ms ease;
+}
+
+.dualsub-root.dualsub-recall-mode .dualsub-source:hover + .dualsub-target,
+.dualsub-root.dualsub-recall-mode.dualsub-learning-open .dualsub-target {
+  opacity: 1;
+  filter: none;
 }
 
 @keyframes dualsub-line-in {
@@ -221,6 +238,17 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-card-actions button:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.dualsub-selection-card button:focus-visible,
+.dualsub-selection-card a:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dualsub-line.is-visible { animation: none; }
+  .dualsub-word, .dualsub-root.dualsub-recall-mode .dualsub-target { transition: none; }
 }
 
 .dualsub-card-link {

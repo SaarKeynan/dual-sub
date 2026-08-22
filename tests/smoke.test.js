@@ -96,10 +96,21 @@ async function testVocabularyStorage() {
   assert(first.ok && first.added);
   const duplicate = await messageListener({ type: "add-vocabulary", entry: { ...entry, sentence: "Bonjour !" } });
   assert(duplicate.ok && !duplicate.added && duplicate.entry.encounters === 2);
+  const edited = await messageListener({
+    type: "update-vocabulary",
+    id: first.entry.id,
+    updates: { translatedText: "hi", notes: "Informal greeting" }
+  });
+  assert(edited.ok && edited.entry.translatedText === "hi" && edited.entry.notes === "Informal greeting");
   const loaded = await messageListener({ type: "get-vocabulary" });
   assert.strictEqual(loaded.entries.length, 1);
   const reviewed = await messageListener({ type: "review-vocabulary", id: first.entry.id, rating: "good" });
   assert(reviewed.ok && reviewed.entry.stage === 1 && reviewed.entry.reviews === 1);
+  const imported = await messageListener({ type: "import-vocabulary", entries: [
+    { ...entry, stage: 4, reviews: 8 },
+    { ...entry, sourceText: "merci", translatedText: "thank you" }
+  ] });
+  assert(imported.ok && imported.imported === 1 && imported.updated === 1 && imported.total === 2);
   const removed = await messageListener({ type: "remove-vocabulary", id: first.entry.id });
   assert(removed.ok && removed.removed);
 }

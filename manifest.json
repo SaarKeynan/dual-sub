@@ -32,6 +32,18 @@
         "default": "Alt+Shift+D"
       },
       "description": "Toggle both subtitle tracks"
+    },
+    "replay-current-caption": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Replay the current French subtitle line"
+    },
+    "open-vocabulary": {
+      "suggested_key": {
+        "default": "Alt+Shift+V"
+      },
+      "description": "Open the DualSub vocabulary workspace"
     }
   },
   "content_scripts": [

@@ -155,28 +155,54 @@
     }));
   });
 
+  function findAuthenticatedCaptionUrl(language) {
+    const wantedLanguage = String(language || "fr").toLowerCase();
+    const entries = performance.getEntriesByType("resource");
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const rawUrl = entries[index]?.name;
+      if (!rawUrl || !rawUrl.includes("/api/timedtext")) continue;
+      const url = new URL(rawUrl);
+      const trackLanguage = String(url.searchParams.get("lang") || "").toLowerCase();
+      if (
+        url.pathname === "/api/timedtext" &&
+        (trackLanguage === wantedLanguage || trackLanguage.startsWith(`${wantedLanguage}-`)) &&
+        url.searchParams.get("pot")
+      ) return url.toString();
+    }
+    return "";
+  }
+
+  let lastAuthenticatedCaptionUrl = "";
+  if (typeof PerformanceObserver === "function") {
+    const captionObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const rawUrl = entry?.name;
+        if (!rawUrl || rawUrl === lastAuthenticatedCaptionUrl || !rawUrl.includes("/api/timedtext")) continue;
+        try {
+          const url = new URL(rawUrl);
+          if (url.pathname !== "/api/timedtext" || !url.searchParams.get("pot")) continue;
+          lastAuthenticatedCaptionUrl = rawUrl;
+          window.dispatchEvent(new CustomEvent("dualsub:authenticated-caption-url", {
+            detail: JSON.stringify({ url: rawUrl, language: url.searchParams.get("lang") || "" })
+          }));
+        } catch (_error) {
+          // Ignore unrelated or malformed resource timing entries.
+        }
+      }
+    });
+    try {
+      captionObserver.observe({ type: "resource", buffered: true });
+    } catch (_error) {
+      captionObserver.observe({ entryTypes: ["resource"] });
+    }
+  }
+
   window.addEventListener("dualsub:request-player-caption-url", (event) => {
     let request = {};
     let result;
     try {
       request = JSON.parse(event.detail || "{}");
-      const language = String(request.language || "fr").toLowerCase();
-      const entries = performance.getEntriesByType("resource");
-      let matchedUrl = "";
-      for (let index = entries.length - 1; index >= 0; index -= 1) {
-        const rawUrl = entries[index]?.name;
-        if (!rawUrl || !rawUrl.includes("/api/timedtext")) continue;
-        const url = new URL(rawUrl);
-        const trackLanguage = String(url.searchParams.get("lang") || "").toLowerCase();
-        if (
-          url.pathname === "/api/timedtext" &&
-          (trackLanguage === language || trackLanguage.startsWith(`${language}-`)) &&
-          url.searchParams.get("pot")
-        ) {
-          matchedUrl = url.toString();
-          break;
-        }
-      }
+      const matchedUrl = findAuthenticatedCaptionUrl(request.language);
       result = { id: request.id, ok: true, url: matchedUrl };
     } catch (error) {
       result = { id: request.id, ok: false, error: error.message };
