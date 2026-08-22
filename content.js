@@ -94,6 +94,7 @@
   let aheadTranslationActive = 0;
   let aheadTranslationGeneration = 0;
   let lastAheadPrefetchAt = 0;
+  let aheadTranslationFocusIndex = -1;
   let hoverLookupTimer;
   let hoverPrefetchTimer;
   let lookupSequence = 0;
@@ -175,10 +176,10 @@
       root.className = "dualsub-root";
       root.innerHTML = `
         <div class="dualsub-stack">
+          <div class="dualsub-status" role="status" aria-live="polite"></div>
           <div class="dualsub-line dualsub-source"><span class="dualsub-line-text"></span></div>
           <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span></div>
         </div>
-        <div class="dualsub-status"></div>
         <div class="dualsub-selection-card" role="dialog" aria-live="polite" aria-label="Subtitle lookup">
           <div class="dualsub-card-heading">
             <div class="dualsub-card-label">French lookup</div>
@@ -240,6 +241,7 @@
     if (!statusNode) return;
     clearTimeout(statusTimer);
     statusNode.textContent = message;
+    statusNode.dataset.state = state;
     statusNode.classList.toggle("is-visible", Boolean(message) && settings.enabled);
     if (visibleForMs) {
       statusTimer = setTimeout(() => statusNode?.classList.remove("is-visible"), visibleForMs);
@@ -404,17 +406,19 @@
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
-  async function recoverTracksFromNativePlayer(sourceTrack) {
+  async function recoverTracksFromNativePlayer(sourceTrack, initialUrl = "") {
     const recoveryGeneration = ++captionRecoveryGeneration;
     for (let attempt = 0; attempt < 20; attempt += 1) {
       if (!usingNativeSource || recoveryGeneration !== captionRecoveryGeneration) return;
-      await waitFor(attempt ? 500 : 150);
 
-      let authenticatedUrl = "";
-      try {
-        authenticatedUrl = await requestPlayerCaptionUrl(sourceTrack.languageCode || settings.sourceLanguage);
-      } catch (_error) {
-        continue;
+      let authenticatedUrl = attempt === 0 ? initialUrl : "";
+      if (!authenticatedUrl) {
+        await waitFor(attempt ? 500 : 100);
+        try {
+          authenticatedUrl = await requestPlayerCaptionUrl(sourceTrack.languageCode || settings.sourceLanguage);
+        } catch (_error) {
+          continue;
+        }
       }
       if (!authenticatedUrl) continue;
 
@@ -803,21 +807,30 @@
       if (generation !== loadGeneration) return;
 
       if (sourceResult.status === "rejected") {
+        // Start the live/native path immediately instead of waiting for the
+        // transcript-panel request to finish. Besides giving the learner a
+        // usable fallback sooner, this prompts YouTube to issue the
+        // authenticated caption request needed for complete timed tracks.
+        startNativeSourceCapture(sourceTrack);
+        setStatus(
+          "loading",
+          "Live captions active · loading complete timed tracks for better synchronization…"
+        );
+        status = {
+          state: "loading",
+          message: "Live fallback active · improving synchronization in the background"
+        };
+        let transcriptCues;
         try {
-          sourceCues = await requestFullTranscript();
+          transcriptCues = await requestFullTranscript();
         } catch (_transcriptError) {
-          startNativeSourceCapture(sourceTrack);
-          setStatus(
-            "loading",
-            "Using live French captions; displayed cues will be translated through the selected engine…"
-          );
-          status = {
-            state: "loading",
-            message: "Live fallback · displayed French cues are sent for translation"
-          };
+          // Native recovery continues in parallel and will upgrade the timing
+          // as soon as YouTube exposes its authenticated caption URL.
           return;
         }
-        if (generation !== loadGeneration) return;
+        if (generation !== loadGeneration || !usingNativeSource) return;
+        stopNativeCapture(true);
+        sourceCues = transcriptCues;
         if (targetResult.status === "fulfilled") {
           targetCues = targetResult.value.cues;
           refreshCueAlignment();
@@ -928,6 +941,23 @@
     aheadTranslationFailed.clear();
     aheadTranslationQueue.length = 0;
     aheadTranslationActive = 0;
+    aheadTranslationFocusIndex = -1;
+  }
+
+  function translationPrefetchOrder(cues, timeMs, leadMs = 60000, backfillMs = 8000) {
+    if (!cues.length) return [];
+    let focusIndex = Math.max(0, cueIndexAt(cues, timeMs));
+    if (timeMs >= cues[focusIndex].end && cues[focusIndex + 1]) focusIndex += 1;
+    const firstIndex = Math.max(0, cueIndexAt(cues, Math.max(0, timeMs - backfillMs)));
+    let lastIndex = focusIndex;
+    while (lastIndex + 1 < cues.length && cues[lastIndex + 1].start <= timeMs + leadMs) {
+      lastIndex += 1;
+    }
+
+    const order = [focusIndex];
+    for (let index = firstIndex; index < focusIndex; index += 1) order.push(index);
+    for (let index = focusIndex + 1; index <= lastIndex; index += 1) order.push(index);
+    return order;
   }
 
   function startAheadTranslation() {
@@ -937,15 +967,15 @@
     lastAheadPrefetchAt = performance.now();
     const timeMs = (video?.currentTime || 0) * 1000;
     prefetchAheadTranslations(timeMs, 90000);
-    setStatus("loading", "Transcript loaded; translating upcoming lines in advance…");
-    status = { state: "loading", message: "Full transcript loaded · pre-translating upcoming lines" };
+    setStatus("loading", "Timed French loaded · preparing English around the current position…");
+    status = { state: "loading", message: "Timed French ready · prioritizing English near playback" };
   }
 
   function prefetchAheadTranslations(timeMs, leadMs = 60000) {
     if (!usingAheadTranslation || !sourceCues.length) return;
-    const firstIndex = cueIndexAt(sourceCues, Math.max(0, timeMs - 1000));
-    for (let index = firstIndex; index < sourceCues.length; index += 1) {
-      if (sourceCues[index].start > timeMs + leadMs) break;
+    const priorityOrder = translationPrefetchOrder(sourceCues, timeMs, leadMs);
+    aheadTranslationFocusIndex = priorityOrder[0] ?? -1;
+    for (const index of priorityOrder) {
       if (
         aheadTranslations.has(index) ||
         aheadTranslationPending.has(index) ||
@@ -953,6 +983,18 @@
       ) continue;
       aheadTranslationPending.add(index);
       aheadTranslationQueue.push(index);
+    }
+    const priority = new Map(priorityOrder.map((index, rank) => [index, rank]));
+    aheadTranslationQueue.sort((left, right) =>
+      (priority.get(left) ?? Number.MAX_SAFE_INTEGER) - (priority.get(right) ?? Number.MAX_SAFE_INTEGER)
+    );
+    if (
+      aheadTranslationFocusIndex >= 0 &&
+      !aheadTranslations.has(aheadTranslationFocusIndex) &&
+      status.state === "ready"
+    ) {
+      setStatus("loading", "Preparing English around the current position…");
+      status = { state: "loading", message: "Preparing English near playback" };
     }
     pumpAheadTranslationQueue();
   }
@@ -975,9 +1017,9 @@
       }).then((response) => {
         if (usingAheadTranslation && generation === aheadTranslationGeneration && response?.ok) {
           aheadTranslations.set(index, response.translatedText);
-          if (status.state !== "ready" && aheadTranslations.size >= 2) {
-            setStatus("ready", "French + English ready (prefetched translation).", 2200);
-            status = { state: "ready", message: "French + English active · translations prefetched" };
+          if (index === aheadTranslationFocusIndex && status.state !== "ready") {
+            setStatus("ready", "English ready here · continuing to buffer ahead.", 2200);
+            status = { state: "ready", message: "French + English active · buffering ahead" };
           }
         } else if (generation === aheadTranslationGeneration) {
           aheadTranslationFailed.add(index);
@@ -1732,7 +1774,7 @@
     try {
       const result = JSON.parse(event.detail || "{}");
       if (!languageMatches(result.language, nativeSourceTrack.languageCode || settings.sourceLanguage)) return;
-      recoverTracksFromNativePlayer(nativeSourceTrack);
+      recoverTracksFromNativePlayer(nativeSourceTrack, result.url || "");
     } catch (_error) {
       // The existing recovery loop remains active as a fallback.
     }

@@ -17,7 +17,7 @@ async function testCaptionProcessing() {
   const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
   const helpers = extract(source, "  function joinCaptionParts", "  function requestCaptionFromPage");
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
-  const cueTools = extract(source, "  function cueAt", "  function stopAheadTranslation");
+  const cueTools = extract(source, "  function cueAt", "  function startAheadTranslation");
   const wordMatching = extract(source, "  function normalizeLookupWord", "  function handleWordPointerOver");
   const nativeMessageFilter = extract(source, "  function isNativeCaptionSystemMessage", "  function readNativeCaptionText");
   const context = { console };
@@ -65,8 +65,24 @@ async function testCaptionProcessing() {
   ];
   assert.strictEqual(context.cueAt(overlaps, 3500).text, "new");
   assert.strictEqual(context.cueIndexAt(overlaps, 3500), 1);
+  const prefetchCues = [
+    { start: 0, end: 2000 },
+    { start: 2500, end: 4500 },
+    { start: 5000, end: 7000 },
+    { start: 7500, end: 9500 },
+    { start: 10000, end: 12000 },
+    { start: 12500, end: 14500 }
+  ];
+  assert.deepStrictEqual(
+    Array.from(context.translationPrefetchOrder(prefetchCues, 7800, 6000, 5000)),
+    [3, 1, 2, 4, 5],
+    "Translate the current cue first, then recent context and upcoming cues"
+  );
+  assert.strictEqual(context.translationPrefetchOrder(prefetchCues, 7200, 1000, 1000)[0], 3);
   assert(source.includes("video.currentTime * 1000 + Number(settings.captionOffsetMs || 0)"));
   assert(!source.includes("Math.max(0, Number(settings.subtitleLeadMs)"));
+  assert(source.includes('recoverTracksFromNativePlayer(nativeSourceTrack, result.url || "")'));
+  assert(source.indexOf("startNativeSourceCapture(sourceTrack);") < source.indexOf("transcriptCues = await requestFullTranscript();"));
 
   vm.runInContext(`
     sourceCues = [

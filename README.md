@@ -15,8 +15,8 @@ interactive study surface.
 - Faster loading through parallel page/extension caption requests, concurrent
   format fallbacks, cached caption payloads, and an event-driven upgrade when
   YouTube exposes an authenticated auto-caption request.
-- Adjustable subtitle lookahead displays complete downloaded tracks slightly
-  early to compensate for player and translation latency.
+- Translation is buffered ahead without shifting subtitle display time; a
+  neutral synchronization control can correct unusually early or late videos.
 - Whole-line live captions by default, with an optional immediate word-by-word
   mode. Whole-line mode waits for YouTube's changing cue to settle and for its
   English translation, then reveals both languages together.
@@ -27,7 +27,8 @@ interactive study surface.
   live cue translation is only the final fallback.
 - For videos whose auto-captions require YouTube proof-of-origin tokens, DualSub
   observes the native player's authenticated caption request and upgrades from
-  live mode to complete synchronized tracks automatically.
+  live mode to complete synchronized tracks automatically. A compact loading
+  badge makes this temporary live phase explicit.
 - YouTube's explicit append events and strongly identified transient roll-up
   fragments are folded into the full line; independent short captions keep
   their own boundaries, and overlapping cues prefer the newest line.

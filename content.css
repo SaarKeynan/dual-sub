@@ -104,22 +104,36 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 
 .dualsub-status {
   display: none;
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
   max-width: min(560px, 86%);
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 5px 10px;
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  border-radius: 999px;
   color: #f8fafc;
-  background: rgba(15, 23, 42, 0.92);
-  font: 600 13px/1.35 system-ui, sans-serif;
+  background: rgba(15, 23, 42, 0.88);
+  font: 600 12px/1.3 system-ui, sans-serif;
   text-align: center;
   pointer-events: none;
 }
 
 .dualsub-status.is-visible {
   display: block;
+}
+
+.dualsub-status[data-state="loading"]::before {
+  content: "";
+  display: inline-block;
+  width: 0.65em;
+  height: 0.65em;
+  margin-right: 0.5em;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fde68a;
+  border-radius: 50%;
+  vertical-align: -0.08em;
+  animation: dualsub-loading-spin 750ms linear infinite;
+}
+
+@keyframes dualsub-loading-spin {
+  to { transform: rotate(360deg); }
 }
 
 .dualsub-selection-card {
@@ -285,6 +299,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 @media (prefers-reduced-motion: reduce) {
   .dualsub-line.is-visible { animation: none; }
   .dualsub-word { transition: none; }
+  .dualsub-status[data-state="loading"]::before { animation: none; }
 }
 
 .dualsub-card-link {

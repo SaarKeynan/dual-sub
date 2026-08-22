@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2 — visible and prioritized loading
+
+- Added a compact persistent loading badge above the subtitle rows while live
+  fallback is active and complete timed tracks are still being acquired.
+- Started native authenticated-track recovery concurrently with the transcript
+  request instead of waiting for transcript failure first.
+- Consumed YouTube's observed authenticated caption URL immediately rather than
+  waiting for another polling interval.
+- Prioritized English translation at the current playback position, then an
+  eight-second context buffer behind it, followed by upcoming captions.
+- Reprioritized the translation queue after seeking and surfaced when English
+  near the new playback position is still being prepared.
+
 ## 0.5.1 — caption boundary and synchronization fix
 
 - Stopped treating arbitrary short overlapping captions as late words from the
