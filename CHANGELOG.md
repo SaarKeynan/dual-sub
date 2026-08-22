@@ -22,6 +22,7 @@
 - `6145da4` — faster caption loading and cue alignment foundation.
 - `49d00f0` — interactive lookup and vocabulary review milestone.
 - `d5ca059` — deeper study workflow, accessibility, backup, and recovery.
+- `6f3075d` — advanced study modes, diagnostics, performance polish, and 0.3.0 release documentation.
 
 ## 0.2.3
 
