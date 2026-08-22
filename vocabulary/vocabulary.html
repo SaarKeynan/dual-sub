@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DualSub Vocabulary</title>
+    <link rel="stylesheet" href="vocabulary.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">DS</div>
+        <div>
+          <h1>Vocabulary</h1>
+          <p>Words collected while watching</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="reviewButton" class="primary" type="button">Review due <span id="dueCount">0</span></button>
+        <button id="exportCsv" type="button">Export CSV</button>
+        <button id="exportJson" type="button">Backup JSON</button>
+        <button id="importJson" type="button">Restore backup</button>
+        <input id="importFile" type="file" accept="application/json,.json" hidden>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary" aria-label="Vocabulary summary">
+        <div><strong id="totalCount">0</strong><span>Total words</span></div>
+        <div><strong id="learningCount">0</strong><span>Learning</span></div>
+        <div><strong id="masteredCount">0</strong><span>Well learned</span></div>
+        <div><strong id="sourceCount">0</strong><span>Videos</span></div>
+      </section>
+
+      <section class="controls" aria-label="Vocabulary filters">
+        <label class="search">
+          <span aria-hidden="true">⌕</span>
+          <input id="search" type="search" placeholder="Search French, English, or context…" autocomplete="off">
+        </label>
+        <select id="filter" aria-label="Filter vocabulary">
+          <option value="all">All words</option>
+          <option value="due">Due for review</option>
+          <option value="learning">Still learning</option>
+          <option value="mastered">Well learned</option>
+        </select>
+        <select id="videoFilter" aria-label="Filter by source video">
+          <option value="all">All videos</option>
+        </select>
+        <select id="sort" aria-label="Sort vocabulary">
+          <option value="newest">Newest first</option>
+          <option value="alphabetical">A–Z</option>
+          <option value="due">Review priority</option>
+          <option value="encounters">Most encountered</option>
+        </select>
+      </section>
+
+      <div id="emptyState" class="empty" hidden>
+        <div class="empty-icon">Aa</div>
+        <h2>No matching words</h2>
+        <p>Hover a French subtitle in YouTube, then choose <strong>+ Vocabulary</strong>.</p>
+      </div>
+      <section id="wordList" class="word-list" aria-live="polite"></section>
+    </main>
+
+    <div id="reviewModal" class="modal" hidden>
+      <div class="review-card" role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+        <div class="review-topline">
+          <span id="reviewProgress">1 / 1</span>
+          <button id="closeReview" class="icon-button" type="button" aria-label="Close review">×</button>
+        </div>
+        <p class="eyebrow">French</p>
+        <h2 id="reviewTitle"></h2>
+        <p id="reviewSentence" class="review-sentence"></p>
+        <button id="speakReview" class="speak-button" type="button">Listen in French</button>
+        <input id="typedAnswer" class="typed-answer" type="text" placeholder="Type the English meaning (optional)" autocomplete="off">
+        <p id="answerFeedback" class="answer-feedback" hidden></p>
+        <div id="reviewAnswer" class="review-answer" hidden>
+          <p class="eyebrow">English</p>
+          <h3 id="reviewTranslation"></h3>
+          <p id="reviewSentenceTranslation"></p>
+        </div>
+        <button id="revealAnswer" class="primary reveal" type="button">Reveal answer <kbd>Space</kbd></button>
+        <div id="ratingButtons" class="ratings" hidden>
+          <button type="button" data-rating="again">Again <kbd>1</kbd></button>
+          <button type="button" data-rating="hard">Hard <kbd>2</kbd></button>
+          <button class="primary" type="button" data-rating="good">Got it <kbd>3</kbd></button>
+        </div>
+      </div>
+    </div>
+
+    <script src="vocabulary.js"></script>
+  </body>
+</html>

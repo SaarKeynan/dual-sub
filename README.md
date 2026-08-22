@@ -44,15 +44,15 @@ interactive study surface.
 - French conjugations are analyzed locally with ablaut's reverse morphology,
   then checked against a 7,820-infinitive Lefff derivative. The lookup card
   shows a compact base verb, form, person, and generated example, while keeping
-  alternatives for genuinely ambiguous forms such as `suis` (`Ãªtre` / `suivre`).
+  alternatives for genuinely ambiguous forms such as `suis` (`être` / `suivre`).
 - An offline Lexique 3.83 derivative identifies grammatical word groups for
   125,132 French forms. Lookup cards show a color-coded noun, verb, adjective,
   adverb, pronoun, determiner, preposition, conjunction, or interjection label;
   the same colors can optionally be applied to every French subtitle word.
-  Every group color is editable under Appearance â†’ French, while unclassified
+  Every group color is editable under Appearance → French, while unclassified
   words default to white.
 - Determiner context suppresses misleading verb-first readings for nominal
-  forms; for example, `une psychÃ©e` favors the attested noun `psychÃ©` while
+  forms; for example, `une psychée` favors the attested noun `psyché` while
   retaining `psycher` as an explicitly secondary possible verb reading.
 - Select any French phrase or sentence for lookup; lookup cards include the
   complete bilingual line, pronunciation, sentence translation, replay, and
@@ -60,7 +60,7 @@ interactive study surface.
   the subtitles, beside the pointer, or in the upper-right; they close after
   the pointer leaves unless pinned and resume playback if lookup paused it.
 - Lookup cards can copy the bilingual pair, step to the previous or next French
-  word, build a multi-word phrase by choosing its final word, replay at 0.75Ã—
+  word, build a multi-word phrase by choosing its final word, replay at 0.75×
   speed, and loop the current caption for shadowing. Drag-selection also looks
   up arbitrary French phrases.
 - Pronunciation uses a selectable French system voice, preferring French
@@ -85,7 +85,7 @@ interactive study surface.
 - `Alt+Shift+R`: replay the current French subtitle line.
 - `Alt+Shift+V`: open the vocabulary workspace.
 
-Firefox shortcuts can be reassigned from **Add-ons and themes â†’ Extensions â†’
+Firefox shortcuts can be reassigned from **Add-ons and themes → Extensions →
 Manage Extension Shortcuts**.
 
 ## Translation cost and privacy
@@ -114,7 +114,7 @@ player response or timed-text format, the caption loader may need an update.
 ## Load temporarily in Firefox
 
 1. Open `about:debugging#/runtime/this-firefox`.
-2. Select **Load Temporary Add-onâ€¦**.
+2. Select **Load Temporary Add-on…**.
 3. Choose this project's `manifest.json`.
 4. Open or reload a YouTube video that has French captions.
 5. Open the toolbar button to adjust each caption row.
@@ -154,4 +154,3 @@ node --check vocabulary/vocabulary.js
 
 The smoke suite also initializes the packaged WebAssembly engine and checks
 irregular, regular, prefixed, and ambiguous French reverse analyses.
-

@@ -1,0 +1,87 @@
+{
+  "manifest_version": 3,
+  "name": "DualSub for YouTube",
+  "version": "0.6.8",
+  "description": "Learn French on YouTube with synchronized bilingual subtitles, instant lookup, vocabulary, and review.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "https://api.mymemory.translated.net/*",
+    "https://translate.googleapis.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "action": {
+    "default_title": "DualSub settings",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/dualsub.svg"
+  },
+  "icons": {
+    "48": "icons/dualsub.svg",
+    "96": "icons/dualsub.svg"
+  },
+  "commands": {
+    "toggle-dualsub": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Toggle both subtitle tracks"
+    },
+    "replay-current-caption": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Replay the current French subtitle line"
+    },
+    "open-vocabulary": {
+      "suggested_key": {
+        "default": "Alt+Shift+V"
+      },
+      "description": "Open the DualSub vocabulary workspace"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.youtube.com/*"
+      ],
+      "js": [
+        "vendor/ablaut/ablaut.js",
+        "language/french.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "page-bridge.js",
+        "vendor/ablaut/ablaut_bg.wasm",
+        "vendor/lefff/french-verb-lemmas.json",
+        "vendor/lexique/french-word-groups.json"
+      ],
+      "matches": [
+        "*://www.youtube.com/*"
+      ]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "dualsub@local",
+      "strict_min_version": "109.0"
+    }
+  }
+}
