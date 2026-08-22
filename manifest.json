@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DualSub for YouTube",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Learn French on YouTube with synchronized bilingual subtitles, instant lookup, vocabulary, and review.",
   "permissions": [
     "activeTab",
@@ -52,6 +52,7 @@
         "*://www.youtube.com/*"
       ],
       "js": [
+        "language/french.js",
         "content.js"
       ],
       "css": [

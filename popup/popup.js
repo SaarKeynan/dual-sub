@@ -16,6 +16,18 @@ function element(id) {
   return document.getElementById(id);
 }
 
+function activatePanel(name) {
+  const available = Array.from(document.querySelectorAll("[data-panel-content]"));
+  const selected = available.some((panel) => panel.dataset.panelContent === name) ? name : "general";
+  document.querySelectorAll(".tab-button").forEach((button) => {
+    const active = button.dataset.panel === selected;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  available.forEach((panel) => { panel.hidden = panel.dataset.panelContent !== selected; });
+  sessionStorage.setItem("dualsub-settings-panel", selected);
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -164,6 +176,10 @@ async function loadVocabularyCount() {
 }
 
 async function initialize() {
+  document.querySelectorAll(".tab-button").forEach((button) => {
+    button.addEventListener("click", () => activatePanel(button.dataset.panel));
+  });
+  activatePanel(sessionStorage.getItem("dualsub-settings-panel") || "general");
   const defaultResponse = await browser.runtime.sendMessage({ type: "get-default-settings" });
   defaults = defaultResponse.settings;
   const stored = await browser.storage.sync.get("settings");

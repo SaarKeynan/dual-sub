@@ -19,9 +19,10 @@ async function testCaptionProcessing() {
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
   const cueTools = extract(source, "  function cueAt", "  function stopAheadTranslation");
   const wordMatching = extract(source, "  function normalizeLookupWord", "  function handleWordPointerOver");
+  const nativeMessageFilter = extract(source, "  function isNativeCaptionSystemMessage", "  function readNativeCaptionText");
   const context = { console };
   vm.createContext(context);
-  vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}`, context);
+  vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${nativeMessageFilter}`, context);
 
   const payload = JSON.stringify({ events: [
     { tStartMs: 793000, dDurationMs: 3000, segs: [{ utf8: "alors là on fait un micro trottoir sur" }] },
@@ -55,6 +56,36 @@ async function testCaptionProcessing() {
   assert(context.wordSimilarity("do", "doing") >= 0.78, "Inflected verbs should match");
   assert(context.wordSimilarity("thing", "things") >= 0.78, "Simple plurals should match");
   assert(context.wordSimilarity("chat", "cat") < 0.78, "Different words should not be selected");
+  assert(context.isNativeCaptionSystemMessage("French (auto-translated) Click for settings", 500));
+  assert(context.isNativeCaptionSystemMessage("French (auto-generated)", 2000));
+  assert(!context.isNativeCaptionSystemMessage("French (auto-generated)", 12000));
+  assert(!context.isNativeCaptionSystemMessage("On parle des param\u00e8tres du t\u00e9l\u00e9phone", 1000));
+}
+
+async function testFrenchConjugation() {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
+  const analyze = context.DualSubFrench.analyzeWord;
+  const suis = analyze("suis");
+  assert.strictEqual(suis.lemma, "\u00eatre");
+  assert.strictEqual(suis.tense, "present");
+  assert.strictEqual(suis.person, "1st");
+  assert.strictEqual(suis.number, "singular");
+  const feraient = analyze("feraient");
+  assert.strictEqual(feraient.lemma, "faire");
+  assert.strictEqual(feraient.mood, "conditional");
+  assert.strictEqual(feraient.tense, "present");
+  const parlerai = analyze("parlerai");
+  assert.strictEqual(parlerai.lemma, "parler");
+  assert.strictEqual(parlerai.tense, "future");
+  assert.strictEqual(analyze("parl\u00e9").lemma, "parler");
+  assert.strictEqual(analyze("parlons").lemma, "parler");
+  assert.strictEqual(analyze("finissons").lemma, "finir");
+  assert.strictEqual(analyze("mangeons").lemma, "manger");
+  assert(analyze("fait").alternatives.length, "fait should retain its participle alternative");
+  assert.strictEqual(analyze("TikTok"), null);
+  assert.strictEqual(analyze("maintenant"), null, "ordinary adverbs must not be guessed as verbs");
 }
 
 async function testVocabularyStorage() {
@@ -139,6 +170,7 @@ async function testVocabularyStorage() {
 
 Promise.resolve()
   .then(testCaptionProcessing)
+  .then(testFrenchConjugation)
   .then(testVocabularyStorage)
   .then(() => console.log("DualSub smoke tests passed"))
   .catch((error) => {

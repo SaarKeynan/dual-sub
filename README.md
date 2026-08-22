@@ -34,11 +34,16 @@ interactive study surface.
 - Independent font size, color, background, opacity, font, weight, and italic
   controls for each language, with live previews in the popup.
 - Hover or click a French word for an instant translation. A corresponding
-  English word is highlighted only when an exact or strong inflection match is
-  found; uncertain matches are intentionally left unmarked.
+  English word is highlighted only when the translated surface form or inferred
+  infinitive provides an exact or strong inflection match; uncertain matches are
+  intentionally left unmarked.
+- Common French conjugations are analyzed locally. The lookup card shows the
+  likely infinitive, tense, person, and number, including alternatives for
+  ambiguous forms such as `fait`.
 - Select any French phrase or sentence for lookup; lookup cards include the
   complete bilingual line, pronunciation, sentence translation, replay, and a
-  Google Translate link.
+  Google Translate link. Cards are docked above the captions and close after the
+  pointer leaves, resuming playback if the lookup paused it.
 - Optional active-recall mode hides English until the French row is hovered.
 - Optional auto-pause mode stops at each new line for intensive listening.
 - Save words with their translation, complete sentence, video, and timestamp.
@@ -48,6 +53,8 @@ interactive study surface.
 - In-flight translations are deduplicated and results are cached for the
   current browser session to reduce latency and free-service usage.
 - Fullscreen support and automatic handling of YouTube's single-page navigation.
+- A compact categorized settings menu separates General, French, English,
+  Learning, and Services controls without page-level scrollbars.
 
 ## Shortcuts
 
@@ -96,7 +103,7 @@ package and sign the extension through Mozilla Add-ons.
 ## Development checks
 
 The extension uses plain JavaScript and has no build step or runtime
-dependencies. Development happens on `feature/learning-workspace`; `master`
+dependencies. The current work is staged on `feature/conjugation-ui`; `master`
 preserves the 0.2.3 baseline. Useful recovery points are listed in
 [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -112,6 +119,7 @@ Check individual script syntax:
 ```powershell
 node --check background.js
 node --check content.js
+node --check language/french.js
 node --check page-bridge.js
 node --check popup/popup.js
 node --check vocabulary/vocabulary.js

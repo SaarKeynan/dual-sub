@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — conjugation-aware learning UI
+
+- Added local French verb-form analysis for common irregular and regular verbs,
+  showing infinitive, tense, person, number, and ambiguous alternatives.
+- Improved French-to-English highlighting with evidence from both the spoken
+  form and inferred infinitive; uncertain matches are still left unmarked.
+- Docked lookup cards away from the subtitle rows and automatically dismiss them
+  after the pointer leaves, resuming playback when DualSub paused it.
+- Filtered YouTube's startup caption labels such as “French (auto-translated)”
+  and “Click for settings” from the learning subtitles.
+- Reorganized the popup into General, French, English, Learning, and Services
+  categories with a fixed, scrollbar-free layout.
+
 ## 0.3.2 — subtitle latency fix
 
 - Complete YouTube tracks render 500 ms ahead by default, adjustable from 0 to
