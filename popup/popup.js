@@ -3,7 +3,7 @@ let defaults;
 let saveTimer;
 
 const ids = [
-  "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
+  "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation", "preloadVideoWords",
   "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
   "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "pronunciationVoiceURI", "pronunciationRate",
@@ -79,6 +79,7 @@ function setFormValues() {
   element("showTranslation").checked = settings.showTranslation;
   element("hideNativeCaptions").checked = settings.hideNativeCaptions;
   element("wholeLiveLines").checked = settings.wholeLiveLines;
+  element("preloadVideoWords").checked = settings.preloadVideoWords;
   element("selectionTranslation").checked = settings.selectionTranslation;
   element("hoverLookup").checked = settings.hoverLookup;
   element("wordAlignment").checked = settings.wordAlignment;
@@ -119,6 +120,7 @@ function readFormValues() {
   settings.showTranslation = element("showTranslation").checked;
   settings.hideNativeCaptions = element("hideNativeCaptions").checked;
   settings.wholeLiveLines = element("wholeLiveLines").checked;
+  settings.preloadVideoWords = element("preloadVideoWords").checked;
   settings.selectionTranslation = element("selectionTranslation").checked;
   settings.hoverLookup = element("hoverLookup").checked;
   settings.wordAlignment = element("wordAlignment").checked;
@@ -217,17 +219,24 @@ function loadPronunciationVoices() {
   });
   if (preferred && voices.some((voice) => voice.voiceURI === preferred)) select.value = preferred;
   const preview = element("previewPronunciation");
-  preview.disabled = voices.length === 0;
-  preview.textContent = voices.length ? "Preview French voice" : "No French system voice found";
+  preview.disabled = false;
+  preview.dataset.missingVoice = String(voices.length === 0);
+  preview.textContent = voices.length ? "Preview French voice" : "Set up a French voice";
 }
 
 function previewPronunciation() {
   const synthesis = window.speechSynthesis;
-  if (!synthesis || typeof SpeechSynthesisUtterance !== "function") return;
+  if (!synthesis || typeof SpeechSynthesisUtterance !== "function") {
+    browser.tabs.create({ url: browser.runtime.getURL("help/pronunciation.html") });
+    return;
+  }
   const voices = synthesis.getVoices();
   const preferred = element("pronunciationVoiceURI").value;
   const voice = voices.find((candidate) => candidate.voiceURI === preferred) || voices.find(isFrenchVoice);
-  if (!voice) return;
+  if (!voice) {
+    browser.tabs.create({ url: browser.runtime.getURL("help/pronunciation.html") });
+    return;
+  }
   const utterance = new SpeechSynthesisUtterance("Bonjour, comment allez-vous aujourd’hui ?");
   utterance.lang = voice?.lang || "fr-FR";
   utterance.voice = voice || null;

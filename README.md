@@ -39,10 +39,12 @@ interactive study surface.
   infinitive provides an exact or strong inflection match; uncertain matches are
   intentionally left unmarked. Word translations are cached locally in a
   bounded 1,200-entry store so common lookups remain instant across visits.
+  When full timed captions are available, DualSub can also preload a small set
+  of the video's most frequent words before they are selected.
 - French conjugations are analyzed locally with ablaut's reverse morphology,
   then checked against a 7,820-infinitive Lefff derivative. The lookup card
-  explains likely base verbs, tense, subject, and alternatives in plain language
-  for genuinely ambiguous forms such as `suis` (`être` / `suivre`).
+  shows a compact base verb, form, person, and generated example, while keeping
+  alternatives for genuinely ambiguous forms such as `suis` (`être` / `suivre`).
 - An offline Lexique 3.83 derivative identifies grammatical word groups for
   125,132 French forms. Lookup cards show a color-coded noun, verb, adjective,
   adverb, pronoun, determiner, preposition, conjunction, or interjection label;
@@ -53,8 +55,8 @@ interactive study surface.
   forms; for example, `une psychée` favors the attested noun `psyché` while
   retaining `psycher` as an explicitly secondary possible verb reading.
 - Select any French phrase or sentence for lookup; lookup cards include the
-  complete bilingual line, pronunciation, sentence translation, replay, and a
-  Google Translate and Wiktionary links. Cards can appear intelligently above
+  complete bilingual line, pronunciation, sentence translation, replay, and
+  Google Translate, Wiktionary, and Tatoeba example-sentence links. Cards can appear intelligently above
   the subtitles, beside the pointer, or in the upper-right; they close after
   the pointer leaves unless pinned and resume playback if lookup paused it.
 - Lookup cards can copy the bilingual pair, step to the previous or next French
@@ -63,6 +65,8 @@ interactive study surface.
   up arbitrary French phrases.
 - Pronunciation uses a selectable French system voice, preferring French
   natural or neural voices when available, with adjustable rate and preview.
+  If Firefox exposes no French voice, the setup action opens bundled Windows,
+  macOS, and Linux installation instructions.
 - Optional active-recall mode hides English until the French row is hovered.
 - Optional auto-pause mode stops at each new line for intensive listening.
 - Save words with their translation, complete sentence, video, and timestamp.

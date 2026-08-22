@@ -8,6 +8,7 @@
     hideNativeCaptions: true,
     selectionTranslation: true,
     wholeLiveLines: true,
+    preloadVideoWords: true,
     hoverLookup: true,
     wordAlignment: true,
     colorFrenchWordGroups: false,
@@ -60,6 +61,9 @@
   let sourceLine;
   let targetLine;
   let statusNode;
+  let statusTextNode;
+  let statusCloseNode;
+  let dismissedStatusKey = "";
   let selectionCard;
   let video;
   let animationFrame;
@@ -115,6 +119,11 @@
   let aheadTranslationGeneration = 0;
   let lastAheadPrefetchAt = 0;
   let aheadTranslationFocusIndex = -1;
+  let wordWarmupGeneration = 0;
+  let wordWarmupTimer;
+  let wordWarmupQueued = 0;
+  let wordWarmupCompleted = 0;
+  let wordWarmupFailed = 0;
   let hoverLookupTimer;
   let hoverPrefetchTimer;
   let lookupSequence = 0;
@@ -186,6 +195,7 @@
     applyLineStyle(targetLine, settings.targetStyle);
 
     if (!active) {
+      stopVideoWordWarmup();
       loopCueRange = null;
       sourceLine.parentElement.classList.remove("is-visible");
       targetLine.parentElement.classList.remove("is-visible");
@@ -208,7 +218,10 @@
       root.className = "dualsub-root";
       root.innerHTML = `
         <div class="dualsub-stack">
-          <div class="dualsub-status" role="status" aria-live="polite"></div>
+          <div class="dualsub-status" role="status" aria-live="polite">
+            <span class="dualsub-status-text"></span>
+            <button class="dualsub-status-close" type="button" aria-label="Dismiss message" title="Dismiss">&times;</button>
+          </div>
           <div class="dualsub-line dualsub-source"><span class="dualsub-line-text"></span></div>
           <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span></div>
         </div>
@@ -226,9 +239,10 @@
             <div class="dualsub-card-result"></div>
           </div>
           <div class="dualsub-card-conjugation" hidden>
-            <div class="dualsub-card-label">How this verb works</div>
+            <div class="dualsub-card-label">Verb</div>
             <div class="dualsub-card-lemma"></div>
             <div class="dualsub-card-grammar"></div>
+            <div class="dualsub-card-example"></div>
           </div>
           <div class="dualsub-card-context">
             <div class="dualsub-card-label">In this line</div>
@@ -249,12 +263,21 @@
           <div class="dualsub-card-links">
             <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>
             <a class="dualsub-card-wiktionary" target="_blank" rel="noopener noreferrer">Wiktionary &nearr;</a>
+            <a class="dualsub-card-examples" target="_blank" rel="noopener noreferrer">Example sentences &nearr;</a>
           </div>
         </div>`;
       player.appendChild(root);
       sourceLine = root.querySelector(".dualsub-source .dualsub-line-text");
       targetLine = root.querySelector(".dualsub-target .dualsub-line-text");
       statusNode = root.querySelector(".dualsub-status");
+      statusTextNode = root.querySelector(".dualsub-status-text");
+      statusCloseNode = root.querySelector(".dualsub-status-close");
+      statusCloseNode.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissedStatusKey = `${status.state}|${status.message}`;
+        statusNode.classList.remove("is-visible");
+      });
       selectionCard = root.querySelector(".dualsub-selection-card");
       selectionCard.addEventListener("pointerenter", cancelLookupDismiss);
       selectionCard.addEventListener("pointerleave", () => scheduleLookupDismiss(180));
@@ -272,12 +295,14 @@
   }
 
   function setStatus(state, message, visibleForMs = 0) {
+    const statusKey = `${state}|${message}`;
+    if (`${status.state}|${status.message}` !== statusKey) dismissedStatusKey = "";
     status = { state, message };
     if (!statusNode) return;
     clearTimeout(statusTimer);
-    statusNode.textContent = message;
+    statusTextNode.textContent = message;
     statusNode.dataset.state = state;
-    statusNode.classList.toggle("is-visible", Boolean(message) && settings.enabled);
+    statusNode.classList.toggle("is-visible", Boolean(message) && settings.enabled && dismissedStatusKey !== statusKey);
     if (visibleForMs) {
       statusTimer = setTimeout(() => statusNode?.classList.remove("is-visible"), visibleForMs);
     }
@@ -486,6 +511,7 @@
         refreshCueAlignment();
         stopNativeCapture(true);
         stopAheadTranslation();
+        scheduleVideoWordWarmup();
         setStatus("ready", "French + English ready (authenticated YouTube tracks).", 2600);
         status = { state: "ready", message: "French + English active · full authenticated tracks" };
       } else {
@@ -908,6 +934,7 @@
           targetCues = targetResult.value.cues;
           refreshCueAlignment();
           stopAheadTranslation();
+          scheduleVideoWordWarmup();
           setStatus("ready", "French transcript + English captions ready.", 2200);
           status = { state: "ready", message: "French + English active · full tracks loaded" };
           return;
@@ -927,6 +954,7 @@
       stopAheadTranslation();
       targetCues = targetResult.value.cues;
       refreshCueAlignment();
+      scheduleVideoWordWarmup();
 
       const targetMode = nativeTargetTrack ? "native English track" : "YouTube auto-translation";
       setStatus("ready", `French + English ready (${targetMode}).`, 2200);
@@ -1031,6 +1059,77 @@
     for (let index = firstIndex; index < focusIndex; index += 1) order.push(index);
     for (let index = focusIndex + 1; index <= lastIndex; index += 1) order.push(index);
     return order;
+  }
+
+  function videoWordWarmupOrder(cues, timeMs, limit = 36) {
+    const words = new Map();
+    for (const cue of cues || []) {
+      const distance = Math.abs(((Number(cue.start) + Number(cue.end)) / 2 || 0) - timeMs);
+      const tokens = String(cue.text || "").match(/[\p{L}]+(?:['’][\p{L}]+)*/gu) || [];
+      for (const token of tokens) {
+        const surface = token.normalize("NFC").toLocaleLowerCase("fr");
+        if (!surface || surface.length > 40) continue;
+        const current = words.get(surface) || { text: surface, count: 0, nearestDistance: Number.POSITIVE_INFINITY };
+        current.count += 1;
+        current.nearestDistance = Math.min(current.nearestDistance, distance);
+        words.set(surface, current);
+      }
+    }
+    return Array.from(words.values())
+      .sort((left, right) =>
+        right.count - left.count || left.nearestDistance - right.nearestDistance || left.text.localeCompare(right.text, "fr")
+      )
+      .slice(0, Math.max(0, limit))
+      .map((entry) => entry.text);
+  }
+
+  function stopVideoWordWarmup() {
+    wordWarmupGeneration += 1;
+    clearTimeout(wordWarmupTimer);
+    wordWarmupTimer = null;
+    wordWarmupQueued = 0;
+    wordWarmupCompleted = 0;
+    wordWarmupFailed = 0;
+  }
+
+  function scheduleVideoWordWarmup(delayMs = 1800) {
+    stopVideoWordWarmup();
+    if (!settings.enabled || !settings.preloadVideoWords || !sourceCues.length || !targetCues.length || usingAheadTranslation) return;
+    const generation = wordWarmupGeneration;
+    wordWarmupTimer = setTimeout(() => warmVideoWordCache(generation), delayMs);
+  }
+
+  async function warmVideoWordCache(generation) {
+    if (generation !== wordWarmupGeneration || !settings.preloadVideoWords) return;
+    const limit = settings.translationProvider === "mymemory" ? 12 : 36;
+    const queue = videoWordWarmupOrder(sourceCues, (video?.currentTime || 0) * 1000, limit);
+    wordWarmupQueued = queue.length;
+    let cursor = 0;
+    let stop = false;
+    const worker = async () => {
+      while (!stop && generation === wordWarmupGeneration && cursor < queue.length) {
+        const word = queue[cursor];
+        cursor += 1;
+        const response = await browser.runtime.sendMessage({
+          type: "translate-selection",
+          text: word,
+          sourceLanguage: settings.sourceLanguage,
+          targetLanguage: settings.targetLanguage,
+          cacheMode: "word",
+          allowProviderFallback: false
+        }).catch((error) => ({ ok: false, error: error.message }));
+        if (generation !== wordWarmupGeneration) return;
+        if (response?.ok) {
+          const cacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(word)}`;
+          rememberLookupTranslation(cacheKey, response.translatedText);
+          wordWarmupCompleted += 1;
+        } else {
+          wordWarmupFailed += 1;
+          if (response?.errorCode === "MYMEMORY_RATE_LIMITED" || wordWarmupFailed >= 3) stop = true;
+        }
+      }
+    };
+    await Promise.all([worker(), worker()]);
   }
 
   function startAheadTranslation() {
@@ -1545,8 +1644,10 @@
     const conjugationNode = selectionCard.querySelector(".dualsub-card-conjugation");
     const lemmaNode = selectionCard.querySelector(".dualsub-card-lemma");
     const grammarNode = selectionCard.querySelector(".dualsub-card-grammar");
+    const exampleNode = selectionCard.querySelector(".dualsub-card-example");
     const linkNode = selectionCard.querySelector(".dualsub-card-link");
     const wiktionaryNode = selectionCard.querySelector(".dualsub-card-wiktionary");
+    const examplesNode = selectionCard.querySelector(".dualsub-card-examples");
     const pinButton = selectionCard.querySelector('[data-action="pin"]');
     const saveButton = selectionCard.querySelector('[data-action="save"]');
     const phraseButton = selectionCard.querySelector('[data-action="phrase"]');
@@ -1603,13 +1704,21 @@
           ? `In another context, it could be a form of ${conjugation.verbReadings.map((item) => `“${item.lemma}”`).join(" or ")}.`
           : "The word before it makes a verb meaning unlikely here.";
       } else {
-        const confidenceLabel = ["high", "verified"].includes(conjugation.confidence) ? "Base verb" : "Possible base verb";
-        lemmaNode.textContent = `${confidenceLabel}: ${conjugation.lemma}`;
+        const confidenceLabel = ["high", "verified"].includes(conjugation.confidence) ? "" : "Possible: ";
+        lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${conjugation.lemma}`;
         const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
         grammarNode.textContent = conjugation.alternatives?.length
-          ? `${description} Other possible reading: ${conjugation.alternatives.map((item) => `${item.lemma} — ${globalThis.DualSubFrench.describe(item)}`).join("; ")}`
+          ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma} (${globalThis.DualSubFrench.describe(item)})`).join(" / ")}`
           : description;
       }
+      const example = conjugation.partOfSpeech === "verb"
+        ? globalThis.DualSubFrench?.example(conjugation, cleanText)
+        : "";
+      exampleNode.hidden = !example;
+      exampleNode.textContent = example ? `Example: ${example}` : "";
+    } else {
+      exampleNode.hidden = true;
+      exampleNode.textContent = "";
     }
     saveButton.disabled = true;
     saveButton.textContent = "+ Vocabulary";
@@ -1628,6 +1737,7 @@
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
     const dictionaryWord = conjugation?.lemma || cleanText;
     wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
+    examplesNode.href = `https://tatoeba.org/en/sentences/search?from=fra&query=${encodeURIComponent(dictionaryWord)}&to=eng`;
     selectionCard.classList.add("is-visible");
     cancelLookupDismiss();
     root.classList.add("dualsub-learning-open");
@@ -1814,7 +1924,8 @@
       const synthesis = window.speechSynthesis;
       const voice = chooseFrenchVoice(synthesis?.getVoices?.(), settings.pronunciationVoiceURI);
       if (!synthesis || typeof SpeechSynthesisUtterance !== "function" || !voice) {
-        button.textContent = "No French voice installed";
+        button.textContent = "Opening voice setup…";
+        browser.runtime.sendMessage({ type: "open-pronunciation-help" }).catch(() => {});
         setTimeout(() => { if (button.isConnected) button.textContent = "Pronounce"; }, 1800);
         return;
       }
@@ -1879,6 +1990,7 @@
   function handleNavigation() {
     stopNativeCapture(false);
     stopAheadTranslation();
+    stopVideoWordWarmup();
     currentVideoId = "";
     lastPlaybackCueIndex = -1;
     sourceCues = [];
@@ -2044,7 +2156,10 @@
           captionOffsetMs: settings.captionOffsetMs,
           timedTrackUpgradePending,
           timedTrackRecoveryAttempt,
-          timedTrackRecoveryLastError
+          timedTrackRecoveryLastError,
+          wordWarmupQueued,
+          wordWarmupCompleted,
+          wordWarmupFailed
         }
       });
     }
@@ -2066,6 +2181,7 @@
     const previousTarget = settings.targetLanguage;
     const previousWholeLiveLines = settings.wholeLiveLines;
     const previousTranslationProvider = settings.translationProvider;
+    const previousPreloadVideoWords = settings.preloadVideoWords;
     settings = mergeSettings(changes.settings.newValue);
     if (previousWholeLiveLines !== settings.wholeLiveLines) {
       observedNativeText = "";
@@ -2077,6 +2193,10 @@
     applySettings();
     if (usingAheadTranslation && previousTranslationProvider !== settings.translationProvider) {
       startAheadTranslation();
+    }
+    if (previousPreloadVideoWords !== settings.preloadVideoWords || previousTranslationProvider !== settings.translationProvider) {
+      if (settings.preloadVideoWords) scheduleVideoWordWarmup();
+      else stopVideoWordWarmup();
     }
     if (settings.enabled && (previousSource !== settings.sourceLanguage || previousTarget !== settings.targetLanguage)) {
       currentVideoId = "";

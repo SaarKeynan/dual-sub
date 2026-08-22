@@ -73,7 +73,9 @@
     });
   }
 
-  const verbs = {
+  // Small synchronous fallback tables keep common lookups useful while the
+  // full WASM morphology engine and lemma list are still loading.
+  const fallbackIrregularParadigms = {
     "être": {
       present: ["suis", "es", "est", "sommes", "êtes", "sont"],
       imperfect: ["étais", "étais", "était", "étions", "étiez", "étaient"],
@@ -154,19 +156,19 @@
     }
   };
 
-  Object.entries(verbs).forEach(([lemma, tenses]) => {
+  Object.entries(fallbackIrregularParadigms).forEach(([lemma, tenses]) => {
     Object.entries(tenses).forEach(([tense, forms]) => {
       if (tense === "conditional") addForms(lemma, "present", forms, "conditional");
       else addForms(lemma, tense, forms);
     });
   });
 
-  const regularErVerbs = [
+  const fallbackRegularErLemmas = [
     "aimer", "arriver", "continuer", "demander", "donner", "écouter", "essayer", "expliquer", "jouer",
     "parler", "passer", "penser",
     "regarder", "rester", "travailler", "trouver", "utiliser"
   ];
-  regularErVerbs.forEach((lemma) => {
+  fallbackRegularErLemmas.forEach((lemma) => {
     const stem = lemma.slice(0, -2);
     addForms(lemma, "present", [
       `${stem}e`, `${stem}es`, `${stem}e`, `${stem}ons`, `${stem}ez`, `${stem}ent`
@@ -176,7 +178,7 @@
     ]);
   });
 
-  const spellingChangeErVerbs = {
+  const fallbackSpellingChangeParadigms = {
     appeler: {
       present: ["appelle", "appelles", "appelle", "appelons", "appelez", "appellent"],
       imperfect: ["appelais", "appelais", "appelait", "appelions", "appeliez", "appelaient"]
@@ -194,12 +196,12 @@
       imperfect: ["mangeais", "mangeais", "mangeait", "mangions", "mangiez", "mangeaient"]
     }
   };
-  Object.entries(spellingChangeErVerbs).forEach(([lemma, tenses]) => {
+  Object.entries(fallbackSpellingChangeParadigms).forEach(([lemma, tenses]) => {
     Object.entries(tenses).forEach(([tense, forms]) => addForms(lemma, tense, forms));
   });
 
-  const regularIrVerbs = ["choisir", "finir", "réfléchir", "remplir", "réussir"];
-  regularIrVerbs.forEach((lemma) => {
+  const fallbackRegularIrLemmas = ["choisir", "finir", "réfléchir", "remplir", "réussir"];
+  fallbackRegularIrLemmas.forEach((lemma) => {
     const stem = lemma.slice(0, -2);
     addForms(lemma, "present", [
       `${stem}is`, `${stem}is`, `${stem}it`, `${stem}issons`, `${stem}issez`, `${stem}issent`
@@ -243,10 +245,10 @@
     };
   }
 
-  const commonLemmaPriority = [
+  const commonLemmaRank = new Map([
     "être", "avoir", "aller", "faire", "pouvoir", "vouloir", "devoir", "savoir", "dire", "venir",
     "voir", "prendre", "mettre", "suivre"
-  ];
+  ].map((lemma, rank) => [lemma, rank]));
 
   function parseSlot(slot) {
     const value = String(slot || "").trim();
@@ -289,9 +291,9 @@
       .filter((match) => attestedLemmas?.has(match.infinitive));
     if (!Array.isArray(matches) || !matches.length) return null;
     matches.sort((left, right) => {
-      const leftRank = commonLemmaPriority.indexOf(left.infinitive);
-      const rightRank = commonLemmaPriority.indexOf(right.infinitive);
-      return (leftRank < 0 ? 999 : leftRank) - (rightRank < 0 ? 999 : rightRank) ||
+      const leftRank = commonLemmaRank.get(left.infinitive) ?? 999;
+      const rightRank = commonLemmaRank.get(right.infinitive) ?? 999;
+      return leftRank - rightRank ||
         left.infinitive.length - right.infinitive.length || left.infinitive.localeCompare(right.infinitive, "fr");
     });
     const analyses = matches.flatMap((match) => (match.slots || []).map((slot) => (
@@ -307,6 +309,8 @@
     "notre", "nos", "votre", "vos", "leur", "leurs",
     "chaque", "quelque", "quelques", "plusieurs", "aucun", "aucune"
   ]);
+  const articleDeterminers = new Set(["le", "la", "les", "l", "du", "au", "aux"]);
+  const subjectPronouns = new Set(["je", "j", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles"]);
 
   const closedWordGroups = new Map([
     ["pronoun", new Set(["je", "j", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles", "me", "m", "te", "t", "se", "s", "moi", "toi", "lui", "eux", "y", "en", "qui", "que", "quoi", "dont", "où", "lequel", "laquelle", "lesquels", "lesquelles", "ceci", "cela", "ça"])],
@@ -342,13 +346,11 @@
   function hasNominalDeterminer(rawWord, sentence) {
     const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
     const words = normalize(sentence).match(/[\p{L}]+/gu) || [];
-    const articles = new Set(["le", "la", "les", "l", "du", "au", "aux"]);
-    const subjectPronouns = new Set(["je", "j", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles"]);
     return words.some((candidate, index) => {
       if (candidate !== word) return false;
       const preceding = words[index - 1];
       if (strongNominalDeterminers.has(preceding)) return true;
-      if (!articles.has(preceding)) return false;
+      if (!articleDeterminers.has(preceding)) return false;
       // In “il la fait”, la is an object pronoun; in “le fait”, it is a
       // determiner. The extra look-behind avoids turning the former into a noun.
       return !subjectPronouns.has(words[index - 2]);
@@ -408,44 +410,39 @@
 
   function describe(analysis) {
     if (!analysis) return "";
-    if (analysis.partOfSpeech === "nominal") return "This word is acting as a noun or adjective here.";
+    if (analysis.partOfSpeech === "nominal") return "noun or adjective";
+    const person = analysis.person && analysis.number ? `${analysis.person} person ${analysis.number}` : "";
+    let form = "";
+    if (analysis.mood === "participle") form = `${analysis.tense || ""} participle`.trim();
+    else if (analysis.mood === "infinitive") form = "infinitive";
+    else if (analysis.mood === "imperative") form = "imperative";
+    else if (analysis.mood === "conditional") form = analysis.tense === "present" ? "present conditional" : `${analysis.tense || ""} conditional`.trim();
+    else if (analysis.mood === "subjunctive") form = `${analysis.tense || "present"} subjunctive`;
+    else form = analysis.tense || analysis.mood || "verb";
+    return [form, person].filter(Boolean).join(" · ");
+  }
+
+  function example(analysis, rawSurface = "") {
+    if (!analysis || analysis.partOfSpeech !== "verb") return "";
+    const surface = normalize(rawSurface || analysis.surface || analysis.lemma);
+    if (!surface) return "";
+    if (analysis.mood === "imperative") return `${surface[0].toLocaleUpperCase("fr")}${surface.slice(1)} !`;
+    if (analysis.mood === "infinitive") return `Je veux ${analysis.lemma || surface}.`;
+    if (analysis.mood === "participle") return "";
     const subjects = {
       "1st singular": "je",
       "2nd singular": "tu",
-      "3rd singular": "il, elle, or on",
+      "3rd singular": "il",
       "1st plural": "nous",
       "2nd plural": "vous",
-      "3rd plural": "ils or elles"
+      "3rd plural": "ils"
     };
-    const subject = subjects[`${analysis.person} ${analysis.number}`] || "";
-    const subjectText = subject ? `, normally used with “${subject}”` : "";
-    if (analysis.mood === "participle") {
-      return analysis.tense === "past"
-        ? "This is a past participle, used in compound past tenses or like an adjective."
-        : "This is a present participle, expressing an action in progress (similar to English “-ing”).";
-    }
-    if (analysis.mood === "infinitive") return "This is the infinitive: the dictionary form of the verb.";
-    if (analysis.mood === "imperative") return `This is a command or instruction${subjectText}.`;
-    if (analysis.mood === "subjunctive") {
-      return `This is a subjunctive form${subjectText}, often used for wishes, doubt, emotion, or necessity.`;
-    }
-    if (analysis.mood === "conditional") {
-      return `This is a conditional form${subjectText}: it describes what would or could happen.`;
-    }
-    const tenseExplanations = {
-      present: "It describes what is happening now or what happens generally.",
-      imperfect: "It describes an ongoing, repeated, or background action in the past.",
-      future: "It describes something that will happen.",
-      past: "It describes something that happened in the past."
-    };
-    const tenseNames = {
-      present: "present tense",
-      imperfect: "imperfect tense",
-      future: "future tense",
-      past: "past tense"
-    };
-    const tenseName = tenseNames[analysis.tense] || `${analysis.tense || "conjugated"} form`;
-    return `This is the ${tenseName}${subjectText}. ${tenseExplanations[analysis.tense] || ""}`.trim();
+    let subject = subjects[`${analysis.person} ${analysis.number}`] || "";
+    if (!subject) return "";
+    if (subject === "je" && /^[aeiouyàâäéèêëîïôöùûüœh]/iu.test(surface)) subject = "j’";
+    const separator = subject.endsWith("’") ? "" : " ";
+    const sentence = `${subject}${separator}${surface}`;
+    return `${sentence[0].toLocaleUpperCase("fr")}${sentence.slice(1)}.`;
   }
 
   const ready = initializeResources();
@@ -453,6 +450,7 @@
     analyzeWord,
     classifyWord,
     describe,
+    example,
     ready,
     get engineState() { return morphologyState; },
     get wordGroupState() { return wordGroupState; }

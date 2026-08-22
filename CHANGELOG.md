@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.4 — video word warm-up, compact grammar, and voice setup
+
+- Added an optional, enabled-by-default warm-up that preloads the 36 most
+  frequent words from complete timed captions (12 with MyMemory), using two
+  low-priority workers and stopping after provider errors.
+- Prevented Google warm-up failures from spilling into MyMemory and consuming
+  its smaller free quota. Existing persistent cache hits remain request-free.
+- Replaced prose-heavy verb explanations with compact forms such as
+  `mange → manger`, `present · 1st person singular`, and `Example: Je mange.`
+- Added a real-world Example sentences link to Tatoeba for each lookup.
+- Replaced the no-voice dead end with a setup action and bundled Windows,
+  macOS, and Linux French-voice instructions.
+- Made missing-French-track and other error notices dismissible without
+  disabling the extension.
+- Renamed and documented the synchronous fallback morphology tables, replaced
+  repeated ranking scans with a map, and hoisted per-lookup constant sets.
+
 ## 0.6.3 — clearer lookup cards and persistent word cache
 
 - Rewrote verb-form explanations as plain-language descriptions of the base

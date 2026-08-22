@@ -137,6 +137,8 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 
 .dualsub-status {
   display: none;
+  align-items: center;
+  gap: 7px;
   max-width: min(560px, 86%);
   padding: 5px 10px;
   border: 1px solid rgba(147, 197, 253, 0.28);
@@ -145,12 +147,31 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   background: rgba(15, 23, 42, 0.88);
   font: 600 12px/1.3 system-ui, sans-serif;
   text-align: center;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .dualsub-status.is-visible {
-  display: block;
+  display: flex;
 }
+
+.dualsub-status-text { min-width: 0; }
+
+.dualsub-status-close {
+  display: none;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.18);
+  font: 17px/18px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.dualsub-status[data-state="error"] .dualsub-status-close { display: block; }
+.dualsub-status-close:hover { color: #fff; background: rgba(248, 113, 113, 0.32); }
 
 .dualsub-status[data-state="loading"]::before {
   content: "";
@@ -292,6 +313,8 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 
 .dualsub-card-lemma { color: var(--dualsub-group-verb, #a78bfa); font-size: 13px; font-weight: 750; }
 .dualsub-card-grammar { margin-top: 3px; color: #ddd6fe; font-size: 11px; line-height: 1.4; }
+.dualsub-card-example { margin-top: 5px; color: #f8fafc; font-size: 12px; font-style: italic; }
+.dualsub-card-example[hidden] { display: none; }
 
 .dualsub-card-context {
   margin-top: 11px;
@@ -370,7 +393,8 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   text-decoration: underline;
 }
 
-.dualsub-card-wiktionary {
+.dualsub-card-wiktionary,
+.dualsub-card-examples {
   display: inline-block;
   margin-top: 9px;
   color: #c4b5fd;
@@ -378,6 +402,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   text-decoration: none;
 }
 
-.dualsub-card-wiktionary:hover {
+.dualsub-card-wiktionary:hover,
+.dualsub-card-examples:hover {
   text-decoration: underline;
 }

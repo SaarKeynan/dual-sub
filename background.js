@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
   hideNativeCaptions: true,
   selectionTranslation: true,
   wholeLiveLines: true,
+  preloadVideoWords: true,
   hoverLookup: true,
   wordAlignment: true,
   colorFrenchWordGroups: false,
@@ -392,7 +393,7 @@ async function translateWithGoogle(cleanText, source, target) {
   return { translatedText, provider: "google" };
 }
 
-async function translateSelection(text, sourceLanguage, targetLanguage, cacheMode = "transient") {
+async function translateSelection(text, sourceLanguage, targetLanguage, cacheMode = "transient", allowProviderFallback = true) {
   const rawText = String(text || "").trim();
   if (!rawText) throw new Error("Select a word or sentence first.");
   const source = sourceLanguage || "fr";
@@ -416,7 +417,8 @@ async function translateSelection(text, sourceLanguage, targetLanguage, cacheMod
     } else {
       try {
         translated = await translateWithGoogle(cleanText, source, target);
-      } catch (_googleError) {
+      } catch (googleError) {
+        if (!allowProviderFallback) throw googleError;
         translated = await translateWithMyMemory(trimToUtf8Bytes(cleanText, 490), source, target, settings);
       }
     }
@@ -479,13 +481,24 @@ browser.runtime.onMessage.addListener((message) => {
     return fetchCaptions(message.url).then((text) => ({ ok: true, text }));
   }
   if (message?.type === "translate-selection") {
-    return translateSelection(message.text, message.sourceLanguage, message.targetLanguage, message.cacheMode)
+    return translateSelection(
+      message.text,
+      message.sourceLanguage,
+      message.targetLanguage,
+      message.cacheMode,
+      message.allowProviderFallback !== false
+    )
       .then((result) => ({ ok: true, ...result }))
       .catch((error) => ({
         ok: false,
         error: error.message,
         errorCode: error.code || "TRANSLATION_FAILED"
       }));
+  }
+  if (message?.type === "open-pronunciation-help") {
+    return browser.tabs.create({ url: browser.runtime.getURL("help/pronunciation.html") })
+      .then(() => ({ ok: true }))
+      .catch((error) => ({ ok: false, error: error.message }));
   }
   if (message?.type === "get-default-settings") {
     return Promise.resolve({ settings: DEFAULT_SETTINGS });

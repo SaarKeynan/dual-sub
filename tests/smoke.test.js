@@ -18,6 +18,7 @@ async function testCaptionProcessing() {
   const contentCss = fs.readFileSync(path.join(projectRoot, "content.css"), "utf8");
   const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
   const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
+  const voiceHelpHtml = fs.readFileSync(path.join(projectRoot, "help", "pronunciation.html"), "utf8");
   const bridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"), "utf8");
   const helpers = extract(source, "  function joinCaptionParts", "  function requestCaptionFromPage");
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
@@ -83,6 +84,12 @@ async function testCaptionProcessing() {
     "Translate the current cue first, then recent context and upcoming cues"
   );
   assert.strictEqual(context.translationPrefetchOrder(prefetchCues, 7200, 1000, 1000)[0], 3);
+  const warmupWords = Array.from(context.videoWordWarmupOrder([
+    { start: 0, end: 2000, text: "je mange avec Marie" },
+    { start: 3000, end: 5000, text: "je mange souvent" },
+    { start: 6000, end: 8000, text: "Marie mange aussi" }
+  ], 3500, 4));
+  assert(warmupWords.includes("mange") && warmupWords.includes("je"), "Frequent video words should be prioritized for warm-up");
   assert(source.includes("video.currentTime * 1000 + Number(settings.captionOffsetMs || 0)"));
   assert(!source.includes("Math.max(0, Number(settings.subtitleLeadMs)"));
   assert(source.includes('recoverTracksFromNativePlayer(nativeSourceTrack, result.url || "")'));
@@ -121,11 +128,18 @@ async function testCaptionProcessing() {
   assert(source.includes("chooseFrenchVoice"));
   assert(source.includes("colorFrenchWordGroups"));
   assert(source.includes('class="dualsub-card-translation"'));
-  assert(source.includes("How this verb works"));
+  assert(source.includes('<div class="dualsub-card-label">Verb</div>'));
   assert(source.includes("lookupTranslationCache"));
   assert(source.includes('cacheMode: "word"'));
+  assert(source.includes("videoWordWarmupOrder"));
+  assert(source.includes("tatoeba.org/en/sentences/search"));
+  assert(source.includes("dualsub-status-close"));
+  assert(source.includes("dismissedStatusKey"));
   assert(popupCss.includes("overflow-y: auto"), "The settings popup should scroll vertically");
   assert(popupCss.includes("overflow-x: hidden"), "The settings popup should not scroll horizontally");
+  assert(popupHtml.includes('id="preloadVideoWords"'));
+  assert(popupHtml.includes("Set up a French voice") || popupHtml.includes("Preview French voice"));
+  assert(voiceHelpHtml.includes("Settings → Time &amp; language → Speech"));
   const frenchAppearanceStart = popupHtml.indexOf('data-appearance-content="source"');
   const englishAppearanceStart = popupHtml.indexOf('data-appearance-content="target"');
   const colorSettingIndex = popupHtml.indexOf('id="colorFrenchWordGroups"');
@@ -144,26 +158,33 @@ async function testCaptionProcessing() {
   assert(contentCss.includes("--dualsub-group-verb: #a78bfa"));
   assert(contentCss.includes("var(--dualsub-group-adverb, #facc15)"));
   assert(contentCss.includes('.dualsub-card-translation[data-group="verb"]'));
+  assert(contentCss.includes('.dualsub-status[data-state="error"] .dualsub-status-close'));
 }
 
 async function testFrenchConjugation() {
   const context = {};
+  const frenchSource = fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8");
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
+  vm.runInContext(frenchSource, context);
+  assert(frenchSource.includes("fallbackRegularErLemmas"));
+  assert(!frenchSource.includes("const regularErVerbs"));
   const analyze = context.DualSubFrench.analyzeWord;
   const suis = analyze("suis");
   assert.strictEqual(suis.lemma, "\u00eatre");
   assert.strictEqual(suis.tense, "present");
   assert.strictEqual(suis.person, "1st");
   assert.strictEqual(suis.number, "singular");
-  assert(context.DualSubFrench.describe(suis).includes("normally used with “je”"));
-  assert(context.DualSubFrench.describe(suis).includes("happening now"));
+  assert.strictEqual(context.DualSubFrench.describe(suis), "present · 1st person singular");
+  assert.strictEqual(context.DualSubFrench.example(suis, "suis"), "Je suis.");
   const feraient = analyze("feraient");
   assert.strictEqual(feraient.lemma, "faire");
   assert.strictEqual(feraient.mood, "conditional");
   assert.strictEqual(feraient.tense, "present");
-  assert(context.DualSubFrench.describe(feraient).includes("would or could happen"));
-  assert(context.DualSubFrench.describe(feraient).includes("ils or elles"));
+  assert.strictEqual(context.DualSubFrench.describe(feraient), "present conditional · 3rd person plural");
+  assert.strictEqual(context.DualSubFrench.example(feraient, "feraient"), "Ils feraient.");
+  const mange = analyze("mange");
+  assert.strictEqual(context.DualSubFrench.describe(mange), "present · 1st person singular");
+  assert.strictEqual(context.DualSubFrench.example(mange, "mange"), "Je mange.");
   const parlerai = analyze("parlerai");
   assert.strictEqual(parlerai.lemma, "parler");
   assert.strictEqual(parlerai.tense, "future");
@@ -288,6 +309,7 @@ async function testVocabularyStorage() {
   assert.strictEqual(defaultSettings.settings.captionOffsetMs, 0);
   assert.strictEqual(defaultSettings.settings.subtitleLeadMs, undefined);
   assert.strictEqual(defaultSettings.settings.colorFrenchWordGroups, false);
+  assert.strictEqual(defaultSettings.settings.preloadVideoWords, true);
   assert.strictEqual(defaultSettings.settings.wordGroupColors.unknown, "#ffffff");
   assert.strictEqual(defaultSettings.settings.wordGroupColors.verb, "#a78bfa");
   assert.strictEqual(defaultSettings.settings.wordGroupColors.adverb, "#facc15");
@@ -312,6 +334,23 @@ async function testVocabularyStorage() {
   });
   assert(persistentHit.ok && persistentHit.translatedText === "hello");
   assert.strictEqual(fetchCount, 1, "A persistent case-insensitive word hit should avoid the network");
+
+  context.fetch = async (url) => {
+    fetchCount += 1;
+    assert(String(url).startsWith("https://translate.googleapis.com/"), "Warm-up must not spill into MyMemory");
+    return { ok: false, status: 503 };
+  };
+  const warmupFailure = await messageListener({
+    type: "translate-selection",
+    text: "indisponible",
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+    cacheMode: "word",
+    allowProviderFallback: false
+  });
+  assert.strictEqual(warmupFailure.ok, false);
+  assert(warmupFailure.error.includes("Google translation failed"));
+  assert.strictEqual(fetchCount, 2);
 
   stores.sync.settings = { ...defaultSettings.settings, translationProvider: "mymemory" };
   context.fetch = async (url) => {
