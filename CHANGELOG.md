@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.6 — clitic and reflexive verb analysis
+
+- Added morphology support for apostrophe-linked forms such as `t’aime`,
+  `m’appelle`, `s’appelle`, and `j’aime` while keeping each compound easy to
+  select and translate.
+- Distinguished object pronouns (`je t’aime`) from genuinely reflexive forms
+  (`il s’appelle`) using the sentence subject.
+- Used nearby subject pronouns to choose ambiguous conjugations correctly and
+  recognized separate reflexive pronouns in phrases such as
+  `nous nous appelons`.
+- Added the expanded clitic and its role to the compact grammar explanation,
+  and linked reflexive lookups and examples through the pronominal infinitive.
+
 ## 0.6.5 — larger status dismiss control
 
 - Enlarged the dismiss button to a 32-pixel circular hit target and explicitly

@@ -1708,7 +1708,8 @@
           : "The word before it makes a verb meaning unlikely here.";
       } else {
         const confidenceLabel = ["high", "verified"].includes(conjugation.confidence) ? "" : "Possible: ";
-        lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${conjugation.lemma}`;
+        const displayLemma = conjugation.pronominalLemma || conjugation.lemma;
+        lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${displayLemma}`;
         const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
         grammarNode.textContent = conjugation.alternatives?.length
           ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma} (${globalThis.DualSubFrench.describe(item)})`).join(" / ")}`
@@ -1738,7 +1739,7 @@
     pinButton.textContent = lookupPinned ? "Pinned" : "Pin";
     pinButton.classList.toggle("is-active", lookupPinned);
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
-    const dictionaryWord = conjugation?.lemma || cleanText;
+    const dictionaryWord = conjugation?.pronominalLemma || conjugation?.lemma || cleanText;
     wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
     examplesNode.href = `https://tatoeba.org/en/sentences/search?from=fra&query=${encodeURIComponent(dictionaryWord)}&to=eng`;
     selectionCard.classList.add("is-visible");
@@ -1759,7 +1760,7 @@
         cacheMode: kind === "word" ? "word" : "transient"
       });
     const lemmaTexts = conjugation?.partOfSpeech === "verb"
-      ? [conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.lemma)]
+      ? [conjugation?.pronominalLemma, conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.pronominalLemma || item.lemma)]
       .filter((lemma, index, values) => lemma && values.indexOf(lemma) === index)
       .filter((lemma) => normalizeLookupWord(lemma) !== normalizeLookupWord(cleanText))
       .slice(0, 3)

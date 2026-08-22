@@ -231,18 +231,141 @@
     return null;
   }
 
-  function fallbackAnalysis(rawWord) {
-    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
-    if (!word || word.includes(" ")) return null;
-    const known = formIndex.get(word);
-    const analysis = known?.[0] || regularAnalysis(word);
-    if (!analysis) return null;
+  const subjectGrammar = new Map([
+    ["je", ["1st", "singular"]], ["j", ["1st", "singular"]],
+    ["tu", ["2nd", "singular"]],
+    ["il", ["3rd", "singular"]], ["elle", ["3rd", "singular"]],
+    ["on", ["3rd", "singular"]], ["ce", ["3rd", "singular"]], ["c", ["3rd", "singular"]],
+    ["nous", ["1st", "plural"]], ["vous", ["2nd", "plural"]],
+    ["ils", ["3rd", "plural"]], ["elles", ["3rd", "plural"]]
+  ]);
+  const elidedCliticLabels = Object.freeze({
+    j: ["je", "subject pronoun"],
+    m: ["me", "object pronoun"],
+    t: ["te", "object pronoun"],
+    s: ["se", "reflexive pronoun"],
+    l: ["le / la", "object pronoun"],
+    n: ["ne", "negation"],
+    c: ["ce", "demonstrative pronoun"],
+    d: ["de", "preposition"],
+    qu: ["que", "conjunction or pronoun"]
+  });
+
+  function splitElidedClitic(rawWord) {
+    const surface = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const canonical = surface.replace(/’/gu, "'");
+    const match = canonical.match(/^(j|m|t|s|l|n|c|d|qu)'([\p{L}-]+)$/u);
     return {
-      surface: word,
+      surface,
+      canonical,
+      base: match?.[2] || canonical,
+      prefix: match?.[1] || "",
+      attached: Boolean(match)
+    };
+  }
+
+  function findSubjectBefore(tokens, index) {
+    for (let cursor = index - 1; cursor >= Math.max(0, index - 5); cursor -= 1) {
+      const token = tokens[cursor];
+      const grammar = subjectGrammar.get(token);
+      if (grammar) {
+        // In “je vous aime” and “on nous appelle”, nous/vous is an object
+        // clitic because another explicit subject immediately precedes it.
+        const precedingGrammar = subjectGrammar.get(tokens[cursor - 1]);
+        if (["nous", "vous"].includes(token) && precedingGrammar) continue;
+        return { token, person: grammar[0], number: grammar[1], index: cursor };
+      }
+      if (!["me", "m", "te", "t", "se", "s", "le", "la", "les", "l", "lui", "leur", "y", "en", "ne", "n"].includes(token)) break;
+    }
+    return null;
+  }
+
+  function cliticMatchesSubject(form, subject) {
+    if (!subject) return false;
+    if (form === "m" || form === "me") return subject.person === "1st" && subject.number === "singular";
+    if (form === "t" || form === "te") return subject.person === "2nd" && subject.number === "singular";
+    if (form === "s" || form === "se") return subject.person === "3rd";
+    if (form === "nous") return subject.person === "1st" && subject.number === "plural";
+    if (form === "vous") return subject.person === "2nd" && subject.number === "plural";
+    return false;
+  }
+
+  function inferVerbContext(parts, sentence) {
+    const tokens = (normalize(sentence).replace(/’/gu, "'").match(/[\p{L}]+(?:'[\p{L}]+)*/gu) || []);
+    let index = tokens.findIndex((token) => token === parts.canonical);
+    if (index < 0 && !parts.attached) {
+      index = tokens.findIndex((token) => splitElidedClitic(token).base === parts.base);
+    }
+
+    let subject = null;
+    if (parts.prefix === "j") subject = { token: "je", person: "1st", number: "singular", index };
+    else if (parts.prefix === "c") subject = { token: "ce", person: "3rd", number: "singular", index };
+    else if (index >= 0) subject = findSubjectBefore(tokens, index);
+
+    let cliticForm = parts.prefix;
+    let cliticAttached = parts.attached;
+    if (!cliticForm && index > 0) {
+      const candidate = tokens[index - 1];
+      if (["me", "te", "se"].includes(candidate)) cliticForm = candidate;
+      else if (["nous", "vous"].includes(candidate) && findSubjectBefore(tokens, index - 1)) cliticForm = candidate;
+    }
+    const reflexive = cliticMatchesSubject(cliticForm, subject);
+    let clitic = null;
+    if (cliticForm) {
+      const label = elidedCliticLabels[cliticForm] || [cliticForm, "object pronoun"];
+      clitic = {
+        surface: cliticAttached ? `${cliticForm}’` : cliticForm,
+        expanded: label[0],
+        role: reflexive ? "reflexive pronoun" : label[1],
+        reflexive,
+        attached: cliticAttached
+      };
+    }
+    return {
+      person: subject?.person || "",
+      number: subject?.number || "",
+      clitic,
+      reflexive
+    };
+  }
+
+  function contextRank(analysis, context) {
+    if (!context.person || !analysis.person) return 1;
+    return analysis.person === context.person && analysis.number === context.number ? 0 : 2;
+  }
+
+  function addVerbContext(analysis, parts, context) {
+    if (!analysis) return null;
+    const result = { ...analysis, surface: parts.surface, verbSurface: parts.base };
+    if (!result.person && context.person) {
+      result.person = context.person;
+      result.number = context.number;
+    }
+    if (context.clitic) result.clitic = { ...context.clitic };
+    if (context.reflexive) {
+      result.pronominal = true;
+      result.pronominalLemma = /^[aeiouyàâäéèêëîïôöùûühœ]/iu.test(result.lemma)
+        ? `s’${result.lemma}`
+        : `se ${result.lemma}`;
+    }
+    return result;
+  }
+
+  function fallbackAnalysis(rawWord, sentence = "") {
+    const parts = splitElidedClitic(rawWord);
+    const word = parts.base;
+    if (!word || word.includes(" ")) return null;
+    const context = inferVerbContext(parts, sentence);
+    const known = [...(formIndex.get(word) || [])].sort((left, right) => contextRank(left, context) - contextRank(right, context));
+    const analysis = known[0] || regularAnalysis(word);
+    if (!analysis) return null;
+    const result = addVerbContext({
       partOfSpeech: "verb",
       ...analysis,
-      alternatives: known?.slice(1) || []
-    };
+      alternatives: []
+    }, parts, context);
+    result.alternatives = known.slice(1).map((item) => addVerbContext(item, parts, context));
+    return result;
   }
 
   const commonLemmaRank = new Map([
@@ -284,7 +407,8 @@
 
   function analyzeWithMorphology(rawWord, sentence = "") {
     if (!morphologyEngine) return null;
-    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const parts = splitElidedClitic(rawWord);
+    const word = parts.base;
     if (!word || word.includes(" ")) return null;
     if (word === "maintenant" && !/\ben\s+maintenant\b/iu.test(String(sentence || ""))) return null;
     const matches = morphologyEngine.reverseFrench(word)
@@ -300,7 +424,11 @@
       analysisFromMatch(word, match, slot)
     )));
     if (!analyses.length) return null;
-    return { ...analyses[0], alternatives: analyses.slice(1, 7) };
+    const context = inferVerbContext(parts, sentence);
+    analyses.sort((left, right) => contextRank(left, context) - contextRank(right, context));
+    const result = addVerbContext(analyses[0], parts, context);
+    result.alternatives = analyses.slice(1, 7).map((item) => addVerbContext(item, parts, context));
+    return result;
   }
 
   const strongNominalDeterminers = new Set([
@@ -358,7 +486,7 @@
   }
 
   function analyzeWord(rawWord, sentence = "") {
-    const analysis = analyzeWithMorphology(rawWord, sentence) || fallbackAnalysis(rawWord);
+    const analysis = analyzeWithMorphology(rawWord, sentence) || fallbackAnalysis(rawWord, sentence);
     const hasNominalLexiconReading = lexicalGroups(rawWord).some((group) => group === "noun" || group === "adjective");
     if (
       analysis &&
@@ -419,13 +547,27 @@
     else if (analysis.mood === "conditional") form = analysis.tense === "present" ? "present conditional" : `${analysis.tense || ""} conditional`.trim();
     else if (analysis.mood === "subjunctive") form = `${analysis.tense || "present"} subjunctive`;
     else form = analysis.tense || analysis.mood || "verb";
-    return [form, person].filter(Boolean).join(" · ");
+    const clitic = analysis.clitic
+      ? `${analysis.clitic.surface} = ${analysis.clitic.expanded} (${analysis.clitic.role})`
+      : "";
+    return [form, person, clitic].filter(Boolean).join(" · ");
   }
 
   function example(analysis, rawSurface = "") {
     if (!analysis || analysis.partOfSpeech !== "verb") return "";
-    const surface = normalize(rawSurface || analysis.surface || analysis.lemma);
+    let surface = normalize(rawSurface || analysis.surface || analysis.lemma);
     if (!surface) return "";
+    if (analysis.pronominal && analysis.clitic && !analysis.clitic.attached) {
+      const reflexiveForms = {
+        "1st singular": "me", "2nd singular": "te", "3rd singular": "se",
+        "1st plural": "nous", "2nd plural": "vous", "3rd plural": "se"
+      };
+      let reflexive = reflexiveForms[`${analysis.person} ${analysis.number}`] || "se";
+      if (/^[aeiouyàâäéèêëîïôöùûühœ]/iu.test(surface) && ["me", "te", "se"].includes(reflexive)) {
+        reflexive = `${reflexive[0]}’`;
+      }
+      surface = reflexive.endsWith("’") ? `${reflexive}${surface}` : `${reflexive} ${surface}`;
+    }
     if (analysis.mood === "imperative") return `${surface[0].toLocaleUpperCase("fr")}${surface.slice(1)} !`;
     if (analysis.mood === "infinitive") return `Je veux ${analysis.lemma || surface}.`;
     if (analysis.mood === "participle") return "";

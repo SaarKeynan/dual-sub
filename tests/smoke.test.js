@@ -200,6 +200,26 @@ async function testFrenchConjugation() {
   assert(analyze("fait").alternatives.length, "fait should retain its participle alternative");
   assert.strictEqual(analyze("TikTok"), null);
   assert.strictEqual(analyze("maintenant"), null, "ordinary adverbs must not be guessed as verbs");
+  const taime = analyze("t'aime", "Je t'aime");
+  assert.strictEqual(taime.lemma, "aimer");
+  assert.strictEqual(taime.person, "1st");
+  assert.strictEqual(taime.number, "singular");
+  assert.strictEqual(taime.clitic.expanded, "te");
+  assert.strictEqual(taime.clitic.role, "object pronoun");
+  assert.strictEqual(Boolean(taime.pronominal), false, "je t'aime is not reflexive");
+  assert.strictEqual(context.DualSubFrench.describe(taime), "present · 1st person singular · t’ = te (object pronoun)");
+  const sappelle = analyze("s'appelle", "Il s'appelle Louis");
+  assert.strictEqual(sappelle.lemma, "appeler");
+  assert.strictEqual(sappelle.person, "3rd");
+  assert.strictEqual(sappelle.pronominalLemma, "s’appeler");
+  assert.strictEqual(sappelle.clitic.role, "reflexive pronoun");
+  assert.strictEqual(context.DualSubFrench.example(sappelle, "s'appelle"), "Il s'appelle.");
+  const nousAppelons = analyze("appelons", "nous nous appelons souvent");
+  assert.strictEqual(nousAppelons.pronominalLemma, "s’appeler");
+  assert.strictEqual(context.DualSubFrench.example(nousAppelons, "appelons"), "Nous nous appelons.");
+  const vousAime = analyze("aime", "je vous aime");
+  assert.strictEqual(vousAime.person, "1st", "an object vous must not replace the sentence subject");
+  assert.strictEqual(vousAime.clitic.role, "object pronoun");
   const psychee = analyze("psychée", "une psychée");
   assert.strictEqual(psychee.partOfSpeech, "nominal");
   assert(psychee.verbReadings.some((reading) => reading.lemma === "psycher"));
@@ -260,6 +280,13 @@ async function testAblautMorphology() {
   assert.strictEqual(context.DualSubFrench.analyzeWord("psychée", "une psychée").lemma, "psyché");
   assert.strictEqual(context.DualSubFrench.analyzeWord("fait", "le fait est clair").partOfSpeech, "nominal");
   assert.strictEqual(context.DualSubFrench.analyzeWord("fait", "il la fait souvent").partOfSpeech, "verb");
+  const fullTaime = context.DualSubFrench.analyzeWord("t’aime", "je t’aime");
+  assert.strictEqual(fullTaime.lemma, "aimer");
+  assert.strictEqual(fullTaime.person, "1st");
+  assert.strictEqual(fullTaime.clitic.role, "object pronoun");
+  const fullSappelle = context.DualSubFrench.analyzeWord("s’appelle", "elle s’appelle Marie");
+  assert.strictEqual(fullSappelle.pronominalLemma, "s’appeler");
+  assert.strictEqual(fullSappelle.person, "3rd");
 }
 
 async function testWordGroupResource() {
