@@ -165,8 +165,7 @@
       const trackLanguage = String(url.searchParams.get("lang") || "").toLowerCase();
       if (
         url.pathname === "/api/timedtext" &&
-        (trackLanguage === wantedLanguage || trackLanguage.startsWith(`${wantedLanguage}-`)) &&
-        url.searchParams.get("pot")
+        (trackLanguage === wantedLanguage || trackLanguage.startsWith(`${wantedLanguage}-`))
       ) return url.toString();
     }
     return "";
@@ -180,7 +179,7 @@
         if (!rawUrl || rawUrl === lastAuthenticatedCaptionUrl || !rawUrl.includes("/api/timedtext")) continue;
         try {
           const url = new URL(rawUrl);
-          if (url.pathname !== "/api/timedtext" || !url.searchParams.get("pot")) continue;
+          if (url.pathname !== "/api/timedtext" || !url.searchParams.get("lang")) continue;
           lastAuthenticatedCaptionUrl = rawUrl;
           window.dispatchEvent(new CustomEvent("dualsub:authenticated-caption-url", {
             detail: JSON.stringify({ url: rawUrl, language: url.searchParams.get("lang") || "" })

@@ -86,6 +86,9 @@
   let playerCaptionUrlRequestId = 0;
   const pendingPlayerCaptionUrlRequests = new Map();
   let captionRecoveryGeneration = 0;
+  let timedTrackUpgradePending = false;
+  let timedTrackRecoveryAttempt = 0;
+  let timedTrackRecoveryLastError = "";
   let usingAheadTranslation = false;
   const aheadTranslations = new Map();
   const aheadTranslationPending = new Set();
@@ -408,19 +411,31 @@
 
   async function recoverTracksFromNativePlayer(sourceTrack, initialUrl = "") {
     const recoveryGeneration = ++captionRecoveryGeneration;
-    for (let attempt = 0; attempt < 20; attempt += 1) {
+    const attemptedAtByUrl = new Map();
+    timedTrackUpgradePending = true;
+    timedTrackRecoveryAttempt = 0;
+    timedTrackRecoveryLastError = "Waiting for YouTube's native timed-caption request.";
+    for (let attempt = 0; attempt < 120; attempt += 1) {
       if (!usingNativeSource || recoveryGeneration !== captionRecoveryGeneration) return;
+      timedTrackRecoveryAttempt = attempt + 1;
 
       let authenticatedUrl = attempt === 0 ? initialUrl : "";
       if (!authenticatedUrl) {
         await waitFor(attempt ? 500 : 100);
         try {
           authenticatedUrl = await requestPlayerCaptionUrl(sourceTrack.languageCode || settings.sourceLanguage);
-        } catch (_error) {
+        } catch (error) {
+          timedTrackRecoveryLastError = error.message || "Caption URL lookup failed.";
           continue;
         }
       }
-      if (!authenticatedUrl) continue;
+      if (!authenticatedUrl) {
+        timedTrackRecoveryLastError = "YouTube has not exposed its native timed-caption request yet.";
+        continue;
+      }
+      const lastAttemptedAt = attemptedAtByUrl.get(authenticatedUrl) || 0;
+      if (Date.now() - lastAttemptedAt < 10000) continue;
+      attemptedAtByUrl.set(authenticatedUrl, Date.now());
 
       const authenticatedTrack = { ...sourceTrack, baseUrl: authenticatedUrl };
       const [sourceResult, targetResult] = await Promise.allSettled([
@@ -428,7 +443,10 @@
         loadCaptionCues(authenticatedTrack, settings.targetLanguage, "English auto-translation")
       ]);
       if (!usingNativeSource || recoveryGeneration !== captionRecoveryGeneration) return;
-      if (sourceResult.status === "rejected") continue;
+      if (sourceResult.status === "rejected") {
+        timedTrackRecoveryLastError = sourceResult.reason?.message || "Timed French track request failed.";
+        continue;
+      }
 
       sourceCues = sourceResult.value.cues;
       if (targetResult.status === "fulfilled") {
@@ -443,6 +461,16 @@
         startAheadTranslation();
       }
       return;
+    }
+    if (usingNativeSource && recoveryGeneration === captionRecoveryGeneration) {
+      setStatus(
+        "loading",
+        "Live captions active · precise timed tracks are not available yet; DualSub will keep watching…"
+      );
+      status = {
+        state: "loading",
+        message: "Google live fallback · still watching for precise timed tracks"
+      };
     }
   }
 
@@ -601,6 +629,9 @@
   function startNativeSourceCapture(sourceTrack) {
     stopNativeCapture(false);
     usingNativeSource = true;
+    timedTrackUpgradePending = true;
+    timedTrackRecoveryAttempt = 0;
+    timedTrackRecoveryLastError = "Starting native timed-track recovery.";
     nativeSourceTrack = sourceTrack;
     nativeSourceActivatedAt = performance.now();
     liveSourceText = "";
@@ -646,9 +677,18 @@
       if (revealTogether) liveSourceText = text;
       liveTargetText = response.translatedText;
       if (revealTogether && !observedNativeText) scheduleLiveLineClear();
-      if (status.state !== "ready") {
-        const providerLabel = response.provider === "google" ? "Google" : "MyMemory";
-        clearTimeout(nativeFallbackTimer);
+      const providerLabel = response.provider === "google" ? "Google" : "MyMemory";
+      clearTimeout(nativeFallbackTimer);
+      if (timedTrackUpgradePending) {
+        setStatus(
+          "loading",
+          `${providerLabel} live captions active · still loading precise timed tracks…`
+        );
+        status = {
+          state: "loading",
+          message: `${providerLabel} live fallback · precise timed tracks still loading`
+        };
+      } else if (status.state !== "ready") {
         setStatus("ready", `French + English ready (${providerLabel} live fallback).`, 2400);
         status = { state: "ready", message: `French + English active · ${providerLabel} live fallback` };
       }
@@ -741,6 +781,7 @@
 
   function stopNativeCapture(restorePlayer = false) {
     captionRecoveryGeneration += 1;
+    timedTrackUpgradePending = false;
     if (!usingNativeTranslation && !usingNativeSource) return;
     usingNativeTranslation = false;
     usingNativeSource = false;
@@ -1843,7 +1884,10 @@
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
           translationProvider: settings.translationProvider,
-          captionOffsetMs: settings.captionOffsetMs
+          captionOffsetMs: settings.captionOffsetMs,
+          timedTrackUpgradePending,
+          timedTrackRecoveryAttempt,
+          timedTrackRecoveryLastError
         }
       });
     }

@@ -15,6 +15,7 @@ function extract(source, startMarker, endMarker) {
 
 async function testCaptionProcessing() {
   const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  const bridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"), "utf8");
   const helpers = extract(source, "  function joinCaptionParts", "  function requestCaptionFromPage");
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
   const cueTools = extract(source, "  function cueAt", "  function startAheadTranslation");
@@ -83,6 +84,11 @@ async function testCaptionProcessing() {
   assert(!source.includes("Math.max(0, Number(settings.subtitleLeadMs)"));
   assert(source.includes('recoverTracksFromNativePlayer(nativeSourceTrack, result.url || "")'));
   assert(source.indexOf("startNativeSourceCapture(sourceTrack);") < source.indexOf("transcriptCues = await requestFullTranscript();"));
+  assert(source.includes("timedTrackUpgradePending"));
+  assert(source.includes("timedTrackRecoveryLastError"));
+  assert(source.includes("attempt < 120"), "Precise timing recovery should outlast the old ten-second window");
+  assert(!bridgeSource.includes('url.searchParams.get("pot")'), "Native caption detection must not require an optional pot parameter");
+  assert(source.includes("still loading precise timed tracks"));
 
   vm.runInContext(`
     sourceCues = [

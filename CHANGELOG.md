@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.3 — persistent precise-timing recovery
+
+- Kept the loading indicator visible after live translation becomes usable;
+  live bilingual text and precise timed-track readiness are now separate states.
+- Accepted YouTube's native timed-caption requests whether or not their current
+  URL happens to contain the optional `pot` parameter.
+- Extended background timed-track recovery from roughly ten seconds to roughly
+  one minute, while throttling retries of an identical failed URL.
+- Added precise-timing recovery state, attempt count, and the latest failure
+  reason to copied diagnostics.
+
 ## 0.5.2 — visible and prioritized loading
 
 - Added a compact persistent loading badge above the subtitle rows while live
