@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
   recallMode: false,
   autoPause: false,
   hoverDelay: 420,
+  subtitleLeadMs: 500,
   translationProvider: "google",
   bottomOffset: 72,
   maxWidth: 88,

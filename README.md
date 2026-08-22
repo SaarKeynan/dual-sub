@@ -15,6 +15,8 @@ interactive study surface.
 - Faster loading through parallel page/extension caption requests, concurrent
   format fallbacks, cached caption payloads, and an event-driven upgrade when
   YouTube exposes an authenticated auto-caption request.
+- Adjustable subtitle lookahead displays complete downloaded tracks slightly
+  early to compensate for player and translation latency.
 - Whole-line live captions by default, with an optional immediate word-by-word
   mode. Whole-line mode waits for YouTube's changing cue to settle and for its
   English translation, then reveals both languages together.

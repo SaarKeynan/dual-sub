@@ -14,6 +14,7 @@
     recallMode: false,
     autoPause: false,
     hoverDelay: 420,
+    subtitleLeadMs: 500,
     translationProvider: "google",
     bottomOffset: 72,
     maxWidth: 88,
@@ -68,6 +69,7 @@
   let liveTargetText = "";
   let liveTranslationSequence = 0;
   let liveTranslationRequestText = "";
+  let liveTranslationPrefetchTimer;
   let observedNativeText = "";
   let pendingLiveSourceText = "";
   let pendingLiveTimer;
@@ -91,6 +93,7 @@
   let aheadTranslationGeneration = 0;
   let lastAheadPrefetchAt = 0;
   let hoverLookupTimer;
+  let hoverPrefetchTimer;
   let lookupSequence = 0;
   let lookupContext = null;
   let pausedByLookup = false;
@@ -653,12 +656,22 @@
       }
 
       pendingLiveSourceText = nativeSourceText;
+      clearTimeout(liveTranslationPrefetchTimer);
+      liveTranslationPrefetchTimer = setTimeout(() => {
+        if (!usingNativeSource || pendingLiveSourceText !== nativeSourceText) return;
+        browser.runtime.sendMessage({
+          type: "translate-selection",
+          text: nativeSourceText,
+          sourceLanguage: settings.sourceLanguage,
+          targetLanguage: settings.targetLanguage
+        }).catch(() => {});
+      }, 90);
       clearTimeout(pendingLiveTimer);
       pendingLiveTimer = setTimeout(() => {
         if (!usingNativeSource || pendingLiveSourceText !== nativeSourceText) return;
         commitLiveSourceCue(nativeSourceText);
         pendingLiveSourceText = "";
-      }, 600);
+      }, 360);
       return;
     }
 
@@ -690,6 +703,7 @@
     pendingLiveSourceText = "";
     liveTranslationSequence += 1;
     clearTimeout(pendingLiveTimer);
+    clearTimeout(liveTranslationPrefetchTimer);
     clearTimeout(liveClearTimer);
     clearTimeout(nativeFallbackTimer);
     document.documentElement.classList.remove("dualsub-native-fallback");
@@ -1003,7 +1017,7 @@
       sourceCues.length &&
       (targetCues.length || usingNativeTranslation || usingAheadTranslation)
     ) {
-      const timeMs = video.currentTime * 1000;
+      const timeMs = video.currentTime * 1000 + Math.max(0, Number(settings.subtitleLeadMs) || 0);
       const sourceIndex = cueIndexAt(sourceCues, timeMs);
       const sourceCue = sourceCues[sourceIndex];
       const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end;
@@ -1134,16 +1148,16 @@
     return 1 - editDistance(normalizedLeft, normalizedRight) / Math.max(normalizedLeft.length, normalizedRight.length);
   }
 
-  function refineAlignedTargetWords(translatedText) {
-    if (!settings.wordAlignment || lookupContext?.sentence !== currentSourceText) return;
+  function refineAlignedTargetWords(translatedText, alignmentContext = lookupContext) {
+    if (!settings.wordAlignment || alignmentContext?.sentence !== currentSourceText) return;
     const translatedWords = (String(translatedText || "").match(/[\p{L}\p{N}]+/gu) || [])
       .map(normalizeLookupWord)
       .filter(Boolean);
     if (!translatedWords.length) return;
     const targetWords = Array.from(targetLine.querySelectorAll(".dualsub-word"));
     const targetValues = targetWords.map((word) => normalizeLookupWord(word.textContent));
-    const estimatedCenter = Number.isFinite(lookupContext?.alignmentRatio)
-      ? lookupContext.alignmentRatio * targetWords.length - 0.5
+    const estimatedCenter = Number.isFinite(alignmentContext?.alignmentRatio)
+      ? alignmentContext.alignmentRatio * targetWords.length - 0.5
       : targetWords.length / 2;
     const matches = [];
     for (let start = 0; start <= targetValues.length - translatedWords.length; start += 1) {
@@ -1177,8 +1191,30 @@
     const word = event.target.closest?.(".dualsub-source .dualsub-word");
     if (!word || word.contains(event.relatedTarget)) return;
     clearTimeout(hoverLookupTimer);
+    clearTimeout(hoverPrefetchTimer);
     highlightAlignedWord(word);
     const rect = word.getBoundingClientRect();
+    const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
+    const wordIndex = sourceWords.indexOf(word);
+    const alignmentContext = {
+      sentence: currentSourceText,
+      alignmentRatio: wordIndex >= 0 && sourceWords.length ? (wordIndex + 0.5) / sourceWords.length : Number.NaN
+    };
+    hoverPrefetchTimer = setTimeout(async () => {
+      try {
+        const response = await browser.runtime.sendMessage({
+          type: "translate-selection",
+          text: word.dataset.word || word.textContent,
+          sourceLanguage: settings.sourceLanguage,
+          targetLanguage: settings.targetLanguage
+        });
+        if (response?.ok && word.isConnected && word.classList.contains("is-hovered")) {
+          refineAlignedTargetWords(response.translatedText, alignmentContext);
+        }
+      } catch (_error) {
+        // The lookup card will show a provider error if the hover continues.
+      }
+    }, 90);
     const delay = Math.max(120, Math.min(1500, Number(settings.hoverDelay) || 420));
     hoverLookupTimer = setTimeout(() => {
       showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
@@ -1189,6 +1225,7 @@
     const word = event.target.closest?.(".dualsub-source .dualsub-word");
     if (!word || word.contains(event.relatedTarget)) return;
     clearTimeout(hoverLookupTimer);
+    clearTimeout(hoverPrefetchTimer);
     if (!selectionCard?.classList.contains("is-visible")) clearWordHighlights();
   }
 
@@ -1359,6 +1396,7 @@
     lookupSequence += 1;
     lookupContext = null;
     clearTimeout(hoverLookupTimer);
+    clearTimeout(hoverPrefetchTimer);
     clearWordHighlights();
     selectionCard?.classList.remove("is-visible");
     root?.classList.remove("dualsub-learning-open");
@@ -1538,7 +1576,8 @@
           currentTimeSeconds: Number((video?.currentTime || 0).toFixed(2)),
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
-          translationProvider: settings.translationProvider
+          translationProvider: settings.translationProvider,
+          subtitleLeadMs: settings.subtitleLeadMs
         }
       });
     }

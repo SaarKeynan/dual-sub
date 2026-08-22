@@ -5,7 +5,7 @@ let saveTimer;
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
   "hoverLookup", "wordAlignment", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
-  "bottomOffset", "maxWidth", "mymemoryEmail", "translationProvider",
+  "bottomOffset", "maxWidth", "subtitleLeadMs", "mymemoryEmail", "translationProvider",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
   "targetFontSize", "targetTextColor", "targetBackgroundColor", "targetBackgroundOpacity",
@@ -48,6 +48,7 @@ function setFormValues() {
   element("hoverDelay").value = settings.hoverDelay;
   element("bottomOffset").value = settings.bottomOffset;
   element("maxWidth").value = settings.maxWidth;
+  element("subtitleLeadMs").value = settings.subtitleLeadMs;
   element("mymemoryEmail").value = settings.mymemoryEmail || "";
   element("translationProvider").value = settings.translationProvider || "google";
 
@@ -79,6 +80,7 @@ function readFormValues() {
   settings.hoverDelay = Number(element("hoverDelay").value);
   settings.bottomOffset = Number(element("bottomOffset").value);
   settings.maxWidth = Number(element("maxWidth").value);
+  settings.subtitleLeadMs = Number(element("subtitleLeadMs").value);
   settings.mymemoryEmail = element("mymemoryEmail").value.trim();
   settings.translationProvider = element("translationProvider").value;
 
@@ -102,6 +104,7 @@ function updateOutputs() {
   element("targetOpacityOutput").textContent = `${element("targetBackgroundOpacity").value}%`;
   element("bottomOffsetOutput").textContent = `${element("bottomOffset").value}px`;
   element("maxWidthOutput").textContent = `${element("maxWidth").value}%`;
+  element("subtitleLeadOutput").textContent = `${element("subtitleLeadMs").value}ms`;
   element("hoverDelayOutput").textContent = `${element("hoverDelay").value}ms`;
   document.body.classList.toggle("is-disabled", !element("enabled").checked);
   updatePreview("source");

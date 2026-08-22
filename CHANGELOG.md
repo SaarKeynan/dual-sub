@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2 — subtitle latency fix
+
+- Complete YouTube tracks render 500 ms ahead by default, adjustable from 0 to
+  1500 ms in the popup.
+- Live fallback starts translating a stable candidate after 90 ms instead of
+  waiting for the whole-line settlement timer to expire.
+- Reduced whole-line live settlement from 600 ms to 360 ms.
+- Word translation begins shortly after hover so reliable matching can finish
+  before the lookup card opens.
+
 ## 0.3.1 — normal-player and word-matching fix
 
 - Removed video-overlaid backdrop blur, filtered shadows, transform animation,
