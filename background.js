@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   wordAlignment: true,
   pauseOnLookup: false,
   recallMode: false,
+  autoPause: false,
   hoverDelay: 420,
   translationProvider: "google",
   bottomOffset: 72,
@@ -49,6 +50,10 @@ function cleanVocabularyText(value, limit = 1000) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
+function vocabularyKey(value) {
+  return cleanVocabularyText(value, 160).normalize("NFKC").toLocaleLowerCase();
+}
+
 async function addVocabularyEntry(rawEntry = {}) {
   const sourceText = cleanVocabularyText(rawEntry.sourceText, 160);
   const translatedText = cleanVocabularyText(rawEntry.translatedText, 300);
@@ -57,7 +62,7 @@ async function addVocabularyEntry(rawEntry = {}) {
   const vocabulary = await getVocabulary();
   const sourceLanguage = cleanVocabularyText(rawEntry.sourceLanguage, 20) || "fr";
   const targetLanguage = cleanVocabularyText(rawEntry.targetLanguage, 20) || "en";
-  const normalized = sourceText.toLocaleLowerCase(sourceLanguage);
+  const normalized = vocabularyKey(sourceText);
   const existing = vocabulary.find((item) => (
     item.normalized === normalized &&
     item.sourceLanguage === sourceLanguage &&
@@ -152,6 +157,7 @@ async function importVocabularyEntries(rawEntries) {
     `${entry.sourceLanguage}|${entry.targetLanguage}|${entry.normalized}`,
     entry
   ]));
+  const usedIds = new Set(vocabulary.map((entry) => entry.id));
   let imported = 0;
   let updated = 0;
   for (const rawEntry of rawEntries.slice(0, 5000)) {
@@ -160,11 +166,13 @@ async function importVocabularyEntries(rawEntries) {
     if (!sourceText || !translatedText) continue;
     const sourceLanguage = cleanVocabularyText(rawEntry.sourceLanguage, 20) || "fr";
     const targetLanguage = cleanVocabularyText(rawEntry.targetLanguage, 20) || "en";
-    const normalized = sourceText.toLocaleLowerCase(sourceLanguage);
+    const normalized = vocabularyKey(sourceText);
     const key = `${sourceLanguage}|${targetLanguage}|${normalized}`;
     const now = Date.now();
+    let importedId = cleanVocabularyText(rawEntry.id, 80);
+    if (!importedId || usedIds.has(importedId)) importedId = `${now}-${Math.random().toString(36).slice(2, 9)}`;
     const sanitized = {
-      id: cleanVocabularyText(rawEntry.id, 80) || `${now}-${Math.random().toString(36).slice(2, 9)}`,
+      id: importedId,
       normalized,
       sourceText,
       translatedText,
@@ -191,6 +199,7 @@ async function importVocabularyEntries(rawEntries) {
     } else {
       vocabulary.push(sanitized);
       byKey.set(key, sanitized);
+      usedIds.add(sanitized.id);
       imported += 1;
     }
   }

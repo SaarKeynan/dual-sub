@@ -89,10 +89,12 @@ function createWordCard(entry) {
 function filteredEntries() {
   const query = element("search").value.trim().toLocaleLowerCase();
   const filter = element("filter").value;
+  const videoFilter = element("videoFilter").value;
   const result = entries.filter((entry) => {
     const searchable = [entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation, entry.videoTitle, entry.notes]
       .join(" ").toLocaleLowerCase();
     if (query && !searchable.includes(query)) return false;
+    if (videoFilter !== "all" && entry.videoId !== videoFilter) return false;
     if (filter === "due") return isDue(entry);
     if (filter === "learning") return (Number(entry.stage) || 0) < 5;
     if (filter === "mastered") return (Number(entry.stage) || 0) >= 5;
@@ -126,7 +128,23 @@ async function loadEntries() {
   const response = await browser.runtime.sendMessage({ type: "get-vocabulary" });
   if (!response?.ok) throw new Error(response?.error || "Could not load vocabulary.");
   entries = response.entries;
+  updateVideoFilter();
   render();
+}
+
+function updateVideoFilter() {
+  const select = element("videoFilter");
+  const selected = select.value;
+  const videos = new Map();
+  for (const entry of entries) {
+    if (entry.videoId && !videos.has(entry.videoId)) videos.set(entry.videoId, entry.videoTitle || entry.videoId);
+  }
+  const options = [new Option("All videos", "all")];
+  for (const [id, title] of Array.from(videos).sort((left, right) => left[1].localeCompare(right[1]))) {
+    options.push(new Option(title, id));
+  }
+  select.replaceChildren(...options);
+  select.value = videos.has(selected) ? selected : "all";
 }
 
 function showReview(entryIds) {
@@ -216,6 +234,7 @@ function exportCsv() {
 
 element("search").addEventListener("input", render);
 element("filter").addEventListener("change", render);
+element("videoFilter").addEventListener("change", render);
 element("sort").addEventListener("change", render);
 element("reviewButton").addEventListener("click", () => {
   const due = entries.filter(isDue);

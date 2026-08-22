@@ -26,6 +26,7 @@
           <h2>French</h2>
           <label class="inline-check"><input id="showSource" type="checkbox"> Show</label>
         </div>
+        <div class="caption-preview"><span id="sourcePreview">Bonjour tout le monde</span></div>
         <div class="grid">
           <label>Size <output id="sourceSizeOutput"></output>
             <input id="sourceFontSize" type="range" min="16" max="54" step="1">
@@ -61,6 +62,7 @@
           <h2>English</h2>
           <label class="inline-check"><input id="showTranslation" type="checkbox"> Show</label>
         </div>
+        <div class="caption-preview"><span id="targetPreview">Hello everyone</span></div>
         <div class="grid">
           <label>Size <output id="targetSizeOutput"></output>
             <input id="targetFontSize" type="range" min="16" max="54" step="1">
@@ -103,6 +105,7 @@
         <label class="check-row"><input id="wordAlignment" type="checkbox"> Highlight the approximately matching English word</label>
         <label class="check-row"><input id="pauseOnLookup" type="checkbox"> Pause while a lookup card is open</label>
         <label class="check-row"><input id="recallMode" type="checkbox"> Hide English until the French line is hovered</label>
+        <label class="check-row"><input id="autoPause" type="checkbox"> Pause automatically at each new subtitle line</label>
         <label class="range-row">Hover delay <output id="hoverDelayOutput"></output>
           <input id="hoverDelay" type="range" min="120" max="1200" step="20">
         </label>
@@ -137,7 +140,10 @@
 
     <footer>
       <span><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> toggle · <kbd>R</kbd> replay · <kbd>V</kbd> vocabulary</span>
-      <button id="reset" type="button">Reset styles</button>
+      <div class="footer-actions">
+        <button id="copyDiagnostics" type="button">Copy diagnostics</button>
+        <button id="reset" type="button">Reset appearance</button>
+      </div>
     </footer>
     <script src="popup.js"></script>
   </body>

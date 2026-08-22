@@ -12,6 +12,7 @@
     wordAlignment: true,
     pauseOnLookup: false,
     recallMode: false,
+    autoPause: false,
     hoverDelay: 420,
     translationProvider: "google",
     bottomOffset: 72,
@@ -60,6 +61,8 @@
   let nativeSourceTrack = null;
   let nativeTranslationActivatedAt = 0;
   let nativeTextBeforeFallback = "";
+  let cachedNativeCaptionText = "";
+  let lastNativeCaptionReadAt = 0;
   let nativeFallbackTimer;
   let liveSourceText = "";
   let liveTargetText = "";
@@ -86,10 +89,12 @@
   const aheadTranslationQueue = [];
   let aheadTranslationActive = 0;
   let aheadTranslationGeneration = 0;
+  let lastAheadPrefetchAt = 0;
   let hoverLookupTimer;
   let lookupSequence = 0;
   let lookupContext = null;
   let pausedByLookup = false;
+  let lastPlaybackCueIndex = -1;
 
   function mergeSettings(value = {}) {
     return {
@@ -503,10 +508,14 @@
   }
 
   function readNativeCaptionText() {
+    const now = performance.now();
+    if (now - lastNativeCaptionReadAt < 50) return cachedNativeCaptionText;
+    lastNativeCaptionReadAt = now;
     const segments = Array.from(document.querySelectorAll(
       ".ytp-caption-window-container .ytp-caption-segment"
     ));
-    return joinCaptionParts(segments.map((segment) => segment.textContent || ""));
+    cachedNativeCaptionText = joinCaptionParts(segments.map((segment) => segment.textContent || ""));
+    return cachedNativeCaptionText;
   }
 
   function startNativeTranslation(sourceTrack) {
@@ -707,6 +716,7 @@
     sourceCues = [];
     targetCues = [];
     alignedTargetCues = [];
+    lastPlaybackCueIndex = -1;
     renderCueText("", "");
 
     const sourceTrack = chooseTrack(payload.tracks || [], settings.sourceLanguage);
@@ -862,6 +872,7 @@
     stopNativeCapture(true);
     stopAheadTranslation();
     usingAheadTranslation = true;
+    lastAheadPrefetchAt = performance.now();
     const timeMs = (video?.currentTime || 0) * 1000;
     prefetchAheadTranslations(timeMs, 90000);
     setStatus("loading", "Transcript loaded; translating upcoming lines in advance…");
@@ -996,12 +1007,26 @@
       const sourceIndex = cueIndexAt(sourceCues, timeMs);
       const sourceCue = sourceCues[sourceIndex];
       const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end;
+      if (
+        settings.autoPause &&
+        sourceCueIsActive &&
+        lastPlaybackCueIndex >= 0 &&
+        sourceIndex === lastPlaybackCueIndex + 1 &&
+        timeMs - sourceCue.start < 300 &&
+        !video.paused
+      ) {
+        video.pause();
+      }
+      if (sourceCueIsActive) lastPlaybackCueIndex = sourceIndex;
       let targetCue = sourceCueIsActive ? alignedTargetCues[sourceIndex] : null;
       let targetText = sourceCueIsActive
         ? (targetCue?.text || (targetCues.length ? (cueAt(targetCues, timeMs)?.text || "") : ""))
         : "";
       if (usingAheadTranslation) {
-        prefetchAheadTranslations(timeMs);
+        if (performance.now() - lastAheadPrefetchAt >= 1000) {
+          prefetchAheadTranslations(timeMs);
+          lastAheadPrefetchAt = performance.now();
+        }
         if (sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end) {
           targetText = aheadTranslations.get(sourceIndex) || "";
           targetCue = targetText ? { start: sourceCue.start, end: sourceCue.end, text: targetText } : null;
@@ -1079,10 +1104,26 @@
       .filter(Boolean);
     if (!translatedWords.length) return;
     const targetWords = Array.from(targetLine.querySelectorAll(".dualsub-word"));
-    const matching = targetWords.filter((word) => translatedWords.includes(normalizeLookupWord(word.textContent)));
-    if (!matching.length) return;
+    const targetValues = targetWords.map((word) => normalizeLookupWord(word.textContent));
+    const estimatedIndexes = targetWords
+      .map((word, index) => word.classList.contains("is-aligned") ? index : -1)
+      .filter((index) => index >= 0);
+    const estimatedCenter = estimatedIndexes.length
+      ? estimatedIndexes.reduce((sum, index) => sum + index, 0) / estimatedIndexes.length
+      : targetWords.length / 2;
+    const matches = [];
+    for (let start = 0; start <= targetValues.length - translatedWords.length; start += 1) {
+      if (translatedWords.every((word, offset) => targetValues[start + offset] === word)) {
+        matches.push({ start, distance: Math.abs(start + (translatedWords.length - 1) / 2 - estimatedCenter) });
+      }
+    }
+    if (!matches.length) return;
+    matches.sort((left, right) => left.distance - right.distance);
+    const best = matches[0];
     targetWords.forEach((word) => word.classList.remove("is-aligned"));
-    matching.forEach((word) => word.classList.add("is-aligned"));
+    for (let index = best.start; index < best.start + translatedWords.length; index += 1) {
+      targetWords[index]?.classList.add("is-aligned");
+    }
   }
 
   function handleWordPointerOver(event) {
@@ -1290,6 +1331,7 @@
     stopNativeCapture(false);
     stopAheadTranslation();
     currentVideoId = "";
+    lastPlaybackCueIndex = -1;
     sourceCues = [];
     targetCues = [];
     alignedTargetCues = [];
@@ -1420,6 +1462,34 @@
 
   browser.runtime.onMessage.addListener((message) => {
     if (message?.type === "get-status") return Promise.resolve(status);
+    if (message?.type === "get-diagnostics") {
+      const mode = usingNativeSource
+        ? "live-source"
+        : usingNativeTranslation
+          ? "live-youtube-translation"
+          : usingAheadTranslation
+            ? "prefetched-provider-translation"
+            : sourceCues.length && targetCues.length
+              ? "full-tracks"
+              : "waiting";
+      return Promise.resolve({
+        ok: true,
+        diagnostics: {
+          extensionVersion: browser.runtime.getManifest().version,
+          videoId: currentVideoId,
+          mode,
+          status: status.message,
+          sourceCueCount: sourceCues.length,
+          targetCueCount: targetCues.length,
+          alignedCueCount: alignedTargetCues.filter(Boolean).length,
+          currentCueIndex: currentSourceCueIndex,
+          currentTimeSeconds: Number((video?.currentTime || 0).toFixed(2)),
+          sourceLanguage: settings.sourceLanguage,
+          targetLanguage: settings.targetLanguage,
+          translationProvider: settings.translationProvider
+        }
+      });
+    }
     if (message?.type === "replay-current-cue") {
       if (video) {
         const startMs = currentSourceCue?.start ?? Math.max(0, (video.currentTime - 3) * 1000);

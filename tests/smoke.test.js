@@ -56,6 +56,7 @@ async function testCaptionProcessing() {
 async function testVocabularyStorage() {
   const stores = { sync: {}, local: {} };
   let messageListener;
+  let fetchCount = 0;
   const makeArea = (name) => ({
     async get(key) {
       if (typeof key === "string") return { [key]: stores[name][key] };
@@ -77,10 +78,27 @@ async function testVocabularyStorage() {
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
     commands: { onCommand: { addListener() {} } }
   };
-  const context = { browser, console, URL, TextEncoder, fetch: async () => { throw new Error("Unexpected fetch"); } };
+  const context = {
+    browser,
+    console,
+    URL,
+    TextEncoder,
+    fetch: async () => {
+      fetchCount += 1;
+      await Promise.resolve();
+      return { ok: true, async json() { return [[ ["hello"] ]]; } };
+    }
+  };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "background.js"), "utf8"), context);
   assert(messageListener, "Background message listener was not registered");
+
+  const translations = await Promise.all([
+    messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en" }),
+    messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en" })
+  ]);
+  assert(translations.every((result) => result.ok && result.translatedText === "hello"));
+  assert.strictEqual(fetchCount, 1, "Concurrent identical translations should share one request");
 
   const entry = {
     sourceText: "bonjour",

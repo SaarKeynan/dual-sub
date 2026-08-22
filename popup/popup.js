@@ -4,7 +4,7 @@ let saveTimer;
 
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
-  "hoverLookup", "wordAlignment", "pauseOnLookup", "recallMode", "hoverDelay",
+  "hoverLookup", "wordAlignment", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
   "bottomOffset", "maxWidth", "mymemoryEmail", "translationProvider",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
@@ -14,6 +14,23 @@ const ids = [
 
 function element(id) {
   return document.getElementById(id);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch (_error) {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand("copy");
+    field.remove();
+    if (!copied) throw new Error("Clipboard access unavailable.");
+  }
 }
 
 function setFormValues() {
@@ -27,6 +44,7 @@ function setFormValues() {
   element("wordAlignment").checked = settings.wordAlignment;
   element("pauseOnLookup").checked = settings.pauseOnLookup;
   element("recallMode").checked = settings.recallMode;
+  element("autoPause").checked = settings.autoPause;
   element("hoverDelay").value = settings.hoverDelay;
   element("bottomOffset").value = settings.bottomOffset;
   element("maxWidth").value = settings.maxWidth;
@@ -57,6 +75,7 @@ function readFormValues() {
   settings.wordAlignment = element("wordAlignment").checked;
   settings.pauseOnLookup = element("pauseOnLookup").checked;
   settings.recallMode = element("recallMode").checked;
+  settings.autoPause = element("autoPause").checked;
   settings.hoverDelay = Number(element("hoverDelay").value);
   settings.bottomOffset = Number(element("bottomOffset").value);
   settings.maxWidth = Number(element("maxWidth").value);
@@ -85,6 +104,29 @@ function updateOutputs() {
   element("maxWidthOutput").textContent = `${element("maxWidth").value}%`;
   element("hoverDelayOutput").textContent = `${element("hoverDelay").value}ms`;
   document.body.classList.toggle("is-disabled", !element("enabled").checked);
+  updatePreview("source");
+  updatePreview("target");
+}
+
+function colorWithOpacity(hex, opacity) {
+  const value = String(hex || "#000000").replace("#", "");
+  const red = parseInt(value.slice(0, 2), 16);
+  const green = parseInt(value.slice(2, 4), 16);
+  const blue = parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${Number(opacity) / 100})`;
+}
+
+function updatePreview(prefix) {
+  const preview = element(`${prefix}Preview`);
+  preview.style.fontSize = `${Math.min(25, Number(element(`${prefix}FontSize`).value))}px`;
+  preview.style.color = element(`${prefix}TextColor`).value;
+  preview.style.backgroundColor = colorWithOpacity(
+    element(`${prefix}BackgroundColor`).value,
+    element(`${prefix}BackgroundOpacity`).value
+  );
+  preview.style.fontFamily = element(`${prefix}FontFamily`).value;
+  preview.style.fontWeight = element(`${prefix}FontWeight`).value;
+  preview.style.fontStyle = element(`${prefix}Italic`).checked ? "italic" : "normal";
 }
 
 function scheduleSave() {
@@ -99,7 +141,11 @@ async function loadStatus() {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !tab.url?.includes("youtube.com/")) return;
     const current = await browser.tabs.sendMessage(tab.id, { type: "get-status" });
-    if (current?.message) element("playerStatus").textContent = current.message;
+    if (current?.message) {
+      const statusNode = element("playerStatus");
+      statusNode.textContent = current.message;
+      statusNode.dataset.state = current.state || "waiting";
+    }
   } catch (_error) {
     // The content script may not exist yet on a newly opened tab.
   }
@@ -130,9 +176,13 @@ async function initialize() {
     element(id).addEventListener("change", scheduleSave);
   });
   element("reset").addEventListener("click", () => {
-    const enabled = settings.enabled;
-    settings = structuredClone(defaults);
-    settings.enabled = enabled;
+    settings = {
+      ...settings,
+      bottomOffset: defaults.bottomOffset,
+      maxWidth: defaults.maxWidth,
+      sourceStyle: structuredClone(defaults.sourceStyle),
+      targetStyle: structuredClone(defaults.targetStyle)
+    };
     setFormValues();
     browser.storage.sync.set({ settings });
   });
@@ -140,7 +190,21 @@ async function initialize() {
     browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
     window.close();
   });
+  element("copyDiagnostics").addEventListener("click", async () => {
+    const button = element("copyDiagnostics");
+    try {
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      const response = tab?.id ? await browser.tabs.sendMessage(tab.id, { type: "get-diagnostics" }) : null;
+      if (!response?.ok) throw new Error("Open a YouTube video first.");
+      await copyText(JSON.stringify(response.diagnostics, null, 2));
+      button.textContent = "Copied";
+    } catch (_error) {
+      button.textContent = "Unavailable";
+    }
+    setTimeout(() => { button.textContent = "Copy diagnostics"; }, 1600);
+  });
   loadStatus();
+  setInterval(loadStatus, 1200);
   loadVocabularyCount();
 }
 

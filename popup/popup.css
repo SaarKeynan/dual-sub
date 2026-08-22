@@ -69,6 +69,9 @@ h2 { color: #f8fafc; font-size: 14px; }
   background: rgba(30, 58, 138, 0.18);
   font-size: 12px;
 }
+.status[data-state="ready"] { border-color: rgba(34, 197, 94, .34); color: #bbf7d0; background: rgba(20, 83, 45, .2); }
+.status[data-state="loading"] { border-color: rgba(96, 165, 250, .34); color: #bfdbfe; }
+.status[data-state="error"] { border-color: rgba(251, 113, 133, .4); color: #fecdd3; background: rgba(136, 19, 55, .2); }
 
 main { padding: 2px 14px 14px; }
 section {
@@ -87,6 +90,20 @@ section {
   justify-content: space-between;
   margin-bottom: 13px;
 }
+.caption-preview {
+  display: grid;
+  min-height: 54px;
+  margin: 1px 0 13px;
+  padding: 8px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  background:
+    linear-gradient(45deg, rgba(148, 163, 184, .06) 25%, transparent 25%, transparent 75%, rgba(148, 163, 184, .06) 75%),
+    #0c1525;
+  background-size: 14px 14px;
+}
+.caption-preview span { padding: .12em .3em .16em; border-radius: .18em; text-align: center; text-shadow: 0 1px 3px #000; }
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -146,6 +163,8 @@ footer {
   color: #7f8da3;
   font-size: 10px;
 }
+.footer-actions { display: flex; gap: 6px; }
+.footer-actions button { padding: 6px 8px; font-size: 10px; }
 kbd {
   padding: 2px 4px;
   border: 1px solid #3a465b;
