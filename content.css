@@ -160,23 +160,42 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   display: none;
   position: relative;
   z-index: 3;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  flex: 0 0 32px;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  flex: 0 0 22px;
   padding: 0;
   border: 1px solid #60a5fa;
   border-radius: 50%;
-  color: #bfdbfe;
   background: #1d4ed8;
-  box-shadow: 0 2px 8px rgba(30, 64, 175, 0.42);
-  font: 700 21px/1 system-ui, sans-serif;
+  box-shadow: 0 1px 4px rgba(30, 64, 175, 0.38);
+  appearance: none;
+  -moz-appearance: none;
   cursor: pointer;
   pointer-events: auto;
   touch-action: manipulation;
   user-select: none;
   -moz-user-select: none;
+}
+
+.dualsub-status-close::before,
+.dualsub-status-close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: #93c5fd;
+  transform: translate(-50%, -50%) rotate(45deg);
+  pointer-events: none;
+}
+
+.dualsub-status-close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .dualsub-status[data-state="error"] .dualsub-status-close {
@@ -185,9 +204,13 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 }
 
 .dualsub-status-close:hover {
-  color: #eff6ff;
   background: #2563eb;
   border-color: #93c5fd;
+}
+
+.dualsub-status-close:hover::before,
+.dualsub-status-close:hover::after {
+  background: #dbeafe;
 }
 
 .dualsub-status-close:active {

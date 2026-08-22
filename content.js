@@ -63,7 +63,7 @@
   let statusNode;
   let statusTextNode;
   let statusCloseNode;
-  let dismissedStatusKey = "";
+  const dismissedStatusKeys = new Set();
   let selectionCard;
   let video;
   let animationFrame;
@@ -220,7 +220,7 @@
         <div class="dualsub-stack">
           <div class="dualsub-status" role="status" aria-live="polite">
             <span class="dualsub-status-text"></span>
-            <button class="dualsub-status-close" type="button" aria-label="Dismiss message" title="Dismiss">&times;</button>
+            <button class="dualsub-status-close" type="button" aria-label="Dismiss message" title="Dismiss"></button>
           </div>
           <div class="dualsub-line dualsub-source"><span class="dualsub-line-text"></span></div>
           <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span></div>
@@ -272,15 +272,17 @@
       statusNode = root.querySelector(".dualsub-status");
       statusTextNode = root.querySelector(".dualsub-status-text");
       statusCloseNode = root.querySelector(".dualsub-status-close");
-      statusCloseNode.addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
-      });
-      statusCloseNode.addEventListener("click", (event) => {
+      const dismissStatus = (event) => {
         event.preventDefault();
-        event.stopPropagation();
-        dismissedStatusKey = `${status.state}|${status.message}`;
+        event.stopImmediatePropagation();
+        const displayedStatusKey = statusNode.dataset.statusKey || `${statusNode.dataset.state}|${statusTextNode.textContent}`;
+        dismissedStatusKeys.add(displayedStatusKey);
         statusNode.classList.remove("is-visible");
-      });
+      };
+      // Dismiss on the initial press so YouTube cannot consume the later click.
+      // Keep click for keyboard activation and non-pointer input.
+      statusCloseNode.addEventListener("pointerdown", dismissStatus);
+      statusCloseNode.addEventListener("click", dismissStatus);
       selectionCard = root.querySelector(".dualsub-selection-card");
       selectionCard.addEventListener("pointerenter", cancelLookupDismiss);
       selectionCard.addEventListener("pointerleave", () => scheduleLookupDismiss(180));
@@ -299,13 +301,13 @@
 
   function setStatus(state, message, visibleForMs = 0) {
     const statusKey = `${state}|${message}`;
-    if (`${status.state}|${status.message}` !== statusKey) dismissedStatusKey = "";
     status = { state, message };
     if (!statusNode) return;
     clearTimeout(statusTimer);
     statusTextNode.textContent = message;
     statusNode.dataset.state = state;
-    statusNode.classList.toggle("is-visible", Boolean(message) && settings.enabled && dismissedStatusKey !== statusKey);
+    statusNode.dataset.statusKey = statusKey;
+    statusNode.classList.toggle("is-visible", Boolean(message) && settings.enabled && !dismissedStatusKeys.has(statusKey));
     if (visibleForMs) {
       statusTimer = setTimeout(() => statusNode?.classList.remove("is-visible"), visibleForMs);
     }
@@ -1996,6 +1998,7 @@
     stopAheadTranslation();
     stopVideoWordWarmup();
     currentVideoId = "";
+    dismissedStatusKeys.clear();
     lastPlaybackCueIndex = -1;
     sourceCues = [];
     targetCues = [];

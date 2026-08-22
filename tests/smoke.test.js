@@ -134,7 +134,7 @@ async function testCaptionProcessing() {
   assert(source.includes("videoWordWarmupOrder"));
   assert(source.includes("tatoeba.org/en/sentences/search"));
   assert(source.includes("dualsub-status-close"));
-  assert(source.includes("dismissedStatusKey"));
+  assert(source.includes("dismissedStatusKeys"));
   assert(popupCss.includes("overflow-y: auto"), "The settings popup should scroll vertically");
   assert(popupCss.includes("overflow-x: hidden"), "The settings popup should not scroll horizontally");
   assert(popupHtml.includes('id="preloadVideoWords"'));
@@ -159,11 +159,13 @@ async function testCaptionProcessing() {
   assert(contentCss.includes("var(--dualsub-group-adverb, #facc15)"));
   assert(contentCss.includes('.dualsub-card-translation[data-group="verb"]'));
   assert(contentCss.includes('.dualsub-status[data-state="error"] .dualsub-status-close'));
-  assert(contentCss.includes("width: 32px"), "The status close button should have a comfortable hit target");
+  assert(contentCss.includes("width: 22px"), "The status close button should remain compact");
   assert(contentCss.includes("background: #1d4ed8"), "The status close button should use a blue circle");
-  assert(contentCss.includes("color: #bfdbfe"), "The status close icon should use a contrasting blue");
+  assert(contentCss.includes("background: #93c5fd"), "The CSS-drawn close icon should use a contrasting blue");
   assert(contentCss.includes("touch-action: manipulation"));
-  assert(source.includes('statusCloseNode.addEventListener("pointerdown"'));
+  assert(source.includes('statusCloseNode.addEventListener("pointerdown", dismissStatus)'));
+  assert(source.includes("dismissedStatusKeys.add(displayedStatusKey)"));
+  assert(source.includes("!dismissedStatusKeys.has(statusKey)"));
 }
 
 async function testFrenchConjugation() {

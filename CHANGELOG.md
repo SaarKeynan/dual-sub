@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.7 — reliable compact status close button
+
+- Reduced the status close button from 32 to 22 pixels.
+- Replaced the font glyph with two precisely centered CSS strokes, retaining
+  the dark-blue circle and lighter-blue X.
+- Dismissed messages on pointer-down before YouTube can consume the click, and
+  kept the same message dismissed through repeated caption-loading retries.
+- Reset dismissed notices only when navigating to another video.
+
 ## 0.6.6 — clitic and reflexive verb analysis
 
 - Added morphology support for apostrophe-linked forms such as `t’aime`,
