@@ -274,11 +274,27 @@ async function translateWithMyMemory(cleanText, source, target, settings) {
   }
 
   const response = await fetch(url.toString(), { credentials: "omit" });
-  if (!response.ok) throw new Error(`MyMemory failed (${response.status}).`);
+  if (response.status === 429) {
+    const error = new Error("MyMemory's free translation limit has been reached. Try again later or choose Google web translation in General settings.");
+    error.code = "MYMEMORY_RATE_LIMITED";
+    throw error;
+  }
+  if (!response.ok) {
+    const error = new Error(`MyMemory could not translate this text (HTTP ${response.status}).`);
+    error.code = "MYMEMORY_REQUEST_FAILED";
+    throw error;
+  }
   const payload = await response.json();
   const translatedText = payload?.responseData?.translatedText;
+  if (Number(payload?.responseStatus) === 429) {
+    const error = new Error("MyMemory's free translation limit has been reached. Try again later or choose Google web translation in General settings.");
+    error.code = "MYMEMORY_RATE_LIMITED";
+    throw error;
+  }
   if (!translatedText || Number(payload.responseStatus) >= 400) {
-    throw new Error(payload?.responseDetails || "MyMemory returned no translation.");
+    const error = new Error(payload?.responseDetails || "MyMemory returned no translation.");
+    error.code = "MYMEMORY_NO_TRANSLATION";
+    throw error;
   }
   return { translatedText, provider: "mymemory" };
 }
@@ -381,7 +397,11 @@ browser.runtime.onMessage.addListener((message) => {
   if (message?.type === "translate-selection") {
     return translateSelection(message.text, message.sourceLanguage, message.targetLanguage)
       .then((result) => ({ ok: true, ...result }))
-      .catch((error) => ({ ok: false, error: error.message }));
+      .catch((error) => ({
+        ok: false,
+        error: error.message,
+        errorCode: error.code || "TRANSLATION_FAILED"
+      }));
   }
   if (message?.type === "get-default-settings") {
     return Promise.resolve({ settings: DEFAULT_SETTINGS });

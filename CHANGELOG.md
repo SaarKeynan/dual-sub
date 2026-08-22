@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 — popup scrolling and clearer provider errors
+
+- Restored vertical scrolling in the settings popup while keeping horizontal
+  overflow hidden.
+- Replaced MyMemory's raw HTTP 429 failure with an actionable rate-limit
+  message and the stable `MYMEMORY_RATE_LIMITED` diagnostic code.
+- Moved the French grammatical-group coloring toggle to Appearance → French.
+
 ## 0.6.0 — word groups, French voices, and phrase lookup
 
 - Added an offline 125,132-form grammatical-category index derived from

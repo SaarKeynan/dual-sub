@@ -6,8 +6,17 @@
 }
 
 * { box-sizing: border-box; }
-html, body { width: 390px; margin: 0; overflow: hidden; }
-body { background: radial-gradient(circle at 10% 0%, rgba(37, 99, 235, .2), transparent 35%), #0b1120; }
+html { width: 390px; margin: 0; overflow: hidden; }
+body {
+  width: 390px;
+  max-height: 600px;
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #0b1120;
+  background: radial-gradient(circle at 10% 0%, rgba(37, 99, 235, .2), transparent 35%), #0b1120;
+}
 button, input, select { font: inherit; }
 
 header {

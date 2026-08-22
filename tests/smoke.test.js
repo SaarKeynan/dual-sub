@@ -15,6 +15,8 @@ function extract(source, startMarker, endMarker) {
 
 async function testCaptionProcessing() {
   const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
+  const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
   const bridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"), "utf8");
   const helpers = extract(source, "  function joinCaptionParts", "  function requestCaptionFromPage");
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
@@ -117,6 +119,15 @@ async function testCaptionProcessing() {
   assert(!source.includes("Translate line"));
   assert(source.includes("chooseFrenchVoice"));
   assert(source.includes("colorFrenchWordGroups"));
+  assert(popupCss.includes("overflow-y: auto"), "The settings popup should scroll vertically");
+  assert(popupCss.includes("overflow-x: hidden"), "The settings popup should not scroll horizontally");
+  const frenchAppearanceStart = popupHtml.indexOf('data-appearance-content="source"');
+  const englishAppearanceStart = popupHtml.indexOf('data-appearance-content="target"');
+  const colorSettingIndex = popupHtml.indexOf('id="colorFrenchWordGroups"');
+  assert(
+    frenchAppearanceStart < colorSettingIndex && colorSettingIndex < englishAppearanceStart,
+    "The French word-group coloring toggle should live in Appearance → French"
+  );
 }
 
 async function testFrenchConjugation() {
@@ -266,6 +277,22 @@ async function testVocabularyStorage() {
   ]);
   assert(translations.every((result) => result.ok && result.translatedText === "hello"));
   assert.strictEqual(fetchCount, 1, "Concurrent identical translations should share one request");
+
+  stores.sync.settings = { ...defaultSettings.settings, translationProvider: "mymemory" };
+  context.fetch = async (url) => {
+    fetchCount += 1;
+    assert(String(url).startsWith("https://api.mymemory.translated.net/get"));
+    return { ok: false, status: 429 };
+  };
+  const rateLimited = await messageListener({
+    type: "translate-selection",
+    text: "limite gratuite",
+    sourceLanguage: "fr",
+    targetLanguage: "en"
+  });
+  assert.strictEqual(rateLimited.ok, false);
+  assert.strictEqual(rateLimited.errorCode, "MYMEMORY_RATE_LIMITED");
+  assert(rateLimited.error.includes("free translation limit"));
 
   const entry = {
     sourceText: "bonjour",
