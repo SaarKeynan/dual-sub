@@ -91,6 +91,23 @@
         </div>
       </section>
 
+      <section class="learning-theme">
+        <div class="section-heading">
+          <div>
+            <h2>Learning tools</h2>
+            <p class="section-note">Hover, compare, save, and review</p>
+          </div>
+          <button id="openVocabulary" class="primary-button" type="button">Vocabulary <span id="vocabularyCount">0</span></button>
+        </div>
+        <label class="check-row"><input id="hoverLookup" type="checkbox"> Automatically look up a French word after hovering</label>
+        <label class="check-row"><input id="wordAlignment" type="checkbox"> Highlight the approximately matching English word</label>
+        <label class="check-row"><input id="pauseOnLookup" type="checkbox"> Pause while a lookup card is open</label>
+        <label class="range-row">Hover delay <output id="hoverDelayOutput"></output>
+          <input id="hoverDelay" type="range" min="120" max="1200" step="20">
+        </label>
+        <p class="privacy">Hover alignment is an on-device visual estimate. Saved vocabulary stays in Firefox local storage.</p>
+      </section>
+
       <section>
         <h2>Layout & selection</h2>
         <div class="grid">

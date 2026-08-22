@@ -84,6 +84,10 @@
   const aheadTranslationQueue = [];
   let aheadTranslationActive = 0;
   let aheadTranslationGeneration = 0;
+  let hoverLookupTimer;
+  let lookupSequence = 0;
+  let lookupContext = null;
+  let pausedByLookup = false;
 
   function mergeSettings(value = {}) {
     return {
@@ -157,12 +161,24 @@
           <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span></div>
         </div>
         <div class="dualsub-status"></div>
-        <div class="dualsub-selection-card" role="status" aria-live="polite">
-          <div class="dualsub-card-label">French</div>
+        <div class="dualsub-selection-card" role="dialog" aria-live="polite" aria-label="Subtitle lookup">
+          <div class="dualsub-card-heading">
+            <div class="dualsub-card-label">French lookup</div>
+            <button class="dualsub-card-close" type="button" data-action="close" aria-label="Close lookup">&times;</button>
+          </div>
           <div class="dualsub-card-source"></div>
-          <div class="dualsub-card-label">English</div>
           <div class="dualsub-card-result"></div>
-          <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Open in Google Translate ↗</a>
+          <div class="dualsub-card-context">
+            <div class="dualsub-card-label">In this line</div>
+            <div class="dualsub-card-sentence-source"></div>
+            <div class="dualsub-card-sentence-target"></div>
+          </div>
+          <div class="dualsub-card-actions">
+            <button type="button" data-action="save">+ Vocabulary</button>
+            <button type="button" data-action="sentence">Translate line</button>
+            <button type="button" data-action="replay">Replay</button>
+          </div>
+          <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>
         </div>`;
       player.appendChild(root);
       sourceLine = root.querySelector(".dualsub-source .dualsub-line-text");
@@ -170,6 +186,9 @@
       statusNode = root.querySelector(".dualsub-status");
       selectionCard = root.querySelector(".dualsub-selection-card");
       root.addEventListener("mouseup", handleSubtitleSelection);
+      root.addEventListener("pointerover", handleWordPointerOver);
+      root.addEventListener("pointerout", handleWordPointerOut);
+      root.addEventListener("click", handleLearningCardAction);
       applySettings();
     }
     return true;
@@ -677,6 +696,7 @@
 
     const generation = ++loadGeneration;
     currentVideoId = payload.videoId || "";
+    currentVideoTitle = payload.title || document.title.replace(/\s*-\s*YouTube\s*$/i, "");
     sourceCues = [];
     targetCues = [];
     alignedTargetCues = [];
@@ -1006,21 +1026,54 @@
     // produce misleading results for learners.
     if (!selectedElement?.closest(".dualsub-source .dualsub-line-text")) return;
 
-    showSelectionCard(text, event.clientX, event.clientY);
+    showSelectionCard(text, event.clientX, event.clientY, "selection");
   }
 
-  async function showSelectionCard(text, clientX, clientY) {
+  function clearWordHighlights() {
+    root?.querySelectorAll(".dualsub-word.is-hovered, .dualsub-word.is-aligned").forEach((word) => {
+      word.classList.remove("is-hovered", "is-aligned");
+    });
+  }
+
+  function highlightAlignedWord(sourceWord) {
+    clearWordHighlights();
+    sourceWord.classList.add("is-hovered");
+    if (!settings.wordAlignment) return;
+    const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
+    const targetWords = Array.from(targetLine.querySelectorAll(".dualsub-word"));
+    const sourceIndex = sourceWords.indexOf(sourceWord);
+    if (sourceIndex < 0 || !targetWords.length) return;
+    const targetStart = Math.floor(sourceIndex * targetWords.length / sourceWords.length);
+    const targetEnd = Math.max(targetStart, Math.ceil((sourceIndex + 1) * targetWords.length / sourceWords.length) - 1);
+    for (let index = targetStart; index <= targetEnd; index += 1) {
+      targetWords[index]?.classList.add("is-aligned");
+    }
+  }
+
+  function handleWordPointerOver(event) {
+    if (!settings.enabled || !settings.hoverLookup) return;
+    const word = event.target.closest?.(".dualsub-source .dualsub-word");
+    if (!word || word.contains(event.relatedTarget)) return;
+    clearTimeout(hoverLookupTimer);
+    highlightAlignedWord(word);
+    const rect = word.getBoundingClientRect();
+    const delay = Math.max(120, Math.min(1500, Number(settings.hoverDelay) || 420));
+    hoverLookupTimer = setTimeout(() => {
+      showSelectionCard(word.dataset.word || word.textContent, rect.left + rect.width / 2, rect.bottom, "word");
+    }, delay);
+  }
+
+  function handleWordPointerOut(event) {
+    const word = event.target.closest?.(".dualsub-source .dualsub-word");
+    if (!word || word.contains(event.relatedTarget)) return;
+    clearTimeout(hoverLookupTimer);
+    if (!selectionCard?.classList.contains("is-visible")) clearWordHighlights();
+  }
+
+  function positionSelectionCard(clientX, clientY) {
     const rootRect = root.getBoundingClientRect();
-    const sourceNode = selectionCard.querySelector(".dualsub-card-source");
-    const resultNode = selectionCard.querySelector(".dualsub-card-result");
-    const linkNode = selectionCard.querySelector(".dualsub-card-link");
-    sourceNode.textContent = text;
-    resultNode.textContent = "Translating…";
-    linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(text)}&op=translate`;
     selectionCard.style.left = `${Math.max(12, clientX - rootRect.left + 12)}px`;
     selectionCard.style.top = `${Math.max(12, clientY - rootRect.top + 12)}px`;
-    selectionCard.classList.add("is-visible");
-
     requestAnimationFrame(() => {
       const cardRect = selectionCard.getBoundingClientRect();
       let left = parseFloat(selectionCard.style.left);
@@ -1030,23 +1083,137 @@
       selectionCard.style.left = `${Math.max(12, left)}px`;
       selectionCard.style.top = `${Math.max(12, top)}px`;
     });
+  }
+
+  async function showSelectionCard(text, clientX, clientY, kind = "selection") {
+    const cleanText = String(text || "").replace(/\s+/g, " ").trim();
+    if (!cleanText) return;
+    const sequence = ++lookupSequence;
+    const sourceNode = selectionCard.querySelector(".dualsub-card-source");
+    const resultNode = selectionCard.querySelector(".dualsub-card-result");
+    const sentenceSourceNode = selectionCard.querySelector(".dualsub-card-sentence-source");
+    const sentenceTargetNode = selectionCard.querySelector(".dualsub-card-sentence-target");
+    const linkNode = selectionCard.querySelector(".dualsub-card-link");
+    const saveButton = selectionCard.querySelector('[data-action="save"]');
+    const sentenceButton = selectionCard.querySelector('[data-action="sentence"]');
+    const replayButton = selectionCard.querySelector('[data-action="replay"]');
+    const sentence = currentSourceText || cleanText;
+    lookupContext = {
+      kind,
+      sourceText: cleanText,
+      translatedText: "",
+      sentence,
+      sentenceTranslation: currentTargetText || "",
+      videoId: currentVideoId,
+      videoTitle: currentVideoTitle,
+      timeMs: currentSourceCue?.start ?? Math.round((video?.currentTime || 0) * 1000)
+    };
+    sourceNode.textContent = cleanText;
+    resultNode.textContent = "Translating…";
+    sentenceSourceNode.textContent = sentence;
+    sentenceTargetNode.textContent = lookupContext.sentenceTranslation || "Translation available on request";
+    saveButton.disabled = true;
+    saveButton.textContent = "+ Vocabulary";
+    sentenceButton.disabled = !sentence;
+    sentenceButton.textContent = "Translate line";
+    replayButton.disabled = !video;
+    linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
+    selectionCard.classList.add("is-visible");
+    positionSelectionCard(clientX, clientY);
+
+    if (settings.pauseOnLookup && video && !video.paused) {
+      video.pause();
+      pausedByLookup = true;
+    }
 
     try {
       const response = await browser.runtime.sendMessage({
         type: "translate-selection",
-        text,
+        text: cleanText,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
       });
-      if (!selectionCard.classList.contains("is-visible") || sourceNode.textContent !== text) return;
+      if (sequence !== lookupSequence || !selectionCard.classList.contains("is-visible")) return;
       resultNode.textContent = response?.ok ? response.translatedText : (response?.error || "Translation unavailable");
+      if (response?.ok && lookupContext) {
+        lookupContext.translatedText = response.translatedText;
+        saveButton.disabled = false;
+      }
     } catch (error) {
+      if (sequence !== lookupSequence) return;
       resultNode.textContent = error.message || "Translation unavailable";
     }
   }
 
+  async function handleLearningCardAction(event) {
+    const button = event.target.closest?.("[data-action]");
+    if (!button || !selectionCard?.contains(button)) return;
+    event.preventDefault();
+    const action = button.dataset.action;
+    if (action === "close") {
+      hideSelectionCard();
+      return;
+    }
+    if (!lookupContext) return;
+
+    if (action === "replay" && video) {
+      video.currentTime = Math.max(0, lookupContext.timeMs / 1000 - 0.35);
+      await video.play().catch(() => {});
+      pausedByLookup = false;
+      return;
+    }
+
+    if (action === "sentence") {
+      button.disabled = true;
+      button.textContent = "Translating…";
+      const targetNode = selectionCard.querySelector(".dualsub-card-sentence-target");
+      try {
+        const response = await browser.runtime.sendMessage({
+          type: "translate-selection",
+          text: lookupContext.sentence,
+          sourceLanguage: settings.sourceLanguage,
+          targetLanguage: settings.targetLanguage
+        });
+        targetNode.textContent = response?.ok ? response.translatedText : (response?.error || "Translation unavailable");
+        if (response?.ok) lookupContext.sentenceTranslation = response.translatedText;
+      } catch (error) {
+        targetNode.textContent = error.message || "Translation unavailable";
+      } finally {
+        button.disabled = false;
+        button.textContent = "Translate line";
+      }
+      return;
+    }
+
+    if (action === "save") {
+      button.disabled = true;
+      const response = await browser.runtime.sendMessage({
+        type: "add-vocabulary",
+        entry: {
+          sourceText: lookupContext.sourceText,
+          translatedText: lookupContext.translatedText,
+          sentence: lookupContext.sentence,
+          sentenceTranslation: lookupContext.sentenceTranslation,
+          sourceLanguage: settings.sourceLanguage,
+          targetLanguage: settings.targetLanguage,
+          videoId: lookupContext.videoId,
+          videoTitle: lookupContext.videoTitle,
+          timeMs: lookupContext.timeMs
+        }
+      }).catch((error) => ({ ok: false, error: error.message }));
+      button.textContent = response?.ok ? "Saved ✓" : "Could not save";
+      if (!response?.ok) button.disabled = false;
+    }
+  }
+
   function hideSelectionCard() {
+    lookupSequence += 1;
+    lookupContext = null;
+    clearTimeout(hoverLookupTimer);
+    clearWordHighlights();
     selectionCard?.classList.remove("is-visible");
+    if (pausedByLookup && video?.paused) video.play().catch(() => {});
+    pausedByLookup = false;
   }
 
   function handleNavigation() {

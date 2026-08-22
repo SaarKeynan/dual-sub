@@ -4,6 +4,7 @@ let saveTimer;
 
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation",
+  "hoverLookup", "wordAlignment", "pauseOnLookup", "hoverDelay",
   "bottomOffset", "maxWidth", "mymemoryEmail", "translationProvider",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
@@ -22,6 +23,10 @@ function setFormValues() {
   element("hideNativeCaptions").checked = settings.hideNativeCaptions;
   element("wholeLiveLines").checked = settings.wholeLiveLines;
   element("selectionTranslation").checked = settings.selectionTranslation;
+  element("hoverLookup").checked = settings.hoverLookup;
+  element("wordAlignment").checked = settings.wordAlignment;
+  element("pauseOnLookup").checked = settings.pauseOnLookup;
+  element("hoverDelay").value = settings.hoverDelay;
   element("bottomOffset").value = settings.bottomOffset;
   element("maxWidth").value = settings.maxWidth;
   element("mymemoryEmail").value = settings.mymemoryEmail || "";
@@ -47,6 +52,10 @@ function readFormValues() {
   settings.hideNativeCaptions = element("hideNativeCaptions").checked;
   settings.wholeLiveLines = element("wholeLiveLines").checked;
   settings.selectionTranslation = element("selectionTranslation").checked;
+  settings.hoverLookup = element("hoverLookup").checked;
+  settings.wordAlignment = element("wordAlignment").checked;
+  settings.pauseOnLookup = element("pauseOnLookup").checked;
+  settings.hoverDelay = Number(element("hoverDelay").value);
   settings.bottomOffset = Number(element("bottomOffset").value);
   settings.maxWidth = Number(element("maxWidth").value);
   settings.mymemoryEmail = element("mymemoryEmail").value.trim();
@@ -72,6 +81,7 @@ function updateOutputs() {
   element("targetOpacityOutput").textContent = `${element("targetBackgroundOpacity").value}%`;
   element("bottomOffsetOutput").textContent = `${element("bottomOffset").value}px`;
   element("maxWidthOutput").textContent = `${element("maxWidth").value}%`;
+  element("hoverDelayOutput").textContent = `${element("hoverDelay").value}ms`;
   document.body.classList.toggle("is-disabled", !element("enabled").checked);
 }
 
@@ -90,6 +100,15 @@ async function loadStatus() {
     if (current?.message) element("playerStatus").textContent = current.message;
   } catch (_error) {
     // The content script may not exist yet on a newly opened tab.
+  }
+}
+
+async function loadVocabularyCount() {
+  try {
+    const response = await browser.runtime.sendMessage({ type: "get-vocabulary" });
+    element("vocabularyCount").textContent = response?.ok ? response.entries.length : "–";
+  } catch (_error) {
+    element("vocabularyCount").textContent = "–";
   }
 }
 
@@ -115,7 +134,12 @@ async function initialize() {
     setFormValues();
     browser.storage.sync.set({ settings });
   });
+  element("openVocabulary").addEventListener("click", () => {
+    browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
+    window.close();
+  });
   loadStatus();
+  loadVocabularyCount();
 }
 
 initialize();

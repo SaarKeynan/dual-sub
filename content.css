@@ -66,6 +66,22 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   transition: color 90ms ease, background-color 90ms ease, box-shadow 90ms ease;
 }
 
+.dualsub-source .dualsub-word {
+  cursor: help;
+}
+
+.dualsub-source .dualsub-word.is-hovered {
+  color: #0f172a;
+  background: #fef08a;
+  box-shadow: 0 0 0 0.1em rgba(254, 240, 138, 0.85);
+}
+
+.dualsub-target .dualsub-word.is-aligned {
+  color: #0f172a;
+  background: #93c5fd;
+  box-shadow: 0 0 0 0.1em rgba(147, 197, 253, 0.8);
+}
+
 @keyframes dualsub-line-in {
   from { opacity: 0.55; transform: translateY(2px); }
   to { opacity: 1; transform: translateY(0); }
@@ -95,8 +111,8 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   display: none;
   position: absolute;
   z-index: 2;
-  width: min(340px, calc(100% - 24px));
-  padding: 12px;
+  width: min(390px, calc(100% - 24px));
+  padding: 13px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 12px;
   color: #e2e8f0;
@@ -106,6 +122,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   text-align: left;
   pointer-events: auto;
   user-select: text;
+  backdrop-filter: blur(16px);
 }
 
 .dualsub-selection-card.is-visible {
@@ -121,6 +138,34 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   text-transform: uppercase;
 }
 
+.dualsub-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.dualsub-card-heading .dualsub-card-label {
+  margin: 0;
+}
+
+.dualsub-card-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: #94a3b8;
+  background: transparent;
+  font: 20px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.dualsub-card-close:hover {
+  color: #f8fafc;
+  background: rgba(148, 163, 184, 0.15);
+}
+
 .dualsub-card-source {
   margin-bottom: 8px;
   color: #f8fafc;
@@ -130,6 +175,52 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   color: #fde68a;
   font-size: 16px;
   font-weight: 650;
+}
+
+.dualsub-card-context {
+  margin-top: 11px;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 9px;
+  background: rgba(30, 41, 59, 0.65);
+}
+
+.dualsub-card-sentence-source {
+  color: #f8fafc;
+  font-size: 12px;
+}
+
+.dualsub-card-sentence-target {
+  margin-top: 4px;
+  color: #bfdbfe;
+  font-size: 12px;
+}
+
+.dualsub-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.dualsub-card-actions button {
+  padding: 6px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 7px;
+  color: #e2e8f0;
+  background: rgba(51, 65, 85, 0.72);
+  font: 650 11px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.dualsub-card-actions button:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: rgba(59, 130, 246, 0.22);
+}
+
+.dualsub-card-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .dualsub-card-link {

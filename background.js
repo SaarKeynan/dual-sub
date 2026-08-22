@@ -36,6 +36,94 @@ const DEFAULT_SETTINGS = {
 };
 
 const translationCache = new Map();
+const VOCABULARY_KEY = "vocabulary";
+
+async function getVocabulary() {
+  const stored = await browser.storage.local.get(VOCABULARY_KEY);
+  return Array.isArray(stored[VOCABULARY_KEY]) ? stored[VOCABULARY_KEY] : [];
+}
+
+function cleanVocabularyText(value, limit = 1000) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+async function addVocabularyEntry(rawEntry = {}) {
+  const sourceText = cleanVocabularyText(rawEntry.sourceText, 160);
+  const translatedText = cleanVocabularyText(rawEntry.translatedText, 300);
+  if (!sourceText || !translatedText) throw new Error("A word and translation are required.");
+  const now = Date.now();
+  const vocabulary = await getVocabulary();
+  const sourceLanguage = cleanVocabularyText(rawEntry.sourceLanguage, 20) || "fr";
+  const targetLanguage = cleanVocabularyText(rawEntry.targetLanguage, 20) || "en";
+  const normalized = sourceText.toLocaleLowerCase(sourceLanguage);
+  const existing = vocabulary.find((item) => (
+    item.normalized === normalized &&
+    item.sourceLanguage === sourceLanguage &&
+    item.targetLanguage === targetLanguage
+  ));
+  const context = {
+    sentence: cleanVocabularyText(rawEntry.sentence),
+    sentenceTranslation: cleanVocabularyText(rawEntry.sentenceTranslation),
+    videoId: cleanVocabularyText(rawEntry.videoId, 32),
+    videoTitle: cleanVocabularyText(rawEntry.videoTitle, 240),
+    timeMs: Math.max(0, Number(rawEntry.timeMs) || 0)
+  };
+
+  if (existing) {
+    Object.assign(existing, context, {
+      translatedText,
+      updatedAt: now,
+      encounters: (Number(existing.encounters) || 1) + 1
+    });
+    await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary });
+    return { entry: existing, added: false };
+  }
+
+  const entry = {
+    id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
+    normalized,
+    sourceText,
+    translatedText,
+    sourceLanguage,
+    targetLanguage,
+    ...context,
+    createdAt: now,
+    updatedAt: now,
+    encounters: 1,
+    stage: 0,
+    reviews: 0,
+    dueAt: now
+  };
+  vocabulary.unshift(entry);
+  await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary.slice(0, 5000) });
+  return { entry, added: true };
+}
+
+async function removeVocabularyEntry(id) {
+  const vocabulary = await getVocabulary();
+  const filtered = vocabulary.filter((item) => item.id !== id);
+  await browser.storage.local.set({ [VOCABULARY_KEY]: filtered });
+  return { removed: filtered.length !== vocabulary.length };
+}
+
+async function reviewVocabularyEntry(id, rating) {
+  const vocabulary = await getVocabulary();
+  const entry = vocabulary.find((item) => item.id === id);
+  if (!entry) throw new Error("Vocabulary entry not found.");
+  const currentStage = Math.max(0, Math.min(6, Number(entry.stage) || 0));
+  const nextStage = rating === "again"
+    ? 0
+    : rating === "hard"
+      ? Math.max(0, currentStage - 1)
+      : Math.min(6, currentStage + 1);
+  const intervals = [0, 1, 3, 7, 14, 30, 90];
+  entry.stage = nextStage;
+  entry.reviews = (Number(entry.reviews) || 0) + 1;
+  entry.lastReviewedAt = Date.now();
+  entry.dueAt = Date.now() + intervals[nextStage] * 86400000;
+  await browser.storage.local.set({ [VOCABULARY_KEY]: vocabulary });
+  return { entry };
+}
 
 async function getSettings() {
   const stored = await browser.storage.sync.get("settings");
@@ -194,6 +282,26 @@ browser.runtime.onMessage.addListener((message) => {
   }
   if (message?.type === "get-default-settings") {
     return Promise.resolve({ settings: DEFAULT_SETTINGS });
+  }
+  if (message?.type === "get-vocabulary") {
+    return getVocabulary()
+      .then((entries) => ({ ok: true, entries }))
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
+  if (message?.type === "add-vocabulary") {
+    return addVocabularyEntry(message.entry)
+      .then((result) => ({ ok: true, ...result }))
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
+  if (message?.type === "remove-vocabulary") {
+    return removeVocabularyEntry(message.id)
+      .then((result) => ({ ok: true, ...result }))
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
+  if (message?.type === "review-vocabulary") {
+    return reviewVocabularyEntry(message.id, message.rating)
+      .then((result) => ({ ok: true, ...result }))
+      .catch((error) => ({ ok: false, error: error.message }));
   }
   return undefined;
 });
