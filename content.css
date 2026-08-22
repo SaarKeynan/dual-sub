@@ -8,6 +8,16 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-root {
   --dualsub-bottom: 72px;
   --dualsub-width: 88%;
+  --dualsub-group-unknown: #ffffff;
+  --dualsub-group-noun: #60a5fa;
+  --dualsub-group-verb: #fb7185;
+  --dualsub-group-adjective: #c084fc;
+  --dualsub-group-adverb: #facc15;
+  --dualsub-group-pronoun: #22d3ee;
+  --dualsub-group-determiner: #4ade80;
+  --dualsub-group-preposition: #fb923c;
+  --dualsub-group-conjunction: #f472b6;
+  --dualsub-group-interjection: #94a3b8;
   position: absolute;
   inset: 0;
   z-index: 70;
@@ -61,20 +71,21 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 }
 
 .dualsub-word {
-  --dualsub-group-color: #fef08a;
+  --dualsub-group-color: var(--dualsub-group-unknown, #ffffff);
   border-radius: 0.16em;
   transition: color 90ms ease, background-color 90ms ease, box-shadow 90ms ease;
 }
 
-.dualsub-word[data-word-group="noun"], .dualsub-card-group[data-group="noun"] { --dualsub-group-color: #93c5fd; }
-.dualsub-word[data-word-group="verb"], .dualsub-card-group[data-group="verb"] { --dualsub-group-color: #fca5a5; }
-.dualsub-word[data-word-group="adjective"], .dualsub-card-group[data-group="adjective"] { --dualsub-group-color: #c4b5fd; }
-.dualsub-word[data-word-group="adverb"], .dualsub-card-group[data-group="adverb"] { --dualsub-group-color: #fcd34d; }
-.dualsub-word[data-word-group="pronoun"], .dualsub-card-group[data-group="pronoun"] { --dualsub-group-color: #67e8f9; }
-.dualsub-word[data-word-group="determiner"], .dualsub-card-group[data-group="determiner"] { --dualsub-group-color: #86efac; }
-.dualsub-word[data-word-group="preposition"], .dualsub-card-group[data-group="preposition"] { --dualsub-group-color: #fdba74; }
-.dualsub-word[data-word-group="conjunction"], .dualsub-card-group[data-group="conjunction"] { --dualsub-group-color: #f9a8d4; }
-.dualsub-word[data-word-group="interjection"], .dualsub-card-group[data-group="interjection"] { --dualsub-group-color: #e5e7eb; }
+.dualsub-word[data-word-group="unknown"], .dualsub-card-group[data-group="unknown"] { --dualsub-group-color: var(--dualsub-group-unknown, #ffffff); }
+.dualsub-word[data-word-group="noun"], .dualsub-card-group[data-group="noun"] { --dualsub-group-color: var(--dualsub-group-noun, #60a5fa); }
+.dualsub-word[data-word-group="verb"], .dualsub-card-group[data-group="verb"] { --dualsub-group-color: var(--dualsub-group-verb, #fb7185); }
+.dualsub-word[data-word-group="adjective"], .dualsub-card-group[data-group="adjective"] { --dualsub-group-color: var(--dualsub-group-adjective, #c084fc); }
+.dualsub-word[data-word-group="adverb"], .dualsub-card-group[data-group="adverb"] { --dualsub-group-color: var(--dualsub-group-adverb, #facc15); }
+.dualsub-word[data-word-group="pronoun"], .dualsub-card-group[data-group="pronoun"] { --dualsub-group-color: var(--dualsub-group-pronoun, #22d3ee); }
+.dualsub-word[data-word-group="determiner"], .dualsub-card-group[data-group="determiner"] { --dualsub-group-color: var(--dualsub-group-determiner, #4ade80); }
+.dualsub-word[data-word-group="preposition"], .dualsub-card-group[data-group="preposition"] { --dualsub-group-color: var(--dualsub-group-preposition, #fb923c); }
+.dualsub-word[data-word-group="conjunction"], .dualsub-card-group[data-group="conjunction"] { --dualsub-group-color: var(--dualsub-group-conjunction, #f472b6); }
+.dualsub-word[data-word-group="interjection"], .dualsub-card-group[data-group="interjection"] { --dualsub-group-color: var(--dualsub-group-interjection, #94a3b8); }
 
 .dualsub-source .dualsub-word {
   cursor: help;
@@ -243,7 +254,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 }
 
 .dualsub-card-group {
-  --dualsub-group-color: #fef08a;
+  --dualsub-group-color: var(--dualsub-group-unknown, #ffffff);
   display: inline-block;
   margin: -2px 0 8px;
   padding: 3px 7px;

@@ -10,6 +10,18 @@ const DEFAULT_SETTINGS = {
   hoverLookup: true,
   wordAlignment: true,
   colorFrenchWordGroups: false,
+  wordGroupColors: {
+    unknown: "#ffffff",
+    noun: "#60a5fa",
+    verb: "#fb7185",
+    adjective: "#c084fc",
+    adverb: "#facc15",
+    pronoun: "#22d3ee",
+    determiner: "#4ade80",
+    preposition: "#fb923c",
+    conjunction: "#f472b6",
+    interjection: "#94a3b8"
+  },
   pauseOnLookup: false,
   recallMode: false,
   autoPause: false,
@@ -222,6 +234,7 @@ function mergeSettings(value = {}) {
   return {
     ...DEFAULT_SETTINGS,
     ...value,
+    wordGroupColors: { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) },
     sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
     targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
   };

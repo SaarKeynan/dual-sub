@@ -7,6 +7,9 @@ const ids = [
   "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
   "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "pronunciationVoiceURI", "pronunciationRate",
+  "wordGroupColorUnknown", "wordGroupColorNoun", "wordGroupColorVerb", "wordGroupColorAdjective",
+  "wordGroupColorAdverb", "wordGroupColorPronoun", "wordGroupColorDeterminer",
+  "wordGroupColorPreposition", "wordGroupColorConjunction", "wordGroupColorInterjection",
   "sourceFontSize", "sourceTextColor", "sourceBackgroundColor", "sourceBackgroundOpacity",
   "sourceFontFamily", "sourceFontWeight", "sourceItalic",
   "targetFontSize", "targetTextColor", "targetBackgroundColor", "targetBackgroundOpacity",
@@ -92,6 +95,10 @@ function setFormValues() {
   element("lookupCardPosition").value = settings.lookupCardPosition || "smart";
   element("pronunciationVoiceURI").value = settings.pronunciationVoiceURI || "";
   element("pronunciationRate").value = settings.pronunciationRate || 0.88;
+  for (const group of ["unknown", "noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"]) {
+    const id = `wordGroupColor${group[0].toUpperCase()}${group.slice(1)}`;
+    element(id).value = settings.wordGroupColors[group];
+  }
 
   for (const prefix of ["source", "target"]) {
     const style = settings[`${prefix}Style`];
@@ -128,6 +135,11 @@ function readFormValues() {
   settings.lookupCardPosition = element("lookupCardPosition").value;
   settings.pronunciationVoiceURI = element("pronunciationVoiceURI").value;
   settings.pronunciationRate = Number(element("pronunciationRate").value);
+  settings.wordGroupColors = {};
+  for (const group of ["unknown", "noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"]) {
+    const id = `wordGroupColor${group[0].toUpperCase()}${group.slice(1)}`;
+    settings.wordGroupColors[group] = element(id).value;
+  }
 
   for (const prefix of ["source", "target"]) {
     settings[`${prefix}Style`] = {
@@ -274,6 +286,7 @@ async function initialize() {
   settings = {
     ...defaults,
     ...(stored.settings || {}),
+    wordGroupColors: { ...defaults.wordGroupColors, ...(stored.settings?.wordGroupColors || {}) },
     sourceStyle: { ...defaults.sourceStyle, ...(stored.settings?.sourceStyle || {}) },
     targetStyle: { ...defaults.targetStyle, ...(stored.settings?.targetStyle || {}) }
   };
@@ -288,6 +301,7 @@ async function initialize() {
       ...settings,
       bottomOffset: defaults.bottomOffset,
       maxWidth: defaults.maxWidth,
+      wordGroupColors: structuredClone(defaults.wordGroupColors),
       sourceStyle: structuredClone(defaults.sourceStyle),
       targetStyle: structuredClone(defaults.targetStyle)
     };

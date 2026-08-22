@@ -59,6 +59,9 @@ section { padding: 13px; border: 1px solid #263248; border-radius: 12px; backgro
 
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px 11px; }
 .compact-grid { margin-top: 11px; }
+.word-group-grid { margin-top: 8px; }
+.palette-heading { color: #dbeafe; font-size: 11px; font-weight: 750; }
+.palette-note { margin-top: 8px; }
 .wide { grid-column: 1 / -1; }
 label { min-width: 0; color: #aebbd0; font-size: 10px; font-weight: 650; }
 output { float: right; color: #e2e8f0; font-variant-numeric: tabular-nums; }

@@ -15,6 +15,7 @@ function extract(source, startMarker, endMarker) {
 
 async function testCaptionProcessing() {
   const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  const contentCss = fs.readFileSync(path.join(projectRoot, "content.css"), "utf8");
   const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
   const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
   const bridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"), "utf8");
@@ -128,6 +129,15 @@ async function testCaptionProcessing() {
     frenchAppearanceStart < colorSettingIndex && colorSettingIndex < englishAppearanceStart,
     "The French word-group coloring toggle should live in Appearance → French"
   );
+  for (const group of ["Unknown", "Noun", "Verb", "Adjective", "Adverb", "Pronoun", "Determiner", "Preposition", "Conjunction", "Interjection"]) {
+    const settingIndex = popupHtml.indexOf(`id="wordGroupColor${group}"`);
+    assert(
+      frenchAppearanceStart < settingIndex && settingIndex < englishAppearanceStart,
+      `${group} should have an editable color under Appearance → French`
+    );
+  }
+  assert(contentCss.includes("--dualsub-group-unknown: #ffffff"));
+  assert(contentCss.includes("var(--dualsub-group-adverb, #facc15)"));
 }
 
 async function testFrenchConjugation() {
@@ -268,6 +278,9 @@ async function testVocabularyStorage() {
   assert.strictEqual(defaultSettings.settings.captionOffsetMs, 0);
   assert.strictEqual(defaultSettings.settings.subtitleLeadMs, undefined);
   assert.strictEqual(defaultSettings.settings.colorFrenchWordGroups, false);
+  assert.strictEqual(defaultSettings.settings.wordGroupColors.unknown, "#ffffff");
+  assert.strictEqual(defaultSettings.settings.wordGroupColors.adverb, "#facc15");
+  assert.strictEqual(Object.keys(defaultSettings.settings.wordGroupColors).length, 10);
   assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
   assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
 

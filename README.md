@@ -46,6 +46,8 @@ interactive study surface.
   125,132 French forms. Lookup cards show a color-coded noun, verb, adjective,
   adverb, pronoun, determiner, preposition, conjunction, or interjection label;
   the same colors can optionally be applied to every French subtitle word.
+  Every group color is editable under Appearance → French, while unclassified
+  words default to white.
 - Determiner context suppresses misleading verb-first readings for nominal
   forms; for example, `une psychée` favors the attested noun `psyché` while
   retaining `psycher` as an explicitly secondary possible verb reading.

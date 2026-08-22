@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2 — editable grammatical palette
+
+- Replaced the similar pastel word-group colors with a more distinct palette.
+- Made all ten colors editable under Appearance → French, including the
+  unclassified “Word” color, which now defaults to pure white.
+- Applied the custom palette consistently to hover highlights, lookup badges,
+  phrase selections, and the optional fully colored French subtitle row.
+
 ## 0.6.1 — popup scrolling and clearer provider errors
 
 - Restored vertical scrolling in the settings popup while keeping horizontal

@@ -11,6 +11,18 @@
     hoverLookup: true,
     wordAlignment: true,
     colorFrenchWordGroups: false,
+    wordGroupColors: {
+      unknown: "#ffffff",
+      noun: "#60a5fa",
+      verb: "#fb7185",
+      adjective: "#c084fc",
+      adverb: "#facc15",
+      pronoun: "#22d3ee",
+      determiner: "#4ade80",
+      preposition: "#fb923c",
+      conjunction: "#f472b6",
+      interjection: "#94a3b8"
+    },
     pauseOnLookup: false,
     recallMode: false,
     autoPause: false,
@@ -117,6 +129,7 @@
     return {
       ...DEFAULT_SETTINGS,
       ...value,
+      wordGroupColors: { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) },
       sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
       targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
     };
@@ -156,6 +169,9 @@
     );
     root.style.setProperty("--dualsub-bottom", `${settings.bottomOffset}px`);
     root.style.setProperty("--dualsub-width", `${settings.maxWidth}%`);
+    for (const [group, color] of Object.entries(settings.wordGroupColors)) {
+      root.style.setProperty(`--dualsub-group-${group}`, color);
+    }
     root.classList.toggle("dualsub-recall-mode", Boolean(settings.recallMode));
     root.classList.toggle("dualsub-color-word-groups", Boolean(settings.colorFrenchWordGroups));
     applyLineStyle(sourceLine, settings.sourceStyle);
