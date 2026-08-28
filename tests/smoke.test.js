@@ -136,11 +136,16 @@ async function testCaptionProcessing() {
   assert(source.includes("chooseFrenchVoice"));
   assert(source.includes("colorFrenchWordGroups"));
   assert(source.includes('class="dualsub-card-translation"'));
-  assert(source.includes('<div class="dualsub-card-label">Verb</div>'));
+  assert(source.includes('class="dualsub-card-infinitive"'));
+  assert(!source.includes('<div class="dualsub-card-label">Verb</div>'));
+  assert(!source.includes("Elsewhere in this video"));
+  assert(!source.includes("Example sentences"));
+  assert(!source.includes("dualsub-caption-provenance"));
+  assert(source.includes('aheadAlignmentKinds.get(currentSourceCueIndex) !== "character"'));
+  assert(source.includes("lookupTranslationKey"));
   assert(source.includes("lookupTranslationCache"));
   assert(source.includes('cacheMode: "word"'));
   assert(source.includes("videoWordWarmupOrder"));
-  assert(source.includes("tatoeba.org/en/sentences/search"));
   assert(source.includes("dualsub-status-close"));
   assert(source.includes("dismissedStatusKeys"));
   assert(popupCss.includes("overflow-y: auto"), "The settings popup should scroll vertically");
@@ -201,17 +206,12 @@ async function testFrenchConjugation() {
   assert.strictEqual(suis.tense, "present");
   assert.strictEqual(suis.person, "1st");
   assert.strictEqual(suis.number, "singular");
-  assert.strictEqual(context.DualSubFrench.describe(suis), "present · 1st person singular");
-  assert.strictEqual(context.DualSubFrench.example(suis, "suis"), "Je suis.");
   const feraient = analyze("feraient");
   assert.strictEqual(feraient.lemma, "faire");
   assert.strictEqual(feraient.mood, "conditional");
   assert.strictEqual(feraient.tense, "present");
-  assert.strictEqual(context.DualSubFrench.describe(feraient), "present conditional · 3rd person plural");
-  assert.strictEqual(context.DualSubFrench.example(feraient, "feraient"), "Ils feraient.");
   const mange = analyze("mange");
-  assert.strictEqual(context.DualSubFrench.describe(mange), "present · 1st person singular");
-  assert.strictEqual(context.DualSubFrench.example(mange, "mange"), "Je mange.");
+  assert.strictEqual(mange.lemma, "manger");
   const parlerai = analyze("parlerai");
   assert.strictEqual(parlerai.lemma, "parler");
   assert.strictEqual(parlerai.tense, "future");
@@ -229,7 +229,6 @@ async function testFrenchConjugation() {
   assert.strictEqual(taime.clitic.expanded, "te");
   assert.strictEqual(taime.clitic.role, "object pronoun");
   assert.strictEqual(Boolean(taime.pronominal), false, "je t'aime is not reflexive");
-  assert.strictEqual(context.DualSubFrench.describe(taime), "present · 1st person singular · t’ = te (object pronoun)");
   const shabiller = analyze("s'habiller", "Il faut s'habiller");
   assert.strictEqual(shabiller.lemma, "habiller");
   assert.strictEqual(shabiller.pronominalLemma, "s’habiller");
@@ -242,10 +241,8 @@ async function testFrenchConjugation() {
   assert.strictEqual(sappelle.person, "3rd");
   assert.strictEqual(sappelle.pronominalLemma, "s’appeler");
   assert.strictEqual(sappelle.clitic.role, "reflexive pronoun");
-  assert.strictEqual(context.DualSubFrench.example(sappelle, "s'appelle"), "Il s'appelle.");
   const nousAppelons = analyze("appelons", "nous nous appelons souvent");
   assert.strictEqual(nousAppelons.pronominalLemma, "s’appeler");
-  assert.strictEqual(context.DualSubFrench.example(nousAppelons, "appelons"), "Nous nous appelons.");
   const vousAime = analyze("aime", "je vous aime");
   assert.strictEqual(vousAime.person, "1st", "an object vous must not replace the sentence subject");
   assert.strictEqual(vousAime.clitic.role, "object pronoun");
@@ -335,7 +332,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.7.0");
+  assert.strictEqual(manifest.version, "0.7.1");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
   assert(manifest.background.scripts.includes("translation-engine.js"));
   assert(manifest.browser_specific_settings.gecko.data_collection_permissions.required.includes("websiteContent"));

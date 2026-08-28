@@ -58,8 +58,8 @@ interactive study surface.
   of the video's most frequent words before they are selected.
 - French conjugations are analyzed locally with ablaut's reverse morphology,
   then checked against a 7,820-infinitive Lefff derivative. The lookup card
-  shows a compact base verb, form, person, and generated example, while keeping
-  alternatives for genuinely ambiguous forms such as `suis` (`être` / `suivre`).
+  shows only the most likely infinitive, keeping grammatical analysis out of
+  the way of the translation.
 - An offline Lexique 3.83 derivative identifies grammatical word groups for
   125,132 French forms. Lookup cards show a color-coded noun, verb, adjective,
   adverb, pronoun, determiner, preposition, conjunction, or interjection label;
@@ -71,7 +71,7 @@ interactive study surface.
   retaining `psycher` as an explicitly secondary possible verb reading.
 - Select any French phrase or sentence for lookup; lookup cards include the
   complete bilingual line, pronunciation, sentence translation, replay, and
-  Google Translate, Wiktionary, and Tatoeba example-sentence links. Cards can appear intelligently above
+  Google Translate and Wiktionary links. Cards can appear intelligently above
   the subtitles, beside the pointer, or in the upper-right; they close after
   the pointer leaves unless pinned and resume playback if lookup paused it.
 - Lookup cards can copy the bilingual pair, step to the previous or next French

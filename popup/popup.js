@@ -4,7 +4,7 @@ let saveTimer;
 
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation", "preloadVideoWords",
-  "hoverLookup", "wordAlignment", "showTranslationProvenance", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "skipCaptionGaps", "hoverDelay", "studyMode",
+  "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "skipCaptionGaps", "hoverDelay", "studyMode",
   "captionHoldMs", "translationBufferSeconds", "translationBatchSize",
   "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "pronunciationVoiceURI", "pronunciationRate",
@@ -111,7 +111,6 @@ function setFormValues() {
   element("selectionTranslation").checked = settings.selectionTranslation;
   element("hoverLookup").checked = settings.hoverLookup;
   element("wordAlignment").checked = settings.wordAlignment;
-  element("showTranslationProvenance").checked = settings.showTranslationProvenance !== false;
   element("colorFrenchWordGroups").checked = settings.colorFrenchWordGroups;
   element("pauseOnLookup").checked = settings.pauseOnLookup;
   element("recallMode").checked = settings.recallMode;
@@ -158,7 +157,6 @@ function readFormValues() {
   settings.selectionTranslation = element("selectionTranslation").checked;
   settings.hoverLookup = element("hoverLookup").checked;
   settings.wordAlignment = element("wordAlignment").checked;
-  settings.showTranslationProvenance = element("showTranslationProvenance").checked;
   settings.colorFrenchWordGroups = element("colorFrenchWordGroups").checked;
   settings.pauseOnLookup = element("pauseOnLookup").checked;
   settings.recallMode = element("recallMode").checked;

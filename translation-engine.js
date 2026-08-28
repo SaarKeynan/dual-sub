@@ -195,6 +195,7 @@
       return {
         sourceText: texts[index], translatedText: cleanText(translation.text), provider: "azure",
         alignment: parseAzureAlignment(translation.alignment?.proj),
+        alignmentKind: translation.alignment?.proj ? "character" : "none",
         sentenceLengths: translation.sentLen || null,
         provenance: translation.alignment?.proj ? "Azure aligned" : "Azure neural"
       };
@@ -286,6 +287,7 @@
           translatedText,
           provider: "google",
           alignment: informativeAlignment,
+          alignmentKind: informativeAlignment.length ? "segment" : "none",
           provenance: informativeAlignment.length ? "Google segmented" : "Google web"
         };
       }

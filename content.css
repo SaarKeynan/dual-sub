@@ -281,7 +281,8 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 }
 
 .dualsub-selection-card.is-particle-card .dualsub-card-heading,
-.dualsub-selection-card.is-particle-card .dualsub-card-conjugation,
+.dualsub-selection-card.is-particle-card .dualsub-card-lexical,
+.dualsub-selection-card.is-particle-card .dualsub-card-infinitive,
 .dualsub-selection-card.is-particle-card .dualsub-card-context,
 .dualsub-selection-card.is-particle-card .dualsub-card-actions,
 .dualsub-selection-card.is-particle-card .dualsub-card-links {
@@ -392,32 +393,18 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   font-weight: 650;
 }
 
-.dualsub-caption-provenance { margin-left: .55em; color: #94a3b8; font: 600 9px/1 system-ui,sans-serif; vertical-align: middle; opacity: .85; }
-.dualsub-caption-provenance[hidden] { display: none; }
-
-.dualsub-card-conjugation {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-left: 3px solid var(--dualsub-group-verb, #a78bfa);
-  border-radius: 7px;
-  background: rgba(76, 29, 149, 0.18);
-  background: color-mix(in srgb, var(--dualsub-group-verb, #a78bfa) 14%, #0f172a 86%);
+.dualsub-card-infinitive {
+  margin-top: 5px;
+  color: #cbd5e1;
+  font: 600 11px/1.3 system-ui, sans-serif;
 }
-
-.dualsub-card-lemma { color: var(--dualsub-group-verb, #a78bfa); font-size: 13px; font-weight: 750; }
-.dualsub-card-grammar { margin-top: 3px; color: #ddd6fe; font-size: 11px; line-height: 1.4; }
-.dualsub-card-example { margin-top: 5px; color: #f8fafc; font-size: 12px; font-style: italic; }
-.dualsub-card-example[hidden] { display: none; }
+.dualsub-card-infinitive[hidden] { display: none; }
 
 .dualsub-card-lexical {
-  margin-top: 8px;
-  padding: 7px 9px;
-  border: 1px solid rgba(96, 165, 250, .25);
-  border-radius: 7px;
-  background: rgba(30, 58, 138, .14);
+  margin: -5px 0 8px;
 }
 .dualsub-card-lexical[hidden] { display: none; }
-.dualsub-card-lexical-info { margin-top: 2px; color: #dbeafe; font: 600 11px/1.35 system-ui, sans-serif; }
+.dualsub-card-lexical-info { color: #94a3b8; font: 500 10px/1.3 system-ui, sans-serif; }
 
 .dualsub-card-context {
   margin-top: 11px;
@@ -437,11 +424,6 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   color: #bfdbfe;
   font-size: 12px;
 }
-
-.dualsub-card-occurrences { margin-top: 8px; }
-.dualsub-card-occurrences[hidden] { display: none; }
-.dualsub-card-occurrence-list { display: grid; gap: 4px; margin-top: 4px; }
-.dualsub-card-occurrence-list button { overflow: hidden; padding: 5px 7px; border: 1px solid rgba(148,163,184,.2); border-radius: 6px; color: #cbd5e1; background: rgba(15,23,42,.7); font: 500 10px/1.3 system-ui,sans-serif; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .dualsub-card-actions {
   display: flex;
@@ -501,8 +483,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   text-decoration: underline;
 }
 
-.dualsub-card-wiktionary,
-.dualsub-card-examples {
+.dualsub-card-wiktionary {
   display: inline-block;
   margin-top: 9px;
   color: #c4b5fd;
@@ -510,7 +491,6 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   text-decoration: none;
 }
 
-.dualsub-card-wiktionary:hover,
-.dualsub-card-examples:hover {
+.dualsub-card-wiktionary:hover {
   text-decoration: underline;
 }

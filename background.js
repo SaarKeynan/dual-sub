@@ -39,7 +39,6 @@ const DEFAULT_SETTINGS = {
   pronunciationRate: 0.88,
   captionOffsetMs: 0,
   translationProvider: "google",
-  showTranslationProvenance: true,
   bottomOffset: 72,
   maxWidth: 88,
   mymemoryEmail: "",

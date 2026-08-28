@@ -40,7 +40,6 @@
     pronunciationRate: 0.88,
     captionOffsetMs: 0,
     translationProvider: "google",
-    showTranslationProvenance: true,
     bottomOffset: 72,
     maxWidth: 88,
     sourceStyle: {
@@ -67,7 +66,6 @@
   let root;
   let sourceLine;
   let targetLine;
-  let provenanceNode;
   let statusNode;
   let statusTextNode;
   let statusCloseNode;
@@ -123,6 +121,7 @@
   let usingAheadTranslation = false;
   const aheadTranslations = new Map();
   const aheadAlignments = new Map();
+  const aheadAlignmentKinds = new Map();
   const aheadTranslationProvenance = new Map();
   const lookupTranslationCache = new Map();
   const aheadTranslationPending = new Set();
@@ -293,7 +292,7 @@
             <button class="dualsub-status-close" type="button" aria-label="Dismiss message" title="Dismiss"></button>
           </div>
           <div class="dualsub-line dualsub-source"><span class="dualsub-line-text"></span></div>
-          <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span><span class="dualsub-caption-provenance" hidden></span></div>
+          <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span></div>
         </div>
         <div class="dualsub-selection-card" role="dialog" aria-live="polite" aria-label="Subtitle lookup">
           <div class="dualsub-card-heading">
@@ -304,28 +303,18 @@
             </div>
           </div>
           <div class="dualsub-card-source"></div>
+          <div class="dualsub-card-lexical" hidden>
+            <div class="dualsub-card-lexical-info"></div>
+          </div>
           <div class="dualsub-card-translation" data-group="unknown">
             <div class="dualsub-card-group" hidden></div>
             <div class="dualsub-card-result"></div>
-          </div>
-          <div class="dualsub-card-lexical" hidden>
-            <div class="dualsub-card-label">French details</div>
-            <div class="dualsub-card-lexical-info"></div>
-          </div>
-          <div class="dualsub-card-conjugation" hidden>
-            <div class="dualsub-card-label">Verb</div>
-            <div class="dualsub-card-lemma"></div>
-            <div class="dualsub-card-grammar"></div>
-            <div class="dualsub-card-example"></div>
+            <div class="dualsub-card-infinitive" hidden></div>
           </div>
           <div class="dualsub-card-context">
             <div class="dualsub-card-label">In this line</div>
             <div class="dualsub-card-sentence-source"></div>
             <div class="dualsub-card-sentence-target"></div>
-          </div>
-          <div class="dualsub-card-occurrences" hidden>
-            <div class="dualsub-card-label">Elsewhere in this video</div>
-            <div class="dualsub-card-occurrence-list"></div>
           </div>
           <div class="dualsub-card-actions">
             <button type="button" data-action="previous" title="Previous French word">← Word</button>
@@ -341,13 +330,11 @@
           <div class="dualsub-card-links">
             <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>
             <a class="dualsub-card-wiktionary" target="_blank" rel="noopener noreferrer">Wiktionary &nearr;</a>
-            <a class="dualsub-card-examples" target="_blank" rel="noopener noreferrer">Example sentences &nearr;</a>
           </div>
         </div>`;
       player.appendChild(root);
       sourceLine = root.querySelector(".dualsub-source .dualsub-line-text");
       targetLine = root.querySelector(".dualsub-target .dualsub-line-text");
-      provenanceNode = root.querySelector(".dualsub-caption-provenance");
       statusNode = root.querySelector(".dualsub-status");
       statusTextNode = root.querySelector(".dualsub-status-text");
       statusCloseNode = root.querySelector(".dualsub-status-close");
@@ -1170,6 +1157,7 @@
     aheadTranslationGeneration += 1;
     aheadTranslations.clear();
     aheadAlignments.clear();
+    aheadAlignmentKinds.clear();
     aheadTranslationProvenance.clear();
     aheadTranslationPending.clear();
     aheadTranslationFailed.clear();
@@ -1342,7 +1330,7 @@
     }
     response.results.forEach((result, index) => {
       if (!result?.translatedText) return;
-      const cacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(queue[index])}`;
+      const cacheKey = lookupTranslationKey(queue[index]);
       rememberLookupTranslation(cacheKey, result.translatedText);
       wordWarmupCompleted += 1;
     });
@@ -1437,6 +1425,7 @@
         if (!result?.translatedText) return;
         aheadTranslations.set(index, result.translatedText);
         aheadAlignments.set(index, result.alignment || []);
+        aheadAlignmentKinds.set(index, result.alignmentKind || (result.provider === "azure" && result.alignment?.length ? "character" : "none"));
         aheadTranslationProvenance.set(index, result.provenance || result.provider || "translated");
       });
       if (aheadTranslations.has(aheadTranslationFocusIndex) && status.state !== "ready") {
@@ -1598,11 +1587,6 @@
     currentSourceCue = sourceCue;
     currentTargetCue = targetCue;
     currentSourceCueIndex = sourceIndex;
-    if (provenanceNode) {
-      const provenance = aheadTranslationProvenance.get(sourceIndex) || (targetCue ? "YouTube track" : usingNativeTranslation ? "YouTube live" : "");
-      provenanceNode.textContent = provenance;
-      provenanceNode.hidden = !settings.showTranslationProvenance || !provenance;
-    }
     sourceLine.parentElement.classList.toggle(
       "is-visible",
       settings.enabled && settings.showSource && Boolean(sourceText)
@@ -1784,6 +1768,7 @@
 
   function applyPreciseProviderAlignment(sourceWord) {
     if (!settings.wordAlignment || currentSourceCueIndex < 0) return false;
+    if (aheadAlignmentKinds.get(currentSourceCueIndex) !== "character") return false;
     const alignment = aheadAlignments.get(currentSourceCueIndex);
     if (!alignment?.length) return false;
     const sourceRange = wordCharacterRange(sourceWord, sourceLine, currentSourceText);
@@ -1817,6 +1802,10 @@
     if (lookupTranslationCache.size > 1200) {
       lookupTranslationCache.delete(lookupTranslationCache.keys().next().value);
     }
+  }
+
+  function lookupTranslationKey(value) {
+    return `${settings.translationProvider}|${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(value)}`;
   }
 
   function stemEnglishWord(value) {
@@ -1902,7 +1891,7 @@
         length: 1,
         score: Math.max(...translatedWords.map((translatedWord) => wordSimilarity(targetWord, translatedWord))),
         distance: Math.abs(index - estimatedCenter)
-      })).filter((match) => match.score >= 0.78);
+      })).filter((match) => match.score >= 0.86);
       fuzzyMatches.sort((left, right) => right.score - left.score || left.distance - right.distance);
       best = fuzzyMatches[0] || null;
     }
@@ -1934,11 +1923,8 @@
       try {
         const wordText = lookupTextForWord(word);
         const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText, currentSourceText);
-        const evidenceTexts = [
-          wordText,
-          conjugation?.lemma,
-          ...(conjugation?.alternatives || []).map((item) => item.lemma)
-        ].filter((text, index, values) => text && values.indexOf(text) === index).slice(0, 4);
+        const evidenceTexts = [wordText, conjugation?.pronominalLemma || conjugation?.lemma]
+          .filter((text, index, values) => text && values.indexOf(text) === index);
         const results = await Promise.allSettled(evidenceTexts.map((text) => browser.runtime.sendMessage({
           type: "translate-selection", text,
           sourceLanguage: settings.sourceLanguage,
@@ -1951,7 +1937,7 @@
           .map((result) => result.value.translatedText);
         const surfaceResponse = results[0]?.status === "fulfilled" ? results[0].value : null;
         if (surfaceResponse?.ok) {
-          const cacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(wordText)}`;
+          const cacheKey = lookupTranslationKey(wordText);
           rememberLookupTranslation(cacheKey, surfaceResponse.translatedText);
         }
         if (translations.length && word.isConnected && word.classList.contains("is-hovered")) {
@@ -2053,17 +2039,11 @@
     const resultNode = selectionCard.querySelector(".dualsub-card-result");
     const sentenceSourceNode = selectionCard.querySelector(".dualsub-card-sentence-source");
     const sentenceTargetNode = selectionCard.querySelector(".dualsub-card-sentence-target");
-    const conjugationNode = selectionCard.querySelector(".dualsub-card-conjugation");
     const lexicalNode = selectionCard.querySelector(".dualsub-card-lexical");
     const lexicalInfoNode = selectionCard.querySelector(".dualsub-card-lexical-info");
-    const lemmaNode = selectionCard.querySelector(".dualsub-card-lemma");
-    const grammarNode = selectionCard.querySelector(".dualsub-card-grammar");
-    const exampleNode = selectionCard.querySelector(".dualsub-card-example");
-    const occurrencesNode = selectionCard.querySelector(".dualsub-card-occurrences");
-    const occurrenceListNode = selectionCard.querySelector(".dualsub-card-occurrence-list");
+    const infinitiveNode = selectionCard.querySelector(".dualsub-card-infinitive");
     const linkNode = selectionCard.querySelector(".dualsub-card-link");
     const wiktionaryNode = selectionCard.querySelector(".dualsub-card-wiktionary");
-    const examplesNode = selectionCard.querySelector(".dualsub-card-examples");
     const pinButton = selectionCard.querySelector('[data-action="pin"]');
     const saveButton = selectionCard.querySelector('[data-action="save"]');
     const phraseButton = selectionCard.querySelector('[data-action="phrase"]');
@@ -2104,61 +2084,24 @@
     groupNode.textContent = wordGroup
       ? [WORD_GROUP_LABELS[wordGroup.group] || "Word", ...(wordGroup.alternatives || []).map((group) => `also ${WORD_GROUP_LABELS[group]?.toLocaleLowerCase() || group}`)].join(" · ")
       : "";
-    const lookupCacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(cleanText)}`;
+    const lookupCacheKey = lookupTranslationKey(cleanText);
     const cachedLookup = kind === "word" ? lookupTranslationCache.get(lookupCacheKey) : null;
     resultNode.textContent = cachedLookup || "Translating…";
     sentenceSourceNode.textContent = sentence;
     sentenceTargetNode.textContent = lookupContext.sentenceTranslation || "Translation available on request";
-    const occurrencePattern = new RegExp(`(^|[^\\p{L}])${cleanText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}]|$)`, "iu");
-    const occurrences = kind === "word"
-      ? sourceCues.map((cue, index) => ({ cue, index })).filter(({ cue }) => occurrencePattern.test(cue.text)).slice(0, 5)
-      : [];
-    occurrencesNode.hidden = occurrences.length < 2;
-    occurrenceListNode.replaceChildren(...occurrences.map(({ cue, index }) => {
-      const occurrence = document.createElement("button");
-      occurrence.type = "button";
-      occurrence.dataset.action = "occurrence";
-      occurrence.dataset.cueIndex = String(index);
-      occurrence.textContent = `${Math.floor(cue.start / 60000)}:${String(Math.floor(cue.start / 1000) % 60).padStart(2, "0")} · ${cue.text}`;
-      return occurrence;
-    }));
     lexicalNode.hidden = !lexicalInfo;
     lexicalInfoNode.textContent = lexicalInfo
       ? [
           lexicalInfo.pronunciation ? `/${lexicalInfo.pronunciation}/` : "",
           lexicalInfo.gender,
-          lexicalInfo.number,
-          lexicalInfo.syllables ? `${lexicalInfo.syllables} syllable${lexicalInfo.syllables === 1 ? "" : "s"}` : "",
-          lexicalInfo.frequency ? `frequency ${lexicalInfo.frequency.toFixed(1)}` : ""
+          lexicalInfo.number
         ].filter(Boolean).join(" · ")
       : "";
-    conjugationNode.hidden = !conjugation;
-    if (conjugation) {
-      if (conjugation.partOfSpeech === "nominal") {
-        lemmaNode.textContent = normalizeLookupWord(conjugation.lemma) !== normalizeLookupWord(cleanText)
-          ? `In this sentence, “${cleanText}” is most likely the noun “${conjugation.lemma}”.`
-          : `In this sentence, “${cleanText}” is being used as a noun or adjective.`;
-        grammarNode.textContent = conjugation.verbReadings?.length
-          ? `In another context, it could be a form of ${conjugation.verbReadings.map((item) => `“${item.lemma}”`).join(" or ")}.`
-          : "The word before it makes a verb meaning unlikely here.";
-      } else {
-        const confidenceLabel = ["high", "verified"].includes(conjugation.confidence) ? "" : "Possible: ";
-        const displayLemma = conjugation.pronominalLemma || conjugation.lemma;
-        lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${displayLemma}`;
-        const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
-        grammarNode.textContent = conjugation.alternatives?.length
-          ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma} (${globalThis.DualSubFrench.describe(item)})`).join(" / ")}`
-          : description;
-      }
-      const example = conjugation.partOfSpeech === "verb"
-        ? globalThis.DualSubFrench?.example(conjugation, cleanText)
-        : "";
-      exampleNode.hidden = !example;
-      exampleNode.textContent = example ? `Example: ${example}` : "";
-    } else {
-      exampleNode.hidden = true;
-      exampleNode.textContent = "";
-    }
+    const infinitive = conjugation?.partOfSpeech === "verb"
+      ? (conjugation.pronominalLemma || conjugation.lemma || "")
+      : "";
+    infinitiveNode.hidden = !infinitive;
+    infinitiveNode.textContent = infinitive ? `Infinitive: ${infinitive}` : "";
     saveButton.disabled = true;
     saveButton.textContent = "+ Vocabulary";
     phraseButton.disabled = kind !== "word" || hoveredWordIndex < 0;
@@ -2176,7 +2119,6 @@
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
     const dictionaryWord = conjugation?.pronominalLemma || conjugation?.lemma || cleanText;
     wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
-    examplesNode.href = `https://tatoeba.org/en/sentences/search?from=fra&query=${encodeURIComponent(dictionaryWord)}&to=eng`;
     selectionCard.classList.add("is-visible");
     cancelLookupDismiss();
     root.classList.add("dualsub-learning-open");
@@ -2196,7 +2138,7 @@
         context: sentence
       });
     const lemmaTexts = conjugation?.partOfSpeech === "verb"
-      ? [conjugation?.pronominalLemma, conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.pronominalLemma || item.lemma)]
+      ? [conjugation?.pronominalLemma || conjugation?.lemma]
       .filter((lemma, index, values) => lemma && values.indexOf(lemma) === index)
       .filter((lemma) => normalizeLookupWord(lemma) !== normalizeLookupWord(cleanText))
       .slice(0, 3)
@@ -2290,15 +2232,6 @@
       highlightAlignedWord(word);
       const rect = word.getBoundingClientRect();
       showSelectionCard(lookupTextForWord(word), rect.left + rect.width / 2, rect.bottom, "word");
-      return;
-    }
-
-    if (action === "occurrence") {
-      const cue = sourceCues[Number(button.dataset.cueIndex)];
-      if (video && cue) {
-        video.currentTime = Math.max(0, cue.start / 1000 - 0.08);
-        requestRender();
-      }
       return;
     }
 
@@ -2685,6 +2618,7 @@
           translationLastError: aheadTranslationLastError,
           currentTranslationProvenance: aheadTranslationProvenance.get(currentSourceCueIndex) || "",
           currentAlignmentSpanCount: aheadAlignments.get(currentSourceCueIndex)?.length || 0,
+          currentAlignmentKind: aheadAlignmentKinds.get(currentSourceCueIndex) || "none",
           captionOffsetMs: effectiveCaptionOffsetMs(),
           studyMode: effectiveStudyMode(),
           cueWindow: sourceCues.slice(Math.max(0, currentSourceCueIndex - 3), currentSourceCueIndex + 4).map((cue, offset) => ({

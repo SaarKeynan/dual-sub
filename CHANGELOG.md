@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.1 — quieter lookups and conservative alignment
+
+- Removed the translation-source badge from the English subtitle so both rows
+  remain visually centered.
+- Limited exact character-span matching to Azure alignments; Google segment
+  boundaries now fall back to conservative lexical matching instead of
+  highlighting an oversized translated phrase.
+- Raised the fuzzy-match threshold, reduced lemma requests to the primary
+  infinitive, and made the immediate word cache provider-specific.
+- Reduced verb information to one `Infinitive` line inside the existing
+  color-coded translation panel, removing the duplicate verb panel, tense and
+  person breakdown, and generated examples.
+- Demoted pronunciation, gender, and number to a small muted line beneath the
+  selected word. Removed frequency/syllable prominence, video concordances,
+  and external example-sentence links from lookup cards.
+
 ## 0.7.0 — resilient translation and study workspace
 
 - Replaced individual lookahead requests with a priority batch scheduler that
