@@ -164,17 +164,43 @@ function renderReviewCard() {
   }
   answerVisible = false;
   element("reviewProgress").textContent = `${reviewIndex + 1} / ${reviewQueue.length}`;
-  element("reviewTitle").textContent = entry.sourceText;
-  element("reviewSentence").textContent = entry.sentence || "";
+  const mode = element("reviewMode").value;
+  let prompt = entry.sourceText;
+  let context = entry.sentence || "";
+  let placeholder = "Type the English meaning (optional)";
+  let promptLabel = "French";
+  let answerLabel = "English";
+  if (mode === "reverse") {
+    prompt = entry.translatedText;
+    context = entry.sentenceTranslation || "";
+    placeholder = "Type the French word";
+    promptLabel = "English";
+    answerLabel = "French";
+  } else if (mode === "cloze") {
+    const escaped = entry.sourceText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    prompt = (entry.sentence || entry.sourceText).replace(new RegExp(escaped, "iu"), "_____");
+    context = entry.sentenceTranslation || "";
+    placeholder = "Complete the French sentence";
+  } else if (mode === "listen") {
+    prompt = "Listen, then type the French";
+    context = "";
+    placeholder = "Type what you hear";
+  }
+  element("reviewTitle").textContent = prompt;
+  element("reviewPromptLabel").textContent = promptLabel;
+  element("reviewAnswerLabel").textContent = answerLabel;
+  element("reviewSentence").textContent = context;
   element("reviewTranslation").textContent = entry.translatedText;
   element("reviewSentenceTranslation").textContent = entry.sentenceTranslation || "";
   element("reviewAnswer").hidden = true;
   element("typedAnswer").value = "";
+  element("typedAnswer").placeholder = placeholder;
   element("typedAnswer").disabled = false;
   element("answerFeedback").hidden = true;
   element("answerFeedback").classList.remove("is-correct");
   element("revealAnswer").hidden = false;
   element("ratingButtons").hidden = true;
+  if (mode === "listen") setTimeout(speakCurrentReview, 120);
 }
 
 function revealAnswer() {
@@ -184,8 +210,18 @@ function revealAnswer() {
   if (typed && entry) {
     const normalize = (value) => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLocaleLowerCase();
-    const correct = normalize(typed) === normalize(entry.translatedText);
-    element("answerFeedback").textContent = correct ? "Exact match" : "Compare your answer with the saved translation below";
+    const mode = element("reviewMode").value;
+    const expectedValues = (mode === "forward" ? entry.translatedText : entry.sourceText).split(/[;/]/u).map(normalize).filter(Boolean);
+    const normalizedTyped = normalize(typed);
+    const tokenScore = (expected) => {
+      const expectedTokens = new Set(expected.split(" ").filter(Boolean));
+      const typedTokens = new Set(normalizedTyped.split(" ").filter(Boolean));
+      const intersection = Array.from(expectedTokens).filter((token) => typedTokens.has(token)).length;
+      return intersection / Math.max(expectedTokens.size, typedTokens.size, 1);
+    };
+    const correct = expectedValues.some((expected) => expected === normalizedTyped);
+    const close = !correct && expectedValues.some((expected) => tokenScore(expected) >= 0.75);
+    element("answerFeedback").textContent = correct ? "Accepted" : close ? "Close — compare wording below" : "Compare your answer with the saved answer below";
     element("answerFeedback").classList.toggle("is-correct", correct);
     element("answerFeedback").hidden = false;
   }
@@ -234,6 +270,18 @@ function exportCsv() {
   downloadFile("dualsub-vocabulary.csv", "text/csv;charset=utf-8", [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n"));
 }
 
+function exportAnki() {
+  const html = (value) => String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const cell = (value) => String(value || "").replace(/\t/g, " ").replace(/\r?\n/g, "<br>");
+  const headers = ["#separator:Tab", "#html:true", "#columns:French\tEnglish\tFrench sentence\tEnglish sentence\tNotes\tSource\tTimestamp\tTags"];
+  const rows = entries.map((entry) => [
+    html(entry.sourceText), html(entry.translatedText), html(entry.sentence), html(entry.sentenceTranslation), html(entry.notes),
+    videoUrl(entry) ? `<a href="${html(videoUrl(entry))}">${html(entry.videoTitle || "YouTube")}</a>` : entry.videoTitle,
+    Math.max(0, Math.floor(Number(entry.timeMs) / 1000) || 0), "dualsub french youtube"
+  ].map(cell).join("\t"));
+  downloadFile("dualsub-anki.tsv", "text/tab-separated-values;charset=utf-8", [...headers, ...rows].join("\r\n"));
+}
+
 element("search").addEventListener("input", render);
 element("filter").addEventListener("change", render);
 element("videoFilter").addEventListener("change", render);
@@ -243,6 +291,8 @@ element("reviewButton").addEventListener("click", () => {
   showReview((due.length ? due : entries).map((entry) => entry.id));
 });
 element("exportCsv").addEventListener("click", exportCsv);
+element("exportAnki").addEventListener("click", exportAnki);
+element("reviewMode").addEventListener("change", () => { if (reviewQueue.length) renderReviewCard(); });
 element("exportJson").addEventListener("click", () => {
   downloadFile("dualsub-vocabulary-backup.json", "application/json", JSON.stringify({ version: 1, exportedAt: Date.now(), entries }, null, 2));
 });
@@ -295,7 +345,7 @@ element("wordList").addEventListener("click", async (event) => {
 });
 element("closeReview").addEventListener("click", closeReview);
 element("revealAnswer").addEventListener("click", revealAnswer);
-element("speakReview").addEventListener("click", () => {
+function speakCurrentReview() {
   const entry = reviewQueue[reviewIndex];
   if (!entry || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
@@ -303,7 +353,8 @@ element("speakReview").addEventListener("click", () => {
   utterance.lang = entry.sourceLanguage === "fr" ? "fr-FR" : (entry.sourceLanguage || "fr");
   utterance.rate = 0.88;
   window.speechSynthesis.speak(utterance);
-});
+}
+element("speakReview").addEventListener("click", speakCurrentReview);
 element("ratingButtons").addEventListener("click", (event) => {
   const button = event.target.closest("[data-rating]");
   if (button) rateCurrent(button.dataset.rating);

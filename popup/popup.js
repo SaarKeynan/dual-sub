@@ -4,7 +4,8 @@ let saveTimer;
 
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation", "preloadVideoWords",
-  "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "hoverDelay",
+  "hoverLookup", "wordAlignment", "showTranslationProvenance", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "skipCaptionGaps", "hoverDelay", "studyMode",
+  "captionHoldMs", "translationBufferSeconds", "translationBatchSize",
   "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "pronunciationVoiceURI", "pronunciationRate",
   "wordGroupColorUnknown", "wordGroupColorNoun", "wordGroupColorVerb", "wordGroupColorAdjective",
@@ -27,6 +28,7 @@ function activatePanel(name) {
     const active = button.dataset.panel === selected;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   available.forEach((panel) => { panel.hidden = panel.dataset.panelContent !== selected; });
   sessionStorage.setItem("dualsub-settings-panel", selected);
@@ -35,12 +37,30 @@ function activatePanel(name) {
 function activateAppearance(name) {
   const selected = name === "target" ? "target" : "source";
   document.querySelectorAll(".appearance-button").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.appearance === selected);
+    const active = button.dataset.appearance === selected;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   document.querySelectorAll("[data-appearance-content]").forEach((panel) => {
     panel.hidden = panel.dataset.appearanceContent !== selected;
   });
   sessionStorage.setItem("dualsub-appearance-language", selected);
+}
+
+function enableTabKeyboardNavigation(selector, activate) {
+  const buttons = Array.from(document.querySelectorAll(selector));
+  buttons.forEach((button, index) => button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? buttons.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[nextIndex].focus();
+    activate(buttons[nextIndex]);
+  }));
 }
 
 function activateToolPane(name) {
@@ -49,11 +69,19 @@ function activateToolPane(name) {
     const active = button.dataset.toolPane === selected;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   document.querySelectorAll("[data-tool-content]").forEach((pane) => {
     pane.hidden = pane.dataset.toolContent !== selected;
   });
   sessionStorage.setItem("dualsub-tools-pane", selected);
+}
+
+function updateProviderFields() {
+  const provider = element("translationProvider").value;
+  document.querySelectorAll("[data-provider-config]").forEach((group) => {
+    group.hidden = group.dataset.providerConfig !== provider;
+  });
 }
 
 async function copyText(text) {
@@ -83,10 +111,16 @@ function setFormValues() {
   element("selectionTranslation").checked = settings.selectionTranslation;
   element("hoverLookup").checked = settings.hoverLookup;
   element("wordAlignment").checked = settings.wordAlignment;
+  element("showTranslationProvenance").checked = settings.showTranslationProvenance !== false;
   element("colorFrenchWordGroups").checked = settings.colorFrenchWordGroups;
   element("pauseOnLookup").checked = settings.pauseOnLookup;
   element("recallMode").checked = settings.recallMode;
   element("autoPause").checked = settings.autoPause;
+  element("skipCaptionGaps").checked = settings.skipCaptionGaps;
+  element("studyMode").value = settings.studyMode || "watch";
+  element("captionHoldMs").value = settings.captionHoldMs ?? 350;
+  element("translationBufferSeconds").value = settings.translationBufferSeconds || 90;
+  element("translationBatchSize").value = settings.translationBatchSize || 30;
   element("hoverDelay").value = settings.hoverDelay;
   element("bottomOffset").value = settings.bottomOffset;
   element("maxWidth").value = settings.maxWidth;
@@ -124,10 +158,16 @@ function readFormValues() {
   settings.selectionTranslation = element("selectionTranslation").checked;
   settings.hoverLookup = element("hoverLookup").checked;
   settings.wordAlignment = element("wordAlignment").checked;
+  settings.showTranslationProvenance = element("showTranslationProvenance").checked;
   settings.colorFrenchWordGroups = element("colorFrenchWordGroups").checked;
   settings.pauseOnLookup = element("pauseOnLookup").checked;
   settings.recallMode = element("recallMode").checked;
   settings.autoPause = element("autoPause").checked;
+  settings.skipCaptionGaps = element("skipCaptionGaps").checked;
+  settings.studyMode = element("studyMode").value;
+  settings.captionHoldMs = Number(element("captionHoldMs").value);
+  settings.translationBufferSeconds = Number(element("translationBufferSeconds").value);
+  settings.translationBatchSize = Number(element("translationBatchSize").value);
   settings.hoverDelay = Number(element("hoverDelay").value);
   settings.bottomOffset = Number(element("bottomOffset").value);
   settings.maxWidth = Number(element("maxWidth").value);
@@ -168,10 +208,34 @@ function updateOutputs() {
     ? "On time"
     : `${Math.abs(captionOffset)}ms ${captionOffset > 0 ? "earlier" : "later"}`;
   element("hoverDelayOutput").textContent = `${element("hoverDelay").value}ms`;
+  element("captionHoldOutput").textContent = `${element("captionHoldMs").value}ms`;
   element("pronunciationRateOutput").textContent = `${Number(element("pronunciationRate").value).toFixed(2)}×`;
   document.body.classList.toggle("is-disabled", !element("enabled").checked);
   updatePreview("source");
   updatePreview("target");
+  updateContrastWarning();
+}
+
+function relativeLuminance(hex) {
+  const channels = String(hex || "#000000").replace("#", "").match(/.{2}/g)?.map((value) => parseInt(value, 16) / 255) || [0, 0, 0];
+  return channels.map((value) => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+}
+
+function contrastRatio(left, right) {
+  const values = [relativeLuminance(left), relativeLuminance(right)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+function updateContrastWarning() {
+  const background = element("sourceBackgroundColor").value;
+  const lowContrast = ["unknown", "noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"].filter((group) => {
+    const id = `wordGroupColor${group[0].toUpperCase()}${group.slice(1)}`;
+    return contrastRatio(element(id).value, background) < 4.5;
+  });
+  element("contrastWarning").textContent = lowContrast.length
+    ? `Low contrast: ${lowContrast.join(", ")}. Aim for 4.5:1 or higher.`
+    : "All word-group colors meet 4.5:1 against the selected background.";
 }
 
 function colorWithOpacity(hex, opacity) {
@@ -281,14 +345,17 @@ async function initialize() {
     button.addEventListener("click", () => activatePanel(button.dataset.panel));
   });
   activatePanel(sessionStorage.getItem("dualsub-settings-panel") || "general");
+  enableTabKeyboardNavigation(".tab-button", (button) => activatePanel(button.dataset.panel));
   document.querySelectorAll(".appearance-button").forEach((button) => {
     button.addEventListener("click", () => activateAppearance(button.dataset.appearance));
   });
   activateAppearance(sessionStorage.getItem("dualsub-appearance-language") || "source");
+  enableTabKeyboardNavigation(".appearance-button", (button) => activateAppearance(button.dataset.appearance));
   document.querySelectorAll(".tool-button").forEach((button) => {
     button.addEventListener("click", () => activateToolPane(button.dataset.toolPane));
   });
   activateToolPane(sessionStorage.getItem("dualsub-tools-pane") || "lookup");
+  enableTabKeyboardNavigation(".tool-button", (button) => activateToolPane(button.dataset.toolPane));
   const defaultResponse = await browser.runtime.sendMessage({ type: "get-default-settings" });
   defaults = defaultResponse.settings;
   const stored = await browser.storage.sync.get("settings");
@@ -307,10 +374,22 @@ async function initialize() {
   };
   loadPronunciationVoices();
   setFormValues();
+  updateProviderFields();
+  const providerResponse = await browser.runtime.sendMessage({ type: "get-provider-secrets" }).catch(() => null);
+  if (providerResponse?.ok) {
+    element("azureKey").placeholder = providerResponse.secrets.azureKey ? "Saved · enter a replacement" : "Paste an Azure Translator key";
+    element("azureRegion").value = providerResponse.secrets.azureRegion || "";
+    element("deeplKey").placeholder = providerResponse.secrets.deeplKey ? "Saved · enter a replacement" : "Paste a DeepL API key";
+    element("libreEndpoint").value = providerResponse.secrets.libreEndpoint || "";
+    element("libreApiKey").placeholder = providerResponse.secrets.libreApiKey ? "Saved · enter a replacement" : "Optional";
+  }
+  const cacheResponse = await browser.runtime.sendMessage({ type: "get-translation-cache-stats" }).catch(() => null);
+  if (cacheResponse?.ok) element("cacheStatus").textContent = `${cacheResponse.cache.entries} cached translations`;
   ids.forEach((id) => {
     element(id).addEventListener("input", scheduleSave);
     element(id).addEventListener("change", scheduleSave);
   });
+  element("translationProvider").addEventListener("change", updateProviderFields);
   element("reset").addEventListener("click", () => {
     settings = {
       ...settings,
@@ -321,22 +400,94 @@ async function initialize() {
       targetStyle: structuredClone(defaults.targetStyle)
     };
     setFormValues();
+    updateProviderFields();
     browser.storage.sync.set({ settings });
   });
   element("openVocabulary").addEventListener("click", () => {
     browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
     window.close();
   });
+  element("openShortcuts").addEventListener("click", () => {
+    browser.tabs.create({ url: "about:addons" }).catch(() => {
+      element("playerStatus").textContent = "Open about:addons → Extensions → Manage Extension Shortcuts.";
+    });
+  });
   element("previewPronunciation").addEventListener("click", previewPronunciation);
+  element("saveVideoProfile").addEventListener("click", async () => {
+    const button = element("saveVideoProfile");
+    try {
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      const response = tab?.id ? await browser.tabs.sendMessage(tab.id, {
+        type: "save-current-video-profile",
+        profile: { captionOffsetMs: Number(element("captionOffsetMs").value), studyMode: element("studyMode").value }
+      }) : null;
+      if (!response?.ok) throw new Error(response?.error || "Open a video first.");
+      button.textContent = "Saved for this video";
+    } catch (_error) {
+      button.textContent = "Open a video first";
+    }
+    setTimeout(() => { button.textContent = "Remember timing and mode for this video"; }, 1800);
+  });
+  element("saveProvider").addEventListener("click", async () => {
+    const statusNode = element("providerStatus");
+    statusNode.textContent = "Saving…";
+    try {
+      const provider = element("translationProvider").value;
+      let origin = "";
+      if (provider === "azure") origin = "https://api.cognitive.microsofttranslator.com/*";
+      if (provider === "deepl") origin = "https://api-free.deepl.com/*";
+      if (provider === "libretranslate" && element("libreEndpoint").value) {
+        origin = `${new URL(element("libreEndpoint").value).origin}/*`;
+      }
+      if (origin) {
+        const granted = await browser.permissions.request({ origins: [origin] });
+        if (!granted) throw new Error("Provider permission was not granted.");
+      }
+      const secrets = {
+        azureRegion: element("azureRegion").value.trim(),
+        libreEndpoint: element("libreEndpoint").value.trim()
+      };
+      if (element("azureKey").value.trim()) secrets.azureKey = element("azureKey").value.trim();
+      if (element("deeplKey").value.trim()) secrets.deeplKey = element("deeplKey").value.trim();
+      if (element("libreApiKey").value.trim()) secrets.libreApiKey = element("libreApiKey").value.trim();
+      const response = await browser.runtime.sendMessage({ type: "save-provider-secrets", secrets });
+      if (!response?.ok) throw new Error(response?.error || "Could not save provider access.");
+      element("azureKey").value = "";
+      element("deeplKey").value = "";
+      element("libreApiKey").value = "";
+      statusNode.textContent = "Saved locally";
+    } catch (error) {
+      statusNode.textContent = error.message;
+    }
+  });
+  element("clearProvider").addEventListener("click", async () => {
+    const statusNode = element("providerStatus");
+    const response = await browser.runtime.sendMessage({
+      type: "save-provider-secrets",
+      secrets: { azureKey: "", azureRegion: "", deeplKey: "", libreEndpoint: "", libreApiKey: "" }
+    });
+    statusNode.textContent = response?.ok ? "Saved keys removed" : (response?.error || "Could not remove keys");
+    if (response?.ok) {
+      element("azureRegion").value = "";
+      element("libreEndpoint").value = "";
+    }
+  });
+  element("clearTranslationCache").addEventListener("click", async () => {
+    const response = await browser.runtime.sendMessage({ type: "clear-translation-cache" });
+    element("cacheStatus").textContent = response?.ok ? "Cache cleared" : (response?.error || "Could not clear cache");
+  });
   window.speechSynthesis?.addEventListener?.("voiceschanged", loadPronunciationVoices);
   setTimeout(loadPronunciationVoices, 250);
   element("copyDiagnostics").addEventListener("click", async () => {
     const button = element("copyDiagnostics");
     try {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      const response = tab?.id ? await browser.tabs.sendMessage(tab.id, { type: "get-diagnostics" }) : null;
+      const [response, health] = await Promise.all([
+        tab?.id ? browser.tabs.sendMessage(tab.id, { type: "get-diagnostics" }) : null,
+        browser.runtime.sendMessage({ type: "get-translation-health" })
+      ]);
       if (!response?.ok) throw new Error("Open a YouTube video first.");
-      await copyText(JSON.stringify(response.diagnostics, null, 2));
+      await copyText(JSON.stringify({ ...response.diagnostics, translationHealth: health?.health || null }, null, 2));
       button.textContent = "Copied";
     } catch (_error) {
       button.textContent = "Unavailable";

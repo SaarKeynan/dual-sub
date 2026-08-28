@@ -20,45 +20,92 @@
     <div id="playerStatus" class="status" data-state="waiting">Open a YouTube video to begin.</div>
 
     <nav class="tabs" role="tablist" aria-label="Settings categories">
-      <button class="tab-button is-active" type="button" role="tab" data-panel="general">General</button>
-      <button class="tab-button" type="button" role="tab" data-panel="appearance">Appearance</button>
-      <button class="tab-button" type="button" role="tab" data-panel="tools">Tools</button>
+      <button id="tab-general" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-general" data-panel="general">General</button>
+      <button id="tab-appearance" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-appearance" data-panel="appearance">Appearance</button>
+      <button id="tab-tools" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-tools" data-panel="tools">Tools</button>
     </nav>
 
     <main>
-      <div class="panel" data-panel-content="general" role="tabpanel">
+      <div id="panel-general" class="panel" data-panel-content="general" role="tabpanel" aria-labelledby="tab-general">
         <section>
           <div class="section-heading"><div><h2>Caption behavior</h2><p class="section-note">Tracks, timing, and translation</p></div></div>
           <div class="toggle-grid">
             <label class="tile-check"><input id="showSource" type="checkbox"><span>French row</span></label>
             <label class="tile-check"><input id="showTranslation" type="checkbox"><span>English row</span></label>
           </div>
+          <label class="field-label">Learning mode
+            <select id="studyMode">
+              <option value="watch">Watch · clean bilingual captions</option>
+              <option value="focus">Focus · reveal English on demand</option>
+              <option value="study">Study · lookup and smart pauses</option>
+              <option value="shadow">Shadow · repeat each line</option>
+            </select>
+          </label>
           <label class="check-row"><input id="hideNativeCaptions" type="checkbox"> Hide YouTube’s native captions</label>
           <label class="check-row"><input id="wholeLiveLines" type="checkbox"> Keep French and English live lines together</label>
           <label class="range-row">Subtitle timing <output id="captionOffsetOutput"></output>
             <input id="captionOffsetMs" type="range" min="-1500" max="1500" step="50">
           </label>
+          <label class="range-row">Hold captions between lines <output id="captionHoldOutput"></output>
+            <input id="captionHoldMs" type="range" min="0" max="2000" step="50">
+          </label>
           <p class="section-note">Translation is preloaded automatically. Use this only to correct a video that is out of sync.</p>
+          <button id="saveVideoProfile" type="button">Remember timing and mode for this video</button>
           <div class="divider"></div>
           <label class="field-label">Translation engine
-            <select id="translationProvider"><option value="google">Google web translation</option><option value="mymemory">MyMemory documented API</option></select>
+            <select id="translationProvider">
+              <option value="azure">Azure Translator · alignment + batching</option>
+              <option value="deepl">DeepL API Free · contextual</option>
+              <option value="google">Google web translation · unofficial</option>
+              <option value="mymemory">MyMemory · manual legacy fallback</option>
+              <option value="libretranslate">LibreTranslate · custom endpoint</option>
+            </select>
           </label>
-          <label class="field-label">Optional MyMemory contact email
-            <input id="mymemoryEmail" type="email" placeholder="you@example.com" autocomplete="email">
-          </label>
+          <div class="grid compact-grid">
+            <label>Buffer ahead (seconds)<input id="translationBufferSeconds" type="number" min="15" max="300" step="5"></label>
+            <label>Batch size<input id="translationBatchSize" type="number" min="1" max="100" step="1"></label>
+          </div>
+          <div data-provider-config="azure">
+            <label class="field-label">Azure Translator key
+              <input id="azureKey" type="password" placeholder="Leave blank to keep saved key" autocomplete="off">
+            </label>
+            <label class="field-label">Azure region
+              <input id="azureRegion" type="text" placeholder="Optional for global resources" autocomplete="off">
+            </label>
+          </div>
+          <div data-provider-config="deepl" hidden>
+            <label class="field-label">DeepL API key
+              <input id="deeplKey" type="password" placeholder="Leave blank to keep saved key" autocomplete="off">
+            </label>
+          </div>
+          <div data-provider-config="libretranslate" hidden>
+            <label class="field-label">LibreTranslate endpoint
+              <input id="libreEndpoint" type="url" placeholder="https://translate.example/" autocomplete="off">
+            </label>
+            <label class="field-label">LibreTranslate API key
+              <input id="libreApiKey" type="password" placeholder="Optional" autocomplete="off">
+            </label>
+          </div>
+          <div data-provider-config="mymemory" hidden>
+            <label class="field-label">Optional MyMemory contact email
+              <input id="mymemoryEmail" type="email" placeholder="you@example.com" autocomplete="email">
+            </label>
+          </div>
+          <div class="service-actions"><button id="saveProvider" type="button">Save provider access</button><button id="clearProvider" type="button">Forget saved keys</button><span id="providerStatus" class="inline-status" role="status"></span></div>
+          <div class="service-actions"><button id="clearTranslationCache" type="button">Clear translation cache</button><span id="cacheStatus" class="inline-status"></span></div>
           <p class="privacy">Fallback text is sent to the selected provider. Morphology and vocabulary stay local.</p>
         </section>
       </div>
 
-      <div class="panel" data-panel-content="appearance" role="tabpanel" hidden>
+      <div id="panel-appearance" class="panel" data-panel-content="appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden>
         <section>
           <div class="section-heading"><div><h2>Subtitle appearance</h2><p class="section-note">Layout and independent language styles</p></div></div>
           <div class="appearance-tabs" role="tablist" aria-label="Subtitle language">
-            <button class="appearance-button is-active" type="button" data-appearance="source">French</button>
-            <button class="appearance-button" type="button" data-appearance="target">English</button>
+            <button id="appearance-source" class="appearance-button is-active" type="button" role="tab" aria-selected="true" aria-controls="appearance-panel-source" data-appearance="source">French</button>
+            <button id="appearance-target" class="appearance-button" type="button" role="tab" aria-selected="false" aria-controls="appearance-panel-target" data-appearance="target">English</button>
           </div>
 
-          <div class="appearance-pane" data-appearance-content="source">
+          <div id="appearance-panel-source" class="appearance-pane" role="tabpanel" aria-labelledby="appearance-source" data-appearance-content="source">
             <div class="caption-preview"><span id="sourcePreview">Bonjour tout le monde</span></div>
             <div class="grid">
               <label>Size <output id="sourceSizeOutput"></output><input id="sourceFontSize" type="range" min="16" max="54" step="1"></label>
@@ -85,9 +132,10 @@
               <label>Interjection <input id="wordGroupColorInterjection" type="color"></label>
             </div>
             <p class="section-note palette-note">“Word” is used when no reliable grammatical group is available.</p>
+            <p id="contrastWarning" class="contrast-warning" role="status"></p>
           </div>
 
-          <div class="appearance-pane" data-appearance-content="target" hidden>
+          <div id="appearance-panel-target" class="appearance-pane" role="tabpanel" aria-labelledby="appearance-target" data-appearance-content="target" hidden>
             <div class="caption-preview"><span id="targetPreview">Hello everyone</span></div>
             <div class="grid">
               <label>Size <output id="targetSizeOutput"></output><input id="targetFontSize" type="range" min="16" max="54" step="1"></label>
@@ -108,33 +156,36 @@
         </section>
       </div>
 
-      <div class="panel" data-panel-content="tools" role="tabpanel" hidden>
+      <div id="panel-tools" class="panel" data-panel-content="tools" role="tabpanel" aria-labelledby="tab-tools" hidden>
         <section class="learning-theme">
           <div class="section-heading">
             <div><h2>Learning tools</h2><p class="section-note">Lookup, recall, and practice</p></div>
             <button id="openVocabulary" class="primary-button" type="button">Vocabulary <span id="vocabularyCount">0</span></button>
           </div>
           <div class="tool-tabs" role="tablist" aria-label="Tool options">
-            <button class="tool-button" type="button" role="tab" data-tool-pane="lookup">Lookup &amp; colors</button>
-            <button class="tool-button" type="button" role="tab" data-tool-pane="pronunciation">Pronunciation</button>
+            <button id="tool-lookup" class="tool-button is-active" type="button" role="tab" aria-selected="true" aria-controls="tool-panel-lookup" data-tool-pane="lookup">Lookup &amp; colors</button>
+            <button id="tool-pronunciation" class="tool-button" type="button" role="tab" aria-selected="false" aria-controls="tool-panel-pronunciation" data-tool-pane="pronunciation">Pronunciation</button>
           </div>
-          <div data-tool-content="lookup">
+          <div id="tool-panel-lookup" role="tabpanel" aria-labelledby="tool-lookup" data-tool-content="lookup">
             <label class="field-label">Lookup card position
               <select id="lookupCardPosition"><option value="smart">Near subtitles</option><option value="cursor">Beside pointer</option><option value="top-right">Upper right</option></select>
             </label>
             <label class="check-row"><input id="hoverLookup" type="checkbox"> Look up a French word after hovering</label>
             <label class="check-row"><input id="wordAlignment" type="checkbox"> Match translated words when evidence is reliable</label>
+            <label class="check-row"><input id="showTranslationProvenance" type="checkbox"> Show translation source beside English</label>
             <label class="check-row"><input id="preloadVideoWords" type="checkbox"> Preload frequent words from timed captions</label>
             <label class="check-row"><input id="selectionTranslation" type="checkbox"> Allow drag-selection of French phrases</label>
             <label class="check-row"><input id="pauseOnLookup" type="checkbox"> Pause while a lookup card is open</label>
             <label class="check-row"><input id="recallMode" type="checkbox"> Hide English until French is hovered</label>
             <label class="check-row"><input id="autoPause" type="checkbox"> Pause at each new subtitle line</label>
+            <label class="check-row"><input id="skipCaptionGaps" type="checkbox"> Skip silent gaps longer than 1.5 seconds</label>
             <label class="range-row">Hover delay <output id="hoverDelayOutput"></output><input id="hoverDelay" type="range" min="120" max="1200" step="20"></label>
             <p class="privacy">Word preloading sends a limited set of frequent words to your selected translation provider and stops if that provider starts rejecting requests.</p>
             <p class="privacy">Use “Select phrase” in a word card, then click the final word. Drag-selection also works.</p>
             <div class="service-actions"><button id="copyDiagnostics" type="button">Copy diagnostics</button><button id="reset" type="button">Reset appearance</button></div>
+            <button id="openShortcuts" type="button">Customize keyboard shortcuts</button>
           </div>
-          <div data-tool-content="pronunciation" hidden>
+          <div id="tool-panel-pronunciation" role="tabpanel" aria-labelledby="tool-pronunciation" data-tool-content="pronunciation" hidden>
             <label class="field-label">French pronunciation voice
               <select id="pronunciationVoiceURI"><option value="">Best available French voice</option></select>
             </label>
