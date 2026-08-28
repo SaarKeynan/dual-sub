@@ -64,6 +64,7 @@ async function testCaptionProcessing() {
   const explicitAppendCues = context.parseCaptionPayload(explicitAppendPayload);
   assert.strictEqual(explicitAppendCues.length, 2);
   assert.strictEqual(explicitAppendCues[0].text, "c'est vraiment important");
+  assert.strictEqual(explicitAppendCues[0].fragments.length, 2, "Display grouping must preserve both raw timed fragments");
 
   const overlaps = [
     { start: 1000, end: 5000, text: "old" },
@@ -91,7 +92,7 @@ async function testCaptionProcessing() {
     { start: 6000, end: 8000, text: "Marie mange aussi" }
   ], 3500, 4));
   assert(warmupWords.includes("mange") && warmupWords.includes("je"), "Frequent video words should be prioritized for warm-up");
-  assert(source.includes("video.currentTime * 1000 + Number(settings.captionOffsetMs || 0)"));
+  assert(source.includes("video.currentTime * 1000 + effectiveCaptionOffsetMs()"));
   assert(!source.includes("Math.max(0, Number(settings.subtitleLeadMs)"));
   assert(source.includes('recoverTracksFromNativePlayer(nativeSourceTrack, result.url || "")'));
   assert(source.indexOf("startNativeSourceCapture(sourceTrack);") < source.indexOf("transcriptCues = await requestFullTranscript();"));
@@ -327,6 +328,79 @@ async function testWordGroupResource() {
   assert(Object.keys(groups).length > 120000, "The offline word-group index should cover common French forms");
   assert(groups.maison?.includes("n"));
   assert(groups.rapidement?.includes("r"));
+  const info = JSON.parse(fs.readFileSync(
+    path.join(projectRoot, "vendor", "lexique", "french-lexical-info.json"), "utf8"
+  ));
+  assert.strictEqual(Object.keys(info).length, 50000, "The enriched Lexique index should retain the most useful 50,000 forms");
+  assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
+  assert.strictEqual(manifest.version, "0.7.0");
+  assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
+  assert(manifest.background.scripts.includes("translation-engine.js"));
+  assert(manifest.browser_specific_settings.gecko.data_collection_permissions.required.includes("websiteContent"));
+}
+
+async function testTranslationEngine() {
+  const stores = { local: {} };
+  let fetchCount = 0;
+  const context = {
+    console,
+    URL,
+    AbortController,
+    performance,
+    setTimeout,
+    clearTimeout,
+    crypto: { randomUUID: () => "translation-test" },
+    browser: { storage: { local: {
+      async get(key) { return { [key]: stores.local[key] }; },
+      async set(values) { Object.assign(stores.local, values); }
+    } } },
+    fetch: async (url) => {
+      fetchCount += 1;
+      const text = new URL(url).searchParams.get("q");
+      return {
+        ok: true,
+        status: 200,
+        headers: { get() { return null; } },
+        async json() { return [[[`${text}-en`]]]; }
+      };
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "translation-engine.js"), "utf8"), context);
+  assert.deepStrictEqual(
+    Array.from(context.DualSubTranslation.parseAzureAlignment("0:1-0:2 3:5-4:8"), (entry) => ({ ...entry })),
+    [
+      { sourceStart: 0, sourceEnd: 1, targetStart: 0, targetEnd: 2 },
+      { sourceStart: 3, sourceEnd: 5, targetStart: 4, targetEnd: 8 }
+    ]
+  );
+  const options = { provider: "google", sourceLanguage: "fr", targetLanguage: "en", videoId: "video", sessionId: "test" };
+  const first = await context.DualSubTranslation.translateBatch([
+    { text: "bonjour", cacheId: "cue-1" }, { text: "merci", cacheId: "cue-2" }
+  ], options, {});
+  assert.deepStrictEqual(Array.from(first.results, (item) => item.translatedText), ["bonjour-en", "merci-en"]);
+  const second = await context.DualSubTranslation.translateBatch([
+    { text: "bonjour", cacheId: "cue-1" }, { text: "merci", cacheId: "cue-2" }
+  ], options, {});
+  assert(second.results.every((item) => item.cacheHit));
+  assert.strictEqual(fetchCount, 2, "A repeated batch should be served entirely from the persistent line cache");
+  context.fetch = async (url) => {
+    fetchCount += 1;
+    const text = new URL(url).searchParams.get("q");
+    return {
+      ok: true,
+      status: 200,
+      headers: { get() { return null; } },
+      async json() { return text === "je mange" ? [[ ["I ", "je "], ["eat", "mange"] ]] : [[[`${text}-en`]]]; }
+    };
+  };
+  const segmented = await context.DualSubTranslation.translateBatch([
+    { text: "je mange", cacheId: "cue-3" }
+  ], options, {});
+  assert.strictEqual(segmented.results[0].alignment.length, 2, "Google segment boundaries should be retained when available");
+  assert.strictEqual(segmented.results[0].provenance, "Google segmented");
 }
 
 async function testVocabularyStorage() {
@@ -359,6 +433,11 @@ async function testVocabularyStorage() {
     console,
     URL,
     TextEncoder,
+    AbortController,
+    performance,
+    crypto: { randomUUID: () => "test-request-id" },
+    setTimeout,
+    clearTimeout,
     fetch: async () => {
       fetchCount += 1;
       await Promise.resolve();
@@ -366,6 +445,7 @@ async function testVocabularyStorage() {
     }
   };
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "translation-engine.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "background.js"), "utf8"), context);
   assert(messageListener, "Background message listener was not registered");
   const defaultSettings = await messageListener({ type: "get-default-settings" });
@@ -379,6 +459,7 @@ async function testVocabularyStorage() {
   assert.strictEqual(Object.keys(defaultSettings.settings.wordGroupColors).length, 10);
   assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
   assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
+  assert.strictEqual(defaultSettings.settings.skipCaptionGaps, false);
 
   const translations = await Promise.all([
     messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en", cacheMode: "word" }),
@@ -386,8 +467,7 @@ async function testVocabularyStorage() {
   ]);
   assert(translations.every((result) => result.ok && result.translatedText === "hello"));
   assert.strictEqual(fetchCount, 1, "Concurrent identical translations should share one request");
-  assert.strictEqual(stores.local.translationCacheV1.length, 1, "Word translations should persist locally");
-  vm.runInContext("translationCache.clear(); persistentTranslationCache.clear(); persistentTranslationCacheLoadPromise = undefined;", context);
+  assert.strictEqual(Object.keys(stores.local.lineTranslationCacheV2 || {}).length, 1, "Word translations should persist locally");
   const persistentHit = await messageListener({
     type: "translate-selection",
     text: "BONJOUR",
@@ -451,10 +531,19 @@ async function testVocabularyStorage() {
     updates: { translatedText: "hi", notes: "Informal greeting" }
   });
   assert(edited.ok && edited.entry.translatedText === "hi" && edited.entry.notes === "Informal greeting");
+  const correctedLookup = await messageListener({
+    type: "translate-selection",
+    text: "bonjour",
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+    cacheMode: "word"
+  });
+  assert(correctedLookup.ok && correctedLookup.translatedText === "hi" && correctedLookup.provider === "correction");
   const loaded = await messageListener({ type: "get-vocabulary" });
   assert.strictEqual(loaded.entries.length, 1);
   const reviewed = await messageListener({ type: "review-vocabulary", id: first.entry.id, rating: "good" });
   assert(reviewed.ok && reviewed.entry.stage === 1 && reviewed.entry.reviews === 1);
+  assert(reviewed.entry.reviewIntervalDays === 1 && reviewed.entry.easeFactor > 2.5, "Review intervals should adapt to recall quality");
   const imported = await messageListener({ type: "import-vocabulary", entries: [
     { ...entry, stage: 4, reviews: 8 },
     { ...entry, sourceText: "merci", translatedText: "thank you" }
@@ -469,6 +558,7 @@ Promise.resolve()
   .then(testFrenchConjugation)
   .then(testAblautMorphology)
   .then(testWordGroupResource)
+  .then(testTranslationEngine)
   .then(testVocabularyStorage)
   .then(() => console.log("DualSub smoke tests passed"))
   .catch((error) => {

@@ -1,4 +1,6 @@
 *.zip
 *.xpi
 .web-ext-artifacts/
+web-ext-artifacts/
 node_modules/
+vendor/lexique/Lexique383.tsv

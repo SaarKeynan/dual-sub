@@ -21,9 +21,9 @@ morphological and syntactic lexicon for French,” LREC 2010.
 
 ## Lexique 3.83
 
-DualSub includes a reduced grammatical-category index derived from Lexique
-3.83 by Boris New, Christophe Pallier, and contributors. The transformation,
-source checksum, and retained fields are documented in
+DualSub includes reduced grammatical-category and lexical-information indexes
+derived from Lexique 3.83 by Boris New, Christophe Pallier, and contributors.
+The transformation, source checksum, and retained fields are documented in
 `vendor/lexique/SOURCE.md`. The derivative remains under CC BY-SA 4.0, included
 as `vendor/lexique/LICENSE-CC-BY-SA-4.0`.
 

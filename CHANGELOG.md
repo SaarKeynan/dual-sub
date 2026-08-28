@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.7.0 — resilient translation and study workspace
+
+- Replaced individual lookahead requests with a priority batch scheduler that
+  starts at the playback position, buffers in both directions, cancels stale
+  video sessions, honors rate-limit recovery, and reports its queue health.
+- Added Azure Translator, DeepL API Free, and custom LibreTranslate adapters in
+  addition to Google web translation and manual MyMemory use. Provider secrets
+  stay in local Firefox storage and optional host access is requested only when
+  configured.
+- Added a bounded 180-day IndexedDB translation cache with a local-storage
+  fallback, provider/version-aware keys, cache statistics, and explicit clear.
+- Added exact Azure character alignment and Google segment alignment ahead of
+  conservative local word matching. Translation provenance is shown beside the
+  English row and personal vocabulary corrections override later word lookups.
+- Kept raw YouTube cue fragments as timing provenance, moved rendering to video
+  frame/media events, added a configurable line hold, and expanded diagnostics
+  with the nearby cue window, alignment spans, buffer state, and provider health.
+- Added a Firefox transcript sidebar with bilingual search, seeking, current-line
+  tracking, translation buffer status, known-word coverage, frequent unknown
+  words, and repeated phrase mining. Incremental revisions avoid rebuilding the
+  complete transcript on every poll.
+- Added Watch, Focus, Study, and Shadow modes, unknown-word smart pauses,
+  optional silent-gap skipping, per-video timing/mode profiles, caption
+  navigation commands, and a fixed-modifier bypass for other dictionary tools.
+- Enriched the offline Lexique derivative with lemma, IPA-like pronunciation,
+  gender, number, syllable count, and frequency data for 50,000 common forms.
+- Expanded review with forward, reverse, cloze, and listening exercises,
+  tolerant answer checks, adaptive scheduling, and safe Anki TSV export.
+- Added keyboard-accessible settings tabs, contrast warnings, a responsive
+  options page, automated manifest linting, tests, packaging, and CI checks.
+
 ## 0.6.9 — silent native-caption fallback
 
 - Removed the DualSub error notice on videos without a French caption track.
