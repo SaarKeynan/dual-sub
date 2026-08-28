@@ -76,6 +76,8 @@ interactive study surface.
 - In-flight translations are deduplicated and results are cached for the
   current browser session to reduce latency and free-service usage.
 - Fullscreen support and automatic handling of YouTube's single-page navigation.
+- Videos without a French caption track fall back silently to YouTube's regular
+  subtitles; DualSub does not cover, disable, or replace them.
 - A compact categorized settings menu separates General, Appearance, and Tools
   controls without page-level scrollbars.
 

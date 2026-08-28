@@ -70,6 +70,7 @@
   let sourceCues = [];
   let targetCues = [];
   let currentVideoId = "";
+  let sourceTrackState = "unknown";
   let currentSourceText = "";
   let currentTargetText = "";
   let currentSourceCue = null;
@@ -173,17 +174,19 @@
   }
 
   function applySettings() {
-    if (!root) return;
-    const active = settings.enabled && location.pathname === "/watch";
-    root.hidden = !active;
+    const onWatchPage = settings.enabled && location.pathname === "/watch";
+    const active = onWatchPage && sourceTrackState !== "unavailable";
+    const sourceTrackConfirmed = onWatchPage && sourceTrackState === "available";
     document.documentElement.classList.toggle(
       "dualsub-enabled",
-      active && settings.hideNativeCaptions
+      sourceTrackConfirmed && settings.hideNativeCaptions
     );
     document.documentElement.classList.toggle(
       "dualsub-native-fallback",
-      active && (usingNativeTranslation || usingNativeSource)
+      sourceTrackConfirmed && (usingNativeTranslation || usingNativeSource)
     );
+    if (!root) return;
+    root.hidden = !active;
     root.style.setProperty("--dualsub-bottom", `${settings.bottomOffset}px`);
     root.style.setProperty("--dualsub-width", `${settings.maxWidth}%`);
     for (const [group, color] of Object.entries(settings.wordGroupColors)) {
@@ -204,7 +207,7 @@
       if (usingAheadTranslation) stopAheadTranslation();
     } else if (!usingNativeSource && !usingNativeTranslation && !usingAheadTranslation) {
       if (sourceCues.length && !targetCues.length) startAheadTranslation();
-      else if (!sourceCues.length) requestTrackData();
+      else if (!sourceCues.length && sourceTrackState === "unknown") requestTrackData();
     }
   }
 
@@ -314,7 +317,7 @@
   }
 
   function requestTrackData() {
-    if (!settings.enabled || location.pathname !== "/watch") return;
+    if (!settings.enabled || location.pathname !== "/watch" || sourceTrackState === "unavailable") return;
     window.dispatchEvent(new CustomEvent("dualsub:request-tracks"));
   }
 
@@ -845,7 +848,11 @@
   function stopNativeCapture(restorePlayer = false) {
     captionRecoveryGeneration += 1;
     timedTrackUpgradePending = false;
-    if (!usingNativeTranslation && !usingNativeSource) return;
+    if (!usingNativeTranslation && !usingNativeSource) {
+      document.documentElement.classList.remove("dualsub-native-fallback");
+      if (restorePlayer) window.dispatchEvent(new CustomEvent("dualsub:restore-native-captions"));
+      return;
+    }
     usingNativeTranslation = false;
     usingNativeSource = false;
     nativeSourceTrack = null;
@@ -868,6 +875,28 @@
     }
   }
 
+  function useYouTubeNativeCaptions() {
+    sourceTrackState = "unavailable";
+    loadGeneration += 1;
+    stopNativeCapture(true);
+    stopAheadTranslation();
+    stopVideoWordWarmup();
+    sourceCues = [];
+    targetCues = [];
+    alignedTargetCues = [];
+    lastPlaybackCueIndex = -1;
+    loopCueRange = null;
+    renderCueText("", "");
+    hideSelectionCard();
+    clearTimeout(statusTimer);
+    status = { state: "native-only", message: "YouTube captions active · no French track" };
+    if (statusNode) {
+      statusNode.classList.remove("is-visible");
+      statusTextNode.textContent = "";
+    }
+    applySettings();
+  }
+
   async function loadTracks(payload) {
     if (!payload.ok) {
       setStatus("waiting", payload.error || "Waiting for captions…");
@@ -877,7 +906,7 @@
     if (
       payload.videoId &&
       payload.videoId === currentVideoId &&
-      (sourceCues.length || usingNativeSource || usingNativeTranslation || usingAheadTranslation)
+      (sourceTrackState === "unavailable" || sourceCues.length || usingNativeSource || usingNativeTranslation || usingAheadTranslation)
     ) return;
 
     const generation = ++loadGeneration;
@@ -891,10 +920,12 @@
 
     const sourceTrack = chooseTrack(payload.tracks || [], settings.sourceLanguage);
     if (!sourceTrack) {
-      setStatus("error", "This video has no French caption track.");
+      useYouTubeNativeCaptions();
       return;
     }
 
+    sourceTrackState = "available";
+    applySettings();
     const nativeTargetTrack = chooseTrack(payload.tracks || [], settings.targetLanguage);
     setStatus("loading", "Loading French + English subtitles…");
     try {
@@ -2073,9 +2104,11 @@
 
   function handleNavigation() {
     stopNativeCapture(false);
+    window.dispatchEvent(new CustomEvent("dualsub:reset-native-caption-state"));
     stopAheadTranslation();
     stopVideoWordWarmup();
     currentVideoId = "";
+    sourceTrackState = "unknown";
     dismissedStatusKeys.clear();
     lastPlaybackCueIndex = -1;
     sourceCues = [];
@@ -2085,9 +2118,19 @@
     loadGeneration += 1;
     renderCueText("", "");
     hideSelectionCard();
+    clearTimeout(statusTimer);
+    status = { state: "waiting", message: "Checking for French captions" };
+    statusNode?.classList.remove("is-visible");
     attachToPlayer();
+    applySettings();
     setTimeout(requestTrackData, 350);
     setTimeout(requestTrackData, 1200);
+  }
+
+  function handleNavigationStart() {
+    // Restore the user's original YouTube caption choice while the old player
+    // is still active. The finish handler then forgets that per-video snapshot.
+    if (usingNativeTranslation || usingNativeSource) stopNativeCapture(true);
   }
 
   function attachToPlayer() {
@@ -2199,6 +2242,7 @@
     }
   });
 
+  document.addEventListener("yt-navigate-start", handleNavigationStart);
   document.addEventListener("yt-navigate-finish", handleNavigation);
   document.addEventListener("fullscreenchange", () => setTimeout(attachToPlayer, 50));
   document.addEventListener("mousedown", (event) => {
@@ -2220,9 +2264,11 @@
           ? "live-youtube-translation"
           : usingAheadTranslation
             ? "prefetched-provider-translation"
-            : sourceCues.length && targetCues.length
-              ? "full-tracks"
-              : "waiting";
+            : sourceTrackState === "unavailable"
+              ? "youtube-native-captions"
+              : sourceCues.length && targetCues.length
+                ? "full-tracks"
+                : "waiting";
       return Promise.resolve({
         ok: true,
         diagnostics: {
@@ -2268,6 +2314,7 @@
     const previousTranslationProvider = settings.translationProvider;
     const previousPreloadVideoWords = settings.preloadVideoWords;
     settings = mergeSettings(changes.settings.newValue);
+    if (previousSource !== settings.sourceLanguage) sourceTrackState = "unknown";
     if (previousWholeLiveLines !== settings.wholeLiveLines) {
       observedNativeText = "";
       pendingLiveSourceText = "";

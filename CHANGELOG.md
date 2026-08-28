@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.9 — silent native-caption fallback
+
+- Removed the DualSub error notice on videos without a French caption track.
+- Kept YouTube's regular subtitle renderer visible until a French track has
+  actually been confirmed.
+- Silently disabled the DualSub overlay for the current video when French is
+  unavailable, while leaving the extension enabled for the next video.
+- Prevented repeated caption-track requests after a video is known not to have
+  French captions.
+- Cleared saved native-caption state during YouTube SPA navigation so a track
+  from the previous video cannot interfere with regular captions on the next.
+- Restored the user's original YouTube caption choice at navigation start,
+  before the old player and its caption state are replaced.
+
 ## 0.6.8 — elision-aware subtitle words and compact particles
 
 - Split French elisions into adjacent grammatical targets without changing the

@@ -176,6 +176,15 @@ async function testCaptionProcessing() {
   assert(source.includes('word.dataset.elisionParticle = "true"'));
   assert(source.includes("showElisionParticleCard"));
   assert(contentCss.includes(".dualsub-selection-card.is-particle-card"));
+  assert(source.includes('sourceTrackState = "unavailable"'));
+  assert(source.includes("useYouTubeNativeCaptions()"));
+  assert(source.includes('sourceTrackConfirmed && settings.hideNativeCaptions'));
+  assert(source.includes('sourceTrackState = "unknown"'));
+  assert(source.includes('mode = usingNativeSource'));
+  assert(source.includes('"youtube-native-captions"'));
+  assert(!source.includes("This video has no French caption track."), "Missing French captions should not create an overlay error");
+  assert(bridgeSource.includes('"dualsub:reset-native-caption-state"'));
+  assert(source.includes('document.addEventListener("yt-navigate-start", handleNavigationStart)'));
 }
 
 async function testFrenchConjugation() {
