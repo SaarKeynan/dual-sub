@@ -49,11 +49,11 @@ function renderUnknownWords() {
     const count = document.createElement("small");
     count.textContent = `×${item.count}`;
     const known = document.createElement("button");
-    known.type = "button"; known.dataset.state = "known"; known.title = "Mark known"; known.textContent = "✓";
+    known.type = "button"; known.dataset.state = "known"; known.title = "Mark known"; known.setAttribute("aria-label", `Mark ${item.word} as known`); known.textContent = "✓";
     const learning = document.createElement("button");
-    learning.type = "button"; learning.dataset.state = "learning"; learning.title = "Learn this word"; learning.textContent = "+";
+    learning.type = "button"; learning.dataset.state = "learning"; learning.title = "Learn this word"; learning.setAttribute("aria-label", `Add ${item.word} to learning`); learning.textContent = "+";
     const ignore = document.createElement("button");
-    ignore.type = "button"; ignore.dataset.state = "ignored"; ignore.title = "Ignore name or noise"; ignore.textContent = "×";
+    ignore.type = "button"; ignore.dataset.state = "ignored"; ignore.title = "Ignore name or noise"; ignore.setAttribute("aria-label", `Ignore ${item.word}`); ignore.textContent = "×";
     chip.append(text, count, known, learning, ignore);
     return chip;
   }));
@@ -113,6 +113,7 @@ function render() {
   element("videoTitle").textContent = state?.title || state?.status || "Open a French YouTube video";
   element("buffer").textContent = `${state?.bufferAheadSeconds || 0}s`;
   element("coverage").textContent = `${state?.coveragePercent || 0}%`;
+  element("coverageBar").style.width = `${Math.min(100, Math.max(0, state?.coveragePercent || 0))}%`;
   element("provider").textContent = state?.provider || "";
   element("studyMode").value = state?.studyMode || "watch";
   renderUnknownWords();

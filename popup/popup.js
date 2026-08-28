@@ -311,7 +311,19 @@ function scheduleSave() {
   readFormValues();
   updateOutputs();
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => browser.storage.sync.set({ settings }), 90);
+  const saveStatus = element("saveStatus");
+  saveStatus.textContent = "Saving…";
+  saveStatus.dataset.state = "saving";
+  saveTimer = setTimeout(async () => {
+    try {
+      await browser.storage.sync.set({ settings });
+      saveStatus.textContent = "Saved";
+      saveStatus.dataset.state = "saved";
+    } catch (_error) {
+      saveStatus.textContent = "Could not save changes";
+      saveStatus.dataset.state = "error";
+    }
+  }, 140);
 }
 
 async function loadStatus() {

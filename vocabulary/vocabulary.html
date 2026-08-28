@@ -17,10 +17,15 @@
       </div>
       <div class="header-actions">
         <button id="reviewButton" class="primary" type="button">Review due <span id="dueCount">0</span></button>
-        <button id="exportCsv" type="button">Export CSV</button>
-        <button id="exportAnki" type="button">Export Anki TSV</button>
-        <button id="exportJson" type="button">Backup JSON</button>
-        <button id="importJson" type="button">Restore backup</button>
+        <details class="export-menu">
+          <summary>Import / export</summary>
+          <div class="export-menu-panel">
+            <button id="exportCsv" type="button">Export CSV</button>
+            <button id="exportAnki" type="button">Export Anki TSV</button>
+            <button id="exportJson" type="button">Backup JSON</button>
+            <button id="importJson" type="button">Restore backup</button>
+          </div>
+        </details>
         <input id="importFile" type="file" accept="application/json,.json" hidden>
       </div>
     </header>
@@ -69,6 +74,7 @@
           <span id="reviewProgress">1 / 1</span>
           <button id="closeReview" class="icon-button" type="button" aria-label="Close review">×</button>
         </div>
+        <div class="review-progress-track" aria-hidden="true"><span id="reviewProgressBar"></span></div>
         <label class="review-mode">Exercise
           <select id="reviewMode"><option value="forward">French → English</option><option value="reverse">English → French</option><option value="cloze">French sentence cloze</option><option value="listen">Listen → French</option></select>
         </label>

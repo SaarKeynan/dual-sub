@@ -332,7 +332,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.7.1");
+  assert.strictEqual(manifest.version, "0.7.2");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
   assert(manifest.background.scripts.includes("translation-engine.js"));
   assert(manifest.browser_specific_settings.gecko.data_collection_permissions.required.includes("websiteContent"));

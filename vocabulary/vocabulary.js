@@ -2,6 +2,7 @@ let entries = [];
 let reviewQueue = [];
 let reviewIndex = 0;
 let answerVisible = false;
+let reviewReturnFocus = null;
 
 const element = (id) => document.getElementById(id);
 const dayMs = 86400000;
@@ -151,8 +152,11 @@ function showReview(entryIds) {
   reviewQueue = entryIds.map((id) => entries.find((entry) => entry.id === id)).filter(Boolean);
   reviewIndex = 0;
   if (!reviewQueue.length) return;
+  reviewReturnFocus = document.activeElement;
   element("reviewModal").hidden = false;
+  document.body.classList.add("has-modal");
   renderReviewCard();
+  requestAnimationFrame(() => element("typedAnswer").focus());
 }
 
 function renderReviewCard() {
@@ -164,6 +168,7 @@ function renderReviewCard() {
   }
   answerVisible = false;
   element("reviewProgress").textContent = `${reviewIndex + 1} / ${reviewQueue.length}`;
+  element("reviewProgressBar").style.width = `${((reviewIndex + 1) / reviewQueue.length) * 100}%`;
   const mode = element("reviewMode").value;
   let prompt = entry.sourceText;
   let context = entry.sentence || "";
@@ -237,11 +242,15 @@ async function rateCurrent(rating) {
   await browser.runtime.sendMessage({ type: "review-vocabulary", id: entry.id, rating });
   reviewIndex += 1;
   renderReviewCard();
+  requestAnimationFrame(() => element("typedAnswer").focus());
 }
 
 function closeReview() {
   element("reviewModal").hidden = true;
+  document.body.classList.remove("has-modal");
   reviewQueue = [];
+  reviewReturnFocus?.focus?.();
+  reviewReturnFocus = null;
 }
 
 function csvCell(value) {
@@ -297,6 +306,13 @@ element("exportJson").addEventListener("click", () => {
   downloadFile("dualsub-vocabulary-backup.json", "application/json", JSON.stringify({ version: 1, exportedAt: Date.now(), entries }, null, 2));
 });
 element("importJson").addEventListener("click", () => element("importFile").click());
+document.querySelector(".export-menu-panel").addEventListener("click", (event) => {
+  if (event.target.closest("button")) document.querySelector(".export-menu").removeAttribute("open");
+});
+document.addEventListener("click", (event) => {
+  const menu = document.querySelector(".export-menu");
+  if (menu.open && !menu.contains(event.target)) menu.removeAttribute("open");
+});
 element("importFile").addEventListener("change", async () => {
   const file = element("importFile").files?.[0];
   element("importFile").value = "";
@@ -344,6 +360,9 @@ element("wordList").addEventListener("click", async (event) => {
   }
 });
 element("closeReview").addEventListener("click", closeReview);
+element("reviewModal").addEventListener("click", (event) => {
+  if (event.target === element("reviewModal")) closeReview();
+});
 element("revealAnswer").addEventListener("click", revealAnswer);
 function speakCurrentReview() {
   const entry = reviewQueue[reviewIndex];
@@ -361,7 +380,14 @@ element("ratingButtons").addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (element("reviewModal").hidden) return;
-  if (event.key === "Escape") closeReview();
+  if (event.key === "Tab") {
+    const focusable = Array.from(element("reviewModal").querySelectorAll("button:not(:disabled), input:not(:disabled), select:not(:disabled)"))
+      .filter((node) => !node.closest("[hidden]"));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  } else if (event.key === "Escape") closeReview();
   else if ((event.code === "Space" && event.target !== element("typedAnswer") || event.key === "Enter") && !answerVisible) { event.preventDefault(); revealAnswer(); }
   else if (answerVisible && ["1", "2", "3"].includes(event.key)) {
     rateCurrent({ "1": "again", "2": "hard", "3": "good" }[event.key]);

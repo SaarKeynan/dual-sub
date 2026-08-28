@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
-    <header>
+    <header class="topbar">
       <div class="brand">
         <span class="brand-mark">DS</span>
         <div><h1>DualSub</h1><p>French + English, together</p></div>
@@ -17,7 +17,7 @@
       </label>
     </header>
 
-    <div id="playerStatus" class="status" data-state="waiting">Open a YouTube video to begin.</div>
+    <div id="playerStatus" class="status" data-state="waiting" role="status">Open a YouTube video to begin.</div>
 
     <nav class="tabs" role="tablist" aria-label="Settings categories">
       <button id="tab-general" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-general" data-panel="general">General</button>
@@ -51,7 +51,9 @@
           </label>
           <p class="section-note">Translation is preloaded automatically. Use this only to correct a video that is out of sync.</p>
           <button id="saveVideoProfile" type="button">Remember timing and mode for this video</button>
-          <div class="divider"></div>
+          <details class="settings-group">
+            <summary><span>Translation service</span><small>Engine, preload, and API access</small></summary>
+            <div class="settings-group-body">
           <label class="field-label">Translation engine
             <select id="translationProvider">
               <option value="azure">Azure Translator · alignment + batching</option>
@@ -94,6 +96,8 @@
           <div class="service-actions"><button id="saveProvider" type="button">Save provider access</button><button id="clearProvider" type="button">Forget saved keys</button><span id="providerStatus" class="inline-status" role="status"></span></div>
           <div class="service-actions"><button id="clearTranslationCache" type="button">Clear translation cache</button><span id="cacheStatus" class="inline-status"></span></div>
           <p class="privacy">Fallback text is sent to the selected provider. Morphology and vocabulary stay local.</p>
+            </div>
+          </details>
         </section>
       </div>
 
@@ -153,6 +157,7 @@
             <label>Bottom offset <output id="bottomOffsetOutput"></output><input id="bottomOffset" type="range" min="30" max="220" step="2"></label>
             <label>Maximum width <output id="maxWidthOutput"></output><input id="maxWidth" type="range" min="45" max="98" step="1"></label>
           </div>
+          <div class="appearance-actions"><button id="reset" type="button">Reset appearance</button></div>
         </section>
       </div>
 
@@ -181,7 +186,7 @@
             <label class="range-row">Hover delay <output id="hoverDelayOutput"></output><input id="hoverDelay" type="range" min="120" max="1200" step="20"></label>
             <p class="privacy">Word preloading sends a limited set of frequent words to your selected translation provider and stops if that provider starts rejecting requests.</p>
             <p class="privacy">Use “Select phrase” in a word card, then click the final word. Drag-selection also works.</p>
-            <div class="service-actions"><button id="copyDiagnostics" type="button">Copy diagnostics</button><button id="reset" type="button">Reset appearance</button></div>
+            <div class="service-actions"><button id="copyDiagnostics" type="button">Copy diagnostics</button></div>
             <button id="openShortcuts" type="button">Customize keyboard shortcuts</button>
           </div>
           <div id="tool-panel-pronunciation" role="tabpanel" aria-labelledby="tool-pronunciation" data-tool-content="pronunciation" hidden>
@@ -196,7 +201,7 @@
       </div>
     </main>
 
-    <footer><span><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> toggle · <kbd>R</kbd> replay · <kbd>V</kbd> vocabulary</span></footer>
+    <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="shortcut-hint"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> toggle · <kbd>R</kbd> replay · <kbd>V</kbd> vocabulary</span></footer>
     <script src="popup.js"></script>
   </body>
 </html>

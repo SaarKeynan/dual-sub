@@ -317,15 +317,21 @@
             <div class="dualsub-card-sentence-target"></div>
           </div>
           <div class="dualsub-card-actions">
-            <button type="button" data-action="previous" title="Previous French word">← Word</button>
-            <button type="button" data-action="next" title="Next French word">Word →</button>
-            <button type="button" data-action="speak">Pronounce</button>
-            <button type="button" data-action="copy">Copy</button>
-            <button type="button" data-action="save">+ Vocabulary</button>
-            <button type="button" data-action="phrase">Select phrase</button>
-            <button type="button" data-action="replay">Replay</button>
-            <button type="button" data-action="slow">0.75× replay</button>
-            <button type="button" data-action="loop">Loop line</button>
+            <div class="dualsub-action-group dualsub-action-navigation">
+              <button type="button" data-action="previous" title="Previous French word" aria-label="Previous French word">←</button>
+              <button type="button" data-action="next" title="Next French word" aria-label="Next French word">→</button>
+            </div>
+            <div class="dualsub-action-group dualsub-action-primary">
+              <button type="button" data-action="speak">Pronounce</button>
+              <button type="button" data-action="save">+ Vocabulary</button>
+              <button type="button" data-action="phrase">Select phrase</button>
+            </div>
+            <div class="dualsub-action-group dualsub-action-secondary">
+              <button type="button" data-action="copy">Copy</button>
+              <button type="button" data-action="replay">Replay</button>
+              <button type="button" data-action="slow">Slow replay</button>
+              <button type="button" data-action="loop">Loop line</button>
+            </div>
           </div>
           <div class="dualsub-card-links">
             <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>

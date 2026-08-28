@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.2 — cohesive, calmer interface
+
+- Refined the settings popup with clearer hierarchy, larger controls, visible
+  save feedback, wrapped player status, a collapsible translation-service
+  section, and appearance reset in its expected category.
+- Improved the transcript sidebar with clearer active-line treatment, compact
+  status cards, a known-word coverage bar, accessible word actions, and a more
+  useful sticky search area.
+- Reorganized lookup-card actions into navigation, learning, and playback
+  groups, while making the selected word and primary learning actions easier to
+  scan without increasing the card footprint.
+- Simplified vocabulary import/export into a menu, added sticky filters and
+  responsive cards, and improved review with progress feedback, backdrop close,
+  focus containment, focus restoration, and small-screen layout.
+- Polished the pronunciation setup page with platform navigation, clearer
+  sections, responsive spacing, and consistent keyboard focus styling.
+
 ## 0.7.1 — quieter lookups and conservative alignment
 
 - Removed the translation-source badge from the English subtitle so both rows
