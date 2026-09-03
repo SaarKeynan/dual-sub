@@ -17,8 +17,89 @@ const ids = [
   "targetFontFamily", "targetFontWeight", "targetItalic"
 ];
 
+const settingDestinations = [
+  ["French and English subtitle rows", "French row English row subtitles captions", "showSource", "general"],
+  ["Learning mode", "watch focus study shadow mode", "studyMode", "general"],
+  ["YouTube native captions", "hide regular native captions", "hideNativeCaptions", "general"],
+  ["Keep live lines together", "whole line auto generated timing", "wholeLiveLines", "general"],
+  ["Subtitle synchronization", "timing offset early late delay sync", "captionOffsetMs", "general"],
+  ["Hold captions between lines", "duration disappear hold lines", "captionHoldMs", "general"],
+  ["Translation engine", "provider azure deepl google mymemory libretranslate api key", "translationProvider", "general"],
+  ["Translation preload", "buffer ahead batch loading speed", "translationBufferSeconds", "general"],
+  ["French subtitle style", "French font size text color background opacity italic", "sourceFontSize", "appearance", "source"],
+  ["English subtitle style", "English translation font size text color background opacity italic", "targetFontSize", "appearance", "target"],
+  ["Color French words by grammar", "word group part speech toggle", "colorFrenchWordGroups", "appearance", "source"],
+  ["Word-group color palette", "customize noun verb adjective adverb pronoun determiner preposition conjunction interjection colors", "wordGroupColorNoun", "appearance", "source"],
+  ["Subtitle position and width", "bottom offset maximum width layout", "bottomOffset", "appearance", "source"],
+  ["Lookup card position", "popup card cursor upper right subtitles", "lookupCardPosition", "tools", "lookup"],
+  ["Hover word lookup", "dictionary definition translate hover delay", "hoverLookup", "tools", "lookup"],
+  ["Translated-word matching", "alignment matching English French words", "wordAlignment", "tools", "lookup"],
+  ["Phrase selection", "multiple words drag selection sentence", "selectionTranslation", "tools", "lookup"],
+  ["Lookup pauses", "pause card open auto pause each line", "pauseOnLookup", "tools", "lookup"],
+  ["Reveal English on demand", "recall hide English hover", "recallMode", "tools", "lookup"],
+  ["Skip silent gaps", "silence gap skip playback", "skipCaptionGaps", "tools", "lookup"],
+  ["French pronunciation", "voice speech speed pronounce", "pronunciationVoiceURI", "tools", "pronunciation"],
+  ["Diagnostics and shortcuts", "copy diagnostics keyboard keys customize", "copyDiagnostics", "tools", "lookup"]
+].map(([label, keywords, id, panel, subpanel]) => ({ label, keywords, id, panel, subpanel }));
+
 function element(id) {
   return document.getElementById(id);
+}
+
+function normalizeSearch(value) {
+  return String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().trim();
+}
+
+function navigateToSetting(destination) {
+  activatePanel(destination.panel);
+  if (destination.panel === "appearance") activateAppearance(destination.subpanel || "source");
+  if (destination.panel === "tools") activateToolPane(destination.subpanel || "lookup");
+  const target = element(destination.id);
+  target?.closest("details")?.setAttribute("open", "");
+  const settingRow = target?.closest("label, .service-actions") || target;
+  element("settingsSearchResults").hidden = true;
+  requestAnimationFrame(() => {
+    settingRow?.scrollIntoView({ behavior: "smooth", block: "center" });
+    settingRow?.classList.add("setting-flash");
+    target?.focus?.({ preventScroll: true });
+    setTimeout(() => settingRow?.classList.remove("setting-flash"), 950);
+  });
+}
+
+function renderSettingsSearch() {
+  const query = normalizeSearch(element("settingsSearch").value);
+  const results = element("settingsSearchResults");
+  element("clearSettingsSearch").hidden = !query;
+  if (!query) {
+    results.hidden = true;
+    results.replaceChildren();
+    return;
+  }
+  const terms = query.split(/\s+/u).filter(Boolean);
+  const matches = settingDestinations.filter((destination) => {
+    const haystack = normalizeSearch(`${destination.label} ${destination.keywords}`);
+    return terms.every((term) => haystack.includes(term));
+  }).slice(0, 7);
+  if (!matches.length) {
+    const empty = document.createElement("div");
+    empty.className = "settings-search-empty";
+    empty.textContent = "No matching setting. Try a shorter word.";
+    results.replaceChildren(empty);
+  } else {
+    results.replaceChildren(...matches.map((destination) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "option");
+      const title = document.createElement("strong");
+      title.textContent = destination.label;
+      const category = document.createElement("small");
+      category.textContent = destination.panel === "tools" ? "Tools" : destination.panel[0].toUpperCase() + destination.panel.slice(1);
+      button.append(title, category);
+      button.addEventListener("click", () => navigateToSetting(destination));
+      return button;
+    }));
+  }
+  results.hidden = false;
 }
 
 function activatePanel(name) {
@@ -351,6 +432,35 @@ async function loadVocabularyCount() {
 }
 
 async function initialize() {
+  element("settingsSearch").addEventListener("input", renderSettingsSearch);
+  element("settingsSearch").addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      element("settingsSearch").value = "";
+      renderSettingsSearch();
+    } else if (event.key === "ArrowDown") {
+      const firstResult = element("settingsSearchResults").querySelector("button");
+      if (firstResult) { event.preventDefault(); firstResult.focus(); }
+    }
+  });
+  element("clearSettingsSearch").addEventListener("click", () => {
+    element("settingsSearch").value = "";
+    renderSettingsSearch();
+    element("settingsSearch").focus();
+  });
+  element("settingsSearchResults").addEventListener("keydown", (event) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Escape'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Escape") {
+      element("settingsSearch").focus();
+      return;
+    }
+    const results = Array.from(element("settingsSearchResults").querySelectorAll("button"));
+    const index = results.indexOf(document.activeElement);
+    const nextIndex = event.key === "Home" ? 0
+      : event.key === "End" ? results.length - 1
+        : (index + (event.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
+    results[nextIndex]?.focus();
+  });
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", () => activatePanel(button.dataset.panel));
   });
@@ -416,6 +526,20 @@ async function initialize() {
   element("openVocabulary").addEventListener("click", () => {
     browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
     window.close();
+  });
+  element("openVocabularyQuick").addEventListener("click", () => {
+    browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
+    window.close();
+  });
+  element("openSidebar").addEventListener("click", async () => {
+    try {
+      await browser.sidebarAction.open();
+      window.close();
+    } catch (_error) {
+      const statusNode = element("playerStatus");
+      statusNode.textContent = "Use View → Sidebar → DualSub transcript, or press Alt+Shift+T.";
+      statusNode.dataset.state = "error";
+    }
   });
   element("openShortcuts").addEventListener("click", () => {
     browser.tabs.create({ url: "about:addons" }).catch(() => {

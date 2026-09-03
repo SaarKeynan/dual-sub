@@ -128,7 +128,7 @@ async function testCaptionProcessing() {
   assert(context.isNativeCaptionSystemMessage("French (auto-generated)", 2000));
   assert(!context.isNativeCaptionSystemMessage("French (auto-generated)", 12000));
   assert(!context.isNativeCaptionSystemMessage("On parle des param\u00e8tres du t\u00e9l\u00e9phone", 1000));
-  for (const action of ["pin", "copy", "previous", "next", "slow", "loop", "phrase"]) {
+  for (const action of ["pin", "copy", "correct", "previous", "next", "slow", "loop", "phrase"]) {
     assert(source.includes(`data-action="${action}"`), `Lookup action ${action} should be present`);
   }
   assert(!source.includes('data-action="sentence"'));
@@ -151,6 +151,8 @@ async function testCaptionProcessing() {
   assert(popupCss.includes("overflow-y: auto"), "The settings popup should scroll vertically");
   assert(popupCss.includes("overflow-x: hidden"), "The settings popup should not scroll horizontally");
   assert(popupHtml.includes('id="preloadVideoWords"'));
+  assert(popupHtml.includes('id="settingsSearch"'), "Settings should be searchable by task");
+  assert(popupHtml.includes('id="openSidebar"'), "The toolbar popup should expose the transcript sidebar");
   assert(popupHtml.includes("Set up a French voice") || popupHtml.includes("Preview French voice"));
   assert(voiceHelpHtml.includes("Settings → Time &amp; language → Speech"));
   const frenchAppearanceStart = popupHtml.indexOf('data-appearance-content="source"');
@@ -332,8 +334,9 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.7.2");
+  assert.strictEqual(manifest.version, "0.7.3");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
+  assert(manifest.commands["open-transcript"], "The transcript sidebar should have a keyboard command");
   assert(manifest.background.scripts.includes("translation-engine.js"));
   assert(manifest.browser_specific_settings.gecko.data_collection_permissions.required.includes("websiteContent"));
 }
@@ -445,6 +448,11 @@ async function testVocabularyStorage() {
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "translation-engine.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "background.js"), "utf8"), context);
   assert(messageListener, "Background message listener was not registered");
+  assert.strictEqual(context.suspiciousWordTranslation("créées", "created"), false);
+  assert.strictEqual(context.suspiciousWordTranslation(
+    "créées",
+    "Ownership of real estate in the border areas of 10 km by companies in which majority of capital belongs to foreign nationals is subject to special permission."
+  ), true, "Unrelated translation-memory sentences must be rejected for word lookups");
   const defaultSettings = await messageListener({ type: "get-default-settings" });
   assert.strictEqual(defaultSettings.settings.captionOffsetMs, 0);
   assert.strictEqual(defaultSettings.settings.subtitleLeadMs, undefined);
@@ -493,6 +501,27 @@ async function testVocabularyStorage() {
   assert.strictEqual(fetchCount, 2);
 
   stores.sync.settings = { ...defaultSettings.settings, translationProvider: "mymemory" };
+  context.fetch = async (url) => {
+    fetchCount += 1;
+    if (String(url).startsWith("https://api.mymemory.translated.net/get")) {
+      return { ok: true, status: 200, async json() { return {
+        responseStatus: 200,
+        responseData: { translatedText: "Ownership of real estate in border areas by foreign companies is subject to special permission under applicable national law." }
+      }; } };
+    }
+    assert(String(url).startsWith("https://translate.googleapis.com/"), "A bad word result should use the concise fallback");
+    return { ok: true, status: 200, async json() { return [[ ["created", "créées"] ]]; } };
+  };
+  const conciseFallback = await messageListener({
+    type: "translate-selection",
+    text: "créées",
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+    cacheMode: "word"
+  });
+  assert(conciseFallback.ok && conciseFallback.translatedText === "created");
+  assert.strictEqual(conciseFallback.qualityFallback, true);
+
   context.fetch = async (url) => {
     fetchCount += 1;
     assert(String(url).startsWith("https://api.mymemory.translated.net/get"));

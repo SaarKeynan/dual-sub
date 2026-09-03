@@ -29,6 +29,7 @@ body {
   body { width: min(760px, 100%); max-height: none; margin: 24px auto; border: 1px solid #253047; border-radius: 16px; }
 }
 button, input, select { font: inherit; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 .topbar {
   position: sticky; z-index: 5; top: 0;
@@ -56,6 +57,25 @@ h2 { color: #f8fafc; font-size: 14px; }
 .status[data-state="ready"]::before { background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, .12); }
 .status[data-state="error"] { border-color: rgba(251, 113, 133, .4); color: #fecdd3; background: rgba(136, 19, 55, .2); }
 .status[data-state="error"]::before { background: #fb7185; box-shadow: 0 0 0 3px rgba(251, 113, 133, .12); }
+
+.quick-actions { display: grid; grid-template-columns: 1.35fr 1fr; gap: 7px; margin: 0 14px 9px; }
+.quick-actions button { min-height: 36px; }
+.transcript-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 11px; }
+.transcript-button > span { margin: 0; padding: 0; color: #bfdbfe; background: transparent; font-size: 16px; line-height: 1; }
+.settings-finder { position: relative; display: flex; align-items: center; margin: 0 14px 9px; }
+.settings-finder label { position: absolute; left: 11px; z-index: 1; color: #7f91aa; font-size: 17px; pointer-events: none; }
+.settings-finder input { width: 100%; min-height: 36px; padding: 8px 34px 8px 34px; border: 1px solid #344158; border-radius: 9px; outline: 0; color: #e5e7eb; background: #0e1728; }
+.settings-finder input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(59,130,246,.13); }
+.settings-finder button { position: absolute; right: 5px; width: 27px; min-height: 27px; padding: 0; border: 0; background: transparent; font-size: 17px; }
+.settings-search-results { margin: -2px 14px 10px; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #0d1728; box-shadow: 0 12px 30px rgba(0,0,0,.24); }
+.settings-search-results button { display: grid; width: 100%; min-height: 0; gap: 2px; padding: 9px 11px; border: 0; border-bottom: 1px solid rgba(148,163,184,.11); border-radius: 0; text-align: left; background: transparent; }
+.settings-search-results button:last-child { border-bottom: 0; }
+.settings-search-results button:hover, .settings-search-results button:focus-visible { background: rgba(37,99,235,.16); }
+.settings-search-results strong { color: #e2e8f0; font-size: 11px; }
+.settings-search-results small { color: #7f91aa; font-size: 9px; }
+.settings-search-empty { padding: 11px; color: #8494aa; font-size: 10px; text-align: center; }
+.setting-flash { animation: setting-flash 900ms ease-out; }
+@keyframes setting-flash { 0%, 35% { box-shadow: 0 0 0 3px rgba(96,165,250,.35); border-radius: 6px; } }
 
 .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 14px 10px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: rgba(8, 15, 28, .72); }
 .tab-button { min-width: 0; min-height: 32px; padding: 7px 2px; border: 1px solid transparent; border-radius: 7px; color: #8797ae; background: transparent; font-size: 11px; font-weight: 700; cursor: pointer; }
@@ -119,6 +139,11 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .settings-group summary { display: flex; align-items: center; gap: 7px; padding: 10px 11px; color: #dbeafe; font-size: 11px; font-weight: 750; cursor: pointer; list-style-position: inside; }
 .settings-group summary small { margin-left: auto; color: #788ba5; font-size: 9px; font-weight: 550; }
 .settings-group-body { padding: 0 11px 12px; border-top: 1px solid var(--border); }
+.palette-settings { margin-top: 12px; padding-top: 10px; border-top: 1px solid #2b374d; }
+.palette-settings summary { color: #dbeafe; font-size: 11px; font-weight: 750; cursor: pointer; }
+.option-group { min-width: 0; margin: 10px 0 0; padding: 5px 10px 11px; border: 1px solid var(--border); border-radius: 10px; background: rgba(8,15,28,.3); }
+.option-group legend { padding: 0 5px; color: #bfdbfe; font-size: 10px; font-weight: 800; letter-spacing: .03em; }
+.option-group .field-label:first-of-type, .option-group .check-row:first-of-type { margin-top: 5px; }
 .appearance-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 footer { position: sticky; z-index: 4; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--border); color: #71839d; background: rgba(9, 15, 28, .95); font-size: 9px; backdrop-filter: blur(12px); }

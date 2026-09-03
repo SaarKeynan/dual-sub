@@ -371,6 +371,38 @@ async function translateBatchMessage(message) {
   }, settings);
 }
 
+function suspiciousWordTranslation(sourceText, translatedText) {
+  const source = cleanVocabularyText(sourceText, 160);
+  const translation = cleanVocabularyText(translatedText, 1000);
+  const sourceWords = source.match(/[\p{L}\p{N}]+/gu) || [];
+  const translatedWords = translation.match(/[\p{L}\p{N}]+/gu) || [];
+  if (!source || !translation || sourceWords.length > 3) return false;
+  if (translatedWords.length > Math.max(8, sourceWords.length * 4)) return true;
+  if (translation.length > Math.max(72, source.length * 10)) return true;
+  const sentenceStops = translation.match(/[.!?](?:\s|$)/gu) || [];
+  return sentenceStops.length > 1 && translatedWords.length > 6;
+}
+
+async function translateConciseWordFallback(message, settings, normalizedText) {
+  const { results } = await DualSubTranslation.translateBatch([{
+    text: normalizedText,
+    cacheId: `concise-word:${normalizedText.normalize("NFC").toLocaleLowerCase()}`
+  }], {
+    provider: "google",
+    sourceLanguage: message.sourceLanguage || settings.sourceLanguage,
+    targetLanguage: message.targetLanguage || settings.targetLanguage,
+    providerVersion: "concise-word-v1",
+    sessionId: message.sessionId || `word-fallback-${Date.now()}`
+  }, settings);
+  const result = results[0];
+  if (!result?.translatedText || suspiciousWordTranslation(normalizedText, result.translatedText)) {
+    const error = new Error("No concise translation was found for this word.");
+    error.code = "WORD_TRANSLATION_LOW_QUALITY";
+    throw error;
+  }
+  return { ...result, provenance: "Google concise fallback", qualityFallback: true };
+}
+
 async function translateSelectionWithEngine(message) {
   const settings = await getSettings();
   const normalizedText = String(message.text || "").trim();
@@ -395,16 +427,28 @@ async function translateSelectionWithEngine(message) {
     }
   }
   if (translationPending.has(pendingKey)) return translationPending.get(pendingKey);
-  const request = DualSubTranslation.translateBatch([{
-    text: normalizedText,
-    cacheId: message.cacheMode === "word" ? `word:${normalizedText.normalize("NFC").toLocaleLowerCase()}` : ""
-  }], {
-    provider: settings.translationProvider,
-    sourceLanguage: message.sourceLanguage || settings.sourceLanguage,
-    targetLanguage: message.targetLanguage || settings.targetLanguage,
-    context: message.context,
-    sessionId: message.sessionId || `lookup-${Date.now()}`
-  }, settings).then(({ results }) => results[0]);
+  const request = (async () => {
+    const { results } = await DualSubTranslation.translateBatch([{
+      text: normalizedText,
+      cacheId: message.cacheMode === "word" ? `word:${normalizedText.normalize("NFC").toLocaleLowerCase()}` : ""
+    }], {
+      provider: settings.translationProvider,
+      sourceLanguage: message.sourceLanguage || settings.sourceLanguage,
+      targetLanguage: message.targetLanguage || settings.targetLanguage,
+      context: message.context,
+      sessionId: message.sessionId || `lookup-${Date.now()}`
+    }, settings);
+    const result = results[0];
+    if (message.cacheMode === "word" && suspiciousWordTranslation(normalizedText, result?.translatedText)) {
+      if (settings.translationProvider === "google") {
+        const error = new Error("The translation service returned an implausibly long definition.");
+        error.code = "WORD_TRANSLATION_LOW_QUALITY";
+        throw error;
+      }
+      return translateConciseWordFallback(message, settings, normalizedText);
+    }
+    return result;
+  })();
   translationPending.set(pendingKey, request);
   try {
     return await request;
@@ -444,6 +488,8 @@ browser.commands.onCommand.addListener(async (command) => {
     if (tab?.id) browser.tabs.sendMessage(tab.id, { type: "replay-current-cue" }).catch(() => {});
   } else if (command === "open-vocabulary") {
     await browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
+  } else if (command === "open-transcript") {
+    await browser.sidebarAction.open().catch(() => {});
   } else if (["previous-caption", "next-caption"].includes(command)) {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (tab?.id) browser.tabs.sendMessage(tab.id, { type: "navigate-cue", direction: command === "previous-caption" ? -1 : 1 }).catch(() => {});

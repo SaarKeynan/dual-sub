@@ -328,6 +328,7 @@
             </div>
             <div class="dualsub-action-group dualsub-action-secondary">
               <button type="button" data-action="copy">Copy</button>
+              <button type="button" data-action="correct">Correct meaning</button>
               <button type="button" data-action="replay">Replay</button>
               <button type="button" data-action="slow">Slow replay</button>
               <button type="button" data-action="loop">Loop line</button>
@@ -2266,6 +2267,29 @@
       setTimeout(() => {
         if (button.isConnected) button.textContent = "Copy";
       }, 1200);
+      return;
+    }
+
+    if (action === "correct") {
+      const corrected = window.prompt(`Correct the English meaning of “${lookupContext.sourceText}”:`, lookupContext.translatedText);
+      if (corrected === null || !corrected.trim()) return;
+      const response = await browser.runtime.sendMessage({
+        type: "save-translation-correction",
+        sourceText: lookupContext.sourceText,
+        translatedText: corrected.trim(),
+        sourceLanguage: settings.sourceLanguage,
+        targetLanguage: settings.targetLanguage
+      }).catch((error) => ({ ok: false, error: error.message }));
+      if (!response?.ok) {
+        button.textContent = "Could not save";
+        setTimeout(() => { if (button.isConnected) button.textContent = "Correct meaning"; }, 1600);
+        return;
+      }
+      lookupContext.translatedText = corrected.trim();
+      selectionCard.querySelector(".dualsub-card-result").textContent = corrected.trim();
+      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText), corrected.trim());
+      button.textContent = "Corrected ✓";
+      setTimeout(() => { if (button.isConnected) button.textContent = "Correct meaning"; }, 1600);
       return;
     }
 

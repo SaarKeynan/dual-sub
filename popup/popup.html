@@ -19,6 +19,18 @@
 
     <div id="playerStatus" class="status" data-state="waiting" role="status">Open a YouTube video to begin.</div>
 
+    <div class="quick-actions">
+      <button id="openSidebar" class="primary-button transcript-button" type="button"><span aria-hidden="true">☷</span> Open transcript</button>
+      <button id="openVocabularyQuick" type="button">Vocabulary</button>
+    </div>
+
+    <div class="settings-finder">
+      <label for="settingsSearch"><span aria-hidden="true">⌕</span><span class="visually-hidden">Find a setting</span></label>
+      <input id="settingsSearch" type="search" placeholder="Find a setting…" autocomplete="off">
+      <button id="clearSettingsSearch" type="button" aria-label="Clear settings search" hidden>×</button>
+    </div>
+    <div id="settingsSearchResults" class="settings-search-results" role="listbox" aria-label="Matching settings" hidden></div>
+
     <nav class="tabs" role="tablist" aria-label="Settings categories">
       <button id="tab-general" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-general" data-panel="general">General</button>
       <button id="tab-appearance" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-appearance" data-panel="appearance">Appearance</button>
@@ -121,8 +133,8 @@
             </div>
             <label class="check-row"><input id="sourceItalic" type="checkbox"> Italic French captions</label>
             <label class="check-row"><input id="colorFrenchWordGroups" type="checkbox"> Color French words by grammatical group</label>
-            <div class="divider"></div>
-            <p class="palette-heading">Word-group colors</p>
+            <details class="palette-settings">
+              <summary>Customize word-group colors</summary>
             <div class="grid word-group-grid">
               <label>Word <input id="wordGroupColorUnknown" type="color"></label>
               <label>Noun <input id="wordGroupColorNoun" type="color"></label>
@@ -137,6 +149,7 @@
             </div>
             <p class="section-note palette-note">“Word” is used when no reliable grammatical group is available.</p>
             <p id="contrastWarning" class="contrast-warning" role="status"></p>
+            </details>
           </div>
 
           <div id="appearance-panel-target" class="appearance-pane" role="tabpanel" aria-labelledby="appearance-target" data-appearance-content="target" hidden>
@@ -168,10 +181,12 @@
             <button id="openVocabulary" class="primary-button" type="button">Vocabulary <span id="vocabularyCount">0</span></button>
           </div>
           <div class="tool-tabs" role="tablist" aria-label="Tool options">
-            <button id="tool-lookup" class="tool-button is-active" type="button" role="tab" aria-selected="true" aria-controls="tool-panel-lookup" data-tool-pane="lookup">Lookup &amp; colors</button>
+            <button id="tool-lookup" class="tool-button is-active" type="button" role="tab" aria-selected="true" aria-controls="tool-panel-lookup" data-tool-pane="lookup">Lookup &amp; playback</button>
             <button id="tool-pronunciation" class="tool-button" type="button" role="tab" aria-selected="false" aria-controls="tool-panel-pronunciation" data-tool-pane="pronunciation">Pronunciation</button>
           </div>
           <div id="tool-panel-lookup" role="tabpanel" aria-labelledby="tool-lookup" data-tool-content="lookup">
+            <fieldset class="option-group">
+              <legend>Word lookup</legend>
             <label class="field-label">Lookup card position
               <select id="lookupCardPosition"><option value="smart">Near subtitles</option><option value="cursor">Beside pointer</option><option value="top-right">Upper right</option></select>
             </label>
@@ -180,14 +195,17 @@
             <label class="check-row"><input id="preloadVideoWords" type="checkbox"> Preload frequent words from timed captions</label>
             <label class="check-row"><input id="selectionTranslation" type="checkbox"> Allow drag-selection of French phrases</label>
             <label class="check-row"><input id="pauseOnLookup" type="checkbox"> Pause while a lookup card is open</label>
+            <label class="range-row">Hover delay <output id="hoverDelayOutput"></output><input id="hoverDelay" type="range" min="120" max="1200" step="20"></label>
+            </fieldset>
+            <fieldset class="option-group">
+              <legend>Playback assistance</legend>
             <label class="check-row"><input id="recallMode" type="checkbox"> Hide English until French is hovered</label>
             <label class="check-row"><input id="autoPause" type="checkbox"> Pause at each new subtitle line</label>
             <label class="check-row"><input id="skipCaptionGaps" type="checkbox"> Skip silent gaps longer than 1.5 seconds</label>
-            <label class="range-row">Hover delay <output id="hoverDelayOutput"></output><input id="hoverDelay" type="range" min="120" max="1200" step="20"></label>
+            </fieldset>
             <p class="privacy">Word preloading sends a limited set of frequent words to your selected translation provider and stops if that provider starts rejecting requests.</p>
             <p class="privacy">Use “Select phrase” in a word card, then click the final word. Drag-selection also works.</p>
-            <div class="service-actions"><button id="copyDiagnostics" type="button">Copy diagnostics</button></div>
-            <button id="openShortcuts" type="button">Customize keyboard shortcuts</button>
+            <div class="service-actions"><button id="copyDiagnostics" type="button">Copy diagnostics</button><button id="openShortcuts" type="button">Keyboard shortcuts</button></div>
           </div>
           <div id="tool-panel-pronunciation" role="tabpanel" aria-labelledby="tool-pronunciation" data-tool-content="pronunciation" hidden>
             <label class="field-label">French pronunciation voice
@@ -201,7 +219,7 @@
       </div>
     </main>
 
-    <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="shortcut-hint"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> toggle · <kbd>R</kbd> replay · <kbd>V</kbd> vocabulary</span></footer>
+    <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="shortcut-hint"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> transcript · <kbd>D</kbd> toggle</span></footer>
     <script src="popup.js"></script>
   </body>
 </html>

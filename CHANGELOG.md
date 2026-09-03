@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.3 — findable settings and safer word meanings
+
+- Added task-based settings search that opens the correct category, nested tab,
+  and collapsed section, with full keyboard navigation between results.
+- Grouped learning options into word-lookup and playback-assistance sections,
+  collapsed the detailed color palette, and added prominent transcript and
+  vocabulary actions at the top of the toolbar popup.
+- Added an Open transcript button plus an `Alt+Shift+T` command so the Firefox
+  sidebar can be restored immediately after it is closed.
+- Added a quality gate for single-word translations. Implausibly long
+  translation-memory results are rejected and retried through a concise word
+  translation path instead of being shown or cached in the lookup card.
+- Added a Correct meaning action to word cards so an inaccurate result can be
+  replaced immediately and reused as the preferred local translation.
+
 ## 0.7.2 — cohesive, calmer interface
 
 - Refined the settings popup with clearer hierarchy, larger controls, visible
