@@ -1,16 +1,19 @@
 {
   "name": "dualsub-firefox",
   "private": true,
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "Synchronized French and English YouTube subtitles with language-learning tools for Firefox.",
   "scripts": {
-    "check": "node --check translation-engine.js && node --check background.js && node --check content.js && node --check page-bridge.js && node --check language/french.js && node --check popup/popup.js && node --check sidebar/sidebar.js && node --check vocabulary/vocabulary.js",
+    "check": "node --check translation-engine.js && node --check background.js && node --check content.js && node --check page-bridge.js && node --check language/french.js && node --check popup/popup.js && node --check sidebar/sidebar.js && node --check vocabulary/vocabulary.js && node --check tools/translator.js",
     "test": "node tests/smoke.test.js",
+    "vendor:ocr": "node scripts/vendor-ocr.cjs",
     "lint": "web-ext lint --config web-ext-config.cjs --warnings-as-errors",
     "build": "web-ext build --config web-ext-config.cjs --overwrite-dest",
     "verify": "npm run check && npm test && npm run lint"
   },
   "devDependencies": {
+    "@tesseract.js-data/fra": "^1.0.0",
+    "tesseract.js": "^7.0.0",
     "web-ext": "10.6.0"
   },
   "engines": {

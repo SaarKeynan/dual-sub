@@ -383,6 +383,22 @@ function suspiciousWordTranslation(sourceText, translatedText) {
   return sentenceStops.length > 1 && translatedWords.length > 6;
 }
 
+async function wrongLanguageWordTranslation(translatedText, targetLanguage, sourceLanguage) {
+  if (!browser.i18n?.detectLanguage || !translatedText) return false;
+  try {
+    const detection = await browser.i18n.detectLanguage(translatedText);
+    const strongest = Array.from(detection?.languages || [])
+      .sort((left, right) => Number(right.percentage || 0) - Number(left.percentage || 0))[0];
+    if (!strongest || (!detection.isReliable && Number(strongest.percentage || 0) < 70)) return false;
+    const detected = String(strongest.language || "").split("-")[0].toLocaleLowerCase();
+    const target = String(targetLanguage || "").split("-")[0].toLocaleLowerCase();
+    const source = String(sourceLanguage || "").split("-")[0].toLocaleLowerCase();
+    return Boolean(detected && detected !== "und" && detected !== target && detected !== source);
+  } catch (_error) {
+    return false;
+  }
+}
+
 async function translateConciseWordFallback(message, settings, normalizedText) {
   const { results } = await DualSubTranslation.translateBatch([{
     text: normalizedText,
@@ -412,7 +428,7 @@ async function translateSelectionWithEngine(message) {
     message.targetLanguage || settings.targetLanguage,
     message.cacheMode === "word" ? normalizedText.normalize("NFC").toLocaleLowerCase() : normalizedText
   ].join("|");
-  if (message.cacheMode === "word") {
+  if (["word", "phrase"].includes(message.cacheMode)) {
     const corrections = await getTranslationCorrections();
     const correctionKey = `${message.sourceLanguage || settings.sourceLanguage}|${message.targetLanguage || settings.targetLanguage}|${vocabularyKey(normalizedText)}`;
     if (corrections[correctionKey]?.translatedText) {
@@ -439,9 +455,16 @@ async function translateSelectionWithEngine(message) {
       sessionId: message.sessionId || `lookup-${Date.now()}`
     }, settings);
     const result = results[0];
-    if (message.cacheMode === "word" && suspiciousWordTranslation(normalizedText, result?.translatedText)) {
+    const wrongLanguage = message.cacheMode === "word" && settings.translationProvider === "mymemory"
+      ? await wrongLanguageWordTranslation(
+          result?.translatedText,
+          message.targetLanguage || settings.targetLanguage,
+          message.sourceLanguage || settings.sourceLanguage
+        )
+      : false;
+    if (message.cacheMode === "word" && (suspiciousWordTranslation(normalizedText, result?.translatedText) || wrongLanguage)) {
       if (settings.translationProvider === "google") {
-        const error = new Error("The translation service returned an implausibly long definition.");
+        const error = new Error("The translation service returned an unreliable word meaning.");
         error.code = "WORD_TRANSLATION_LOW_QUALITY";
         throw error;
       }

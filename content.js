@@ -311,6 +311,10 @@
             <div class="dualsub-card-result"></div>
             <div class="dualsub-card-infinitive" hidden></div>
           </div>
+          <form class="dualsub-correction-form" hidden>
+            <label>Preferred English meaning<input class="dualsub-correction-input" type="text" maxlength="300" autocomplete="off"></label>
+            <div><button type="submit" data-action="save-correction">Save correction</button><button type="button" data-action="cancel-correction">Cancel</button></div>
+          </form>
           <div class="dualsub-card-context">
             <div class="dualsub-card-label">In this line</div>
             <div class="dualsub-card-sentence-source"></div>
@@ -357,6 +361,10 @@
       statusCloseNode.addEventListener("pointerdown", dismissStatus);
       statusCloseNode.addEventListener("click", dismissStatus);
       selectionCard = root.querySelector(".dualsub-selection-card");
+      selectionCard.querySelector(".dualsub-correction-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        selectionCard.querySelector('[data-action="save-correction"]').click();
+      });
       selectionCard.addEventListener("pointerenter", cancelLookupDismiss);
       selectionCard.addEventListener("pointerleave", () => scheduleLookupDismiss(180));
       sourceLine.addEventListener("pointerleave", () => {
@@ -2059,6 +2067,7 @@
     const nextButton = selectionCard.querySelector('[data-action="next"]');
     const slowButton = selectionCard.querySelector('[data-action="slow"]');
     const loopButton = selectionCard.querySelector('[data-action="loop"]');
+    const correctionForm = selectionCard.querySelector(".dualsub-correction-form");
     const sentence = currentSourceText || cleanText;
     const hoveredWordIndex = sourceWords.indexOf(hoveredWord);
     const conjugation = kind === "word" ? globalThis.DualSubFrench?.analyzeWord(cleanText, currentSourceText) : null;
@@ -2085,6 +2094,7 @@
       conjugation
     };
     sourceNode.textContent = cleanText;
+    correctionForm.hidden = true;
     translationNode.dataset.group = wordGroup?.group || "unknown";
     groupNode.hidden = !wordGroup;
     groupNode.dataset.group = wordGroup?.group || "unknown";
@@ -2141,7 +2151,7 @@
         text: cleanText,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
-        cacheMode: kind === "word" ? "word" : "transient",
+        cacheMode: kind === "word" ? "word" : "phrase",
         context: sentence
       });
     const lemmaTexts = conjugation?.partOfSpeech === "verb"
@@ -2271,25 +2281,49 @@
     }
 
     if (action === "correct") {
-      const corrected = window.prompt(`Correct the English meaning of “${lookupContext.sourceText}”:`, lookupContext.translatedText);
-      if (corrected === null || !corrected.trim()) return;
+      const form = selectionCard.querySelector(".dualsub-correction-form");
+      const input = form.querySelector(".dualsub-correction-input");
+      form.hidden = false;
+      input.value = lookupContext.translatedText;
+      cancelLookupDismiss();
+      input.focus();
+      input.select();
+      return;
+    }
+
+    if (action === "cancel-correction") {
+      selectionCard.querySelector(".dualsub-correction-form").hidden = true;
+      scheduleLookupDismiss(500);
+      return;
+    }
+
+    if (action === "save-correction") {
+      const form = selectionCard.querySelector(".dualsub-correction-form");
+      const corrected = form.querySelector(".dualsub-correction-input").value.trim();
+      if (!corrected) return;
+      button.disabled = true;
+      button.textContent = "Saving…";
       const response = await browser.runtime.sendMessage({
         type: "save-translation-correction",
         sourceText: lookupContext.sourceText,
-        translatedText: corrected.trim(),
+        translatedText: corrected,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
       }).catch((error) => ({ ok: false, error: error.message }));
       if (!response?.ok) {
-        button.textContent = "Could not save";
-        setTimeout(() => { if (button.isConnected) button.textContent = "Correct meaning"; }, 1600);
+        button.disabled = false;
+        button.textContent = "Try again";
         return;
       }
-      lookupContext.translatedText = corrected.trim();
-      selectionCard.querySelector(".dualsub-card-result").textContent = corrected.trim();
-      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText), corrected.trim());
-      button.textContent = "Corrected ✓";
-      setTimeout(() => { if (button.isConnected) button.textContent = "Correct meaning"; }, 1600);
+      lookupContext.translatedText = corrected;
+      selectionCard.querySelector(".dualsub-card-result").textContent = corrected;
+      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText), corrected);
+      form.hidden = true;
+      const correctionButton = selectionCard.querySelector('[data-action="correct"]');
+      correctionButton.textContent = "Corrected ✓";
+      setTimeout(() => { if (correctionButton.isConnected) correctionButton.textContent = "Correct meaning"; }, 1600);
+      button.disabled = false;
+      button.textContent = "Save correction";
       return;
     }
 

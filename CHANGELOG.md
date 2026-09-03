@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0 — manual translation and local OCR
+
+- Replaced the native correction prompt with an inline editor that visibly
+  confirms saves and works for both individual words and selected phrases.
+- Added persistent exact-phrase corrections; subsequent phrase lookups now
+  consult the same local correction store as word lookups.
+- Preserved MyMemory as a word provider while adding target-language detection;
+  a confidently mislabeled result such as Spanish `creada` in an English
+  response is rejected and retried through the concise fallback.
+- Added a standalone French translation workspace for text that is typed,
+  pasted, or corrected after OCR, with copy and correction actions.
+- Added one-click visible-tab capture from the toolbar, draggable region
+  selection, optional subtitle contrast enhancement, progress feedback, and a
+  bundled French Tesseract model. OCR runs entirely inside Firefox and the
+  temporary screenshot is removed from storage after loading.
+- Added searchable toolbar destinations for manual translation and OCR.
+
 ## 0.7.3 — findable settings and safer word meanings
 
 - Added task-based settings search that opens the correct category, nested tab,

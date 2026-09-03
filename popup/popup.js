@@ -18,6 +18,8 @@ const ids = [
 ];
 
 const settingDestinations = [
+  ["Type text to translate", "manual translation paste incorrect subtitles", "openTranslator", "general"],
+  ["Capture text with OCR", "screen image video French text recognition", "captureText", "general"],
   ["French and English subtitle rows", "French row English row subtitles captions", "showSource", "general"],
   ["Learning mode", "watch focus study shadow mode", "studyMode", "general"],
   ["YouTube native captions", "hide regular native captions", "hideNativeCaptions", "general"],
@@ -530,6 +532,31 @@ async function initialize() {
   element("openVocabularyQuick").addEventListener("click", () => {
     browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
     window.close();
+  });
+  element("openTranslator").addEventListener("click", () => {
+    browser.tabs.create({ url: browser.runtime.getURL("tools/translator.html") });
+    window.close();
+  });
+  element("captureText").addEventListener("click", async () => {
+    const button = element("captureText");
+    button.disabled = true;
+    button.textContent = "Capturing…";
+    try {
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.windowId || !tab.url?.includes("youtube.com/")) throw new Error("Open a YouTube video first.");
+      const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 92 });
+      await browser.storage.local.set({
+        ocrCaptureV1: { dataUrl, capturedAt: Date.now(), sourceUrl: tab.url }
+      });
+      await browser.tabs.create({ url: browser.runtime.getURL("tools/translator.html#ocr") });
+      window.close();
+    } catch (error) {
+      const statusNode = element("playerStatus");
+      statusNode.textContent = error.message || "Could not capture the visible tab.";
+      statusNode.dataset.state = "error";
+      button.disabled = false;
+      button.textContent = "Capture text (OCR)";
+    }
   });
   element("openSidebar").addEventListener("click", async () => {
     try {

@@ -19,6 +19,8 @@ async function testCaptionProcessing() {
   const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
   const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
   const voiceHelpHtml = fs.readFileSync(path.join(projectRoot, "help", "pronunciation.html"), "utf8");
+  const translatorHtml = fs.readFileSync(path.join(projectRoot, "tools", "translator.html"), "utf8");
+  const translatorSource = fs.readFileSync(path.join(projectRoot, "tools", "translator.js"), "utf8");
   const bridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"), "utf8");
   const helpers = extract(source, "  function joinCaptionParts", "  function requestCaptionFromPage");
   const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
@@ -145,6 +147,9 @@ async function testCaptionProcessing() {
   assert(source.includes("lookupTranslationKey"));
   assert(source.includes("lookupTranslationCache"));
   assert(source.includes('cacheMode: "word"'));
+  assert(source.includes('kind === "word" ? "word" : "phrase"'));
+  assert(source.includes("dualsub-correction-form"));
+  assert(!source.includes("window.prompt(`Correct the English meaning"), "Corrections should use the inline editor");
   assert(source.includes("videoWordWarmupOrder"));
   assert(source.includes("dualsub-status-close"));
   assert(source.includes("dismissedStatusKeys"));
@@ -153,6 +158,17 @@ async function testCaptionProcessing() {
   assert(popupHtml.includes('id="preloadVideoWords"'));
   assert(popupHtml.includes('id="settingsSearch"'), "Settings should be searchable by task");
   assert(popupHtml.includes('id="openSidebar"'), "The toolbar popup should expose the transcript sidebar");
+  assert(popupHtml.includes('id="openTranslator"') && popupHtml.includes('id="captureText"'));
+  assert(translatorHtml.includes('id="captureStage"') && translatorHtml.includes('id="sourceText"'));
+  assert(translatorSource.includes('Tesseract.createWorker("fra"'));
+  assert(translatorSource.includes('browser.storage.local.remove("ocrCaptureV1")'));
+  for (const asset of [
+    "vendor/tesseract/tesseract.min.js",
+    "vendor/tesseract/worker.min.js",
+    "vendor/tesseract/tesseract-core-simd-lstm.wasm.js",
+    "vendor/tesseract/tesseract-core-simd-lstm.wasm",
+    "vendor/tesseract/lang/fra.traineddata.gz"
+  ]) assert(fs.statSync(path.join(projectRoot, asset)).size > 10_000, `${asset} should be bundled`);
   assert(popupHtml.includes("Set up a French voice") || popupHtml.includes("Preview French voice"));
   assert(voiceHelpHtml.includes("Settings → Time &amp; language → Speech"));
   const frenchAppearanceStart = popupHtml.indexOf('data-appearance-content="source"');
@@ -334,7 +350,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.7.3");
+  assert.strictEqual(manifest.version, "0.8.0");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
   assert(manifest.commands["open-transcript"], "The transcript sidebar should have a keyboard command");
   assert(manifest.background.scripts.includes("translation-engine.js"));
@@ -426,7 +442,14 @@ async function testVocabularyStorage() {
       onMessage: { addListener(listener) { messageListener = listener; } }
     },
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
-    commands: { onCommand: { addListener() {} } }
+    commands: { onCommand: { addListener() {} } },
+    i18n: {
+      async detectLanguage(text) {
+        return /creada/i.test(text)
+          ? { isReliable: true, languages: [{ language: "es", percentage: 100 }] }
+          : { isReliable: true, languages: [{ language: "en", percentage: 100 }] };
+      }
+    }
   };
   const context = {
     browser,
@@ -506,7 +529,7 @@ async function testVocabularyStorage() {
     if (String(url).startsWith("https://api.mymemory.translated.net/get")) {
       return { ok: true, status: 200, async json() { return {
         responseStatus: 200,
-        responseData: { translatedText: "Ownership of real estate in border areas by foreign companies is subject to special permission under applicable national law." }
+        responseData: { translatedText: "creada" }
       }; } };
     }
     assert(String(url).startsWith("https://translate.googleapis.com/"), "A bad word result should use the concise fallback");
@@ -565,6 +588,23 @@ async function testVocabularyStorage() {
     cacheMode: "word"
   });
   assert(correctedLookup.ok && correctedLookup.translatedText === "hi" && correctedLookup.provider === "correction");
+  const phraseCorrection = await messageListener({
+    type: "save-translation-correction",
+    sourceText: "bonjour tout le monde",
+    translatedText: "hello everyone",
+    sourceLanguage: "fr",
+    targetLanguage: "en"
+  });
+  assert(phraseCorrection.ok);
+  const correctedPhraseLookup = await messageListener({
+    type: "translate-selection",
+    text: "Bonjour tout le monde",
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+    cacheMode: "phrase"
+  });
+  assert(correctedPhraseLookup.ok && correctedPhraseLookup.translatedText === "hello everyone");
+  assert.strictEqual(correctedPhraseLookup.provider, "correction");
   const loaded = await messageListener({ type: "get-vocabulary" });
   assert.strictEqual(loaded.entries.length, 1);
   const reviewed = await messageListener({ type: "review-vocabulary", id: first.entry.id, rating: "good" });

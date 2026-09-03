@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Translate French · DualSub</title>
+    <link rel="stylesheet" href="translator.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">DS</span><div><h1>Translate French</h1><p>Type, paste, or capture text from a video</p></div></div>
+      <button id="closePage" type="button">Close</button>
+    </header>
+
+    <main>
+      <nav class="mode-tabs" role="tablist" aria-label="Text input method">
+        <button id="modeType" class="is-active" type="button" role="tab" aria-selected="true" data-mode="type">Type or paste</button>
+        <button id="modeOcr" type="button" role="tab" aria-selected="false" data-mode="ocr">Screen capture OCR</button>
+      </nav>
+
+      <section id="ocrPanel" class="ocr-panel" role="tabpanel" aria-labelledby="modeOcr" hidden>
+        <div class="section-heading"><div><h2>Select the French text</h2><p>Drag a box around the text, then run OCR.</p></div><button id="discardCapture" type="button">Discard image</button></div>
+        <div id="captureEmpty" class="empty-capture">
+          <strong>No capture loaded</strong>
+          <span>Return to YouTube and choose <b>Capture text (OCR)</b> from the DualSub toolbar.</span>
+        </div>
+        <div id="captureStage" class="capture-stage" hidden>
+          <img id="captureImage" alt="Captured browser tab; drag to select French text">
+          <div id="selectionBox" class="selection-box" aria-hidden="true"></div>
+        </div>
+        <div class="ocr-controls">
+          <label><input id="enhanceContrast" type="checkbox" checked> Improve subtitle contrast</label>
+          <button id="runOcr" class="primary" type="button" disabled>Read selected area</button>
+        </div>
+        <div id="ocrProgress" class="progress-row" role="status" hidden><span><span id="ocrProgressBar"></span></span><strong id="ocrProgressText">Preparing OCR…</strong></div>
+        <p class="privacy-note">OCR runs locally in Firefox. The captured image is removed from extension storage after this page loads.</p>
+      </section>
+
+      <section class="translation-workspace">
+        <div class="language-row"><span>French</span><span aria-hidden="true">→</span><span>English</span></div>
+        <div class="translation-grid">
+          <label class="editor-label">French text
+            <textarea id="sourceText" rows="8" maxlength="5000" placeholder="Type or paste French here…"></textarea>
+            <small><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to translate</small>
+          </label>
+          <label class="editor-label">English translation
+            <textarea id="targetText" rows="8" maxlength="5000" placeholder="Translation appears here…"></textarea>
+            <small>You can edit this before copying or saving a correction.</small>
+          </label>
+        </div>
+        <div class="workspace-actions">
+          <button id="translateText" class="primary" type="button">Translate</button>
+          <button id="copyTranslation" type="button" disabled>Copy translation</button>
+          <button id="saveCorrection" type="button" disabled>Use this correction</button>
+          <button id="clearText" type="button">Clear</button>
+          <span id="translationStatus" role="status"></span>
+        </div>
+      </section>
+    </main>
+
+    <script src="../vendor/tesseract/tesseract.min.js"></script>
+    <script src="translator.js"></script>
+  </body>
+</html>

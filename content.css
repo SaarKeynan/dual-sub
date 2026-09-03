@@ -285,6 +285,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-selection-card.is-particle-card .dualsub-card-lexical,
 .dualsub-selection-card.is-particle-card .dualsub-card-infinitive,
 .dualsub-selection-card.is-particle-card .dualsub-card-context,
+.dualsub-selection-card.is-particle-card .dualsub-correction-form,
 .dualsub-selection-card.is-particle-card .dualsub-card-actions,
 .dualsub-selection-card.is-particle-card .dualsub-card-links {
   display: none;
@@ -418,6 +419,13 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   border-radius: 9px;
   background: rgba(30, 41, 59, 0.48);
 }
+
+.dualsub-correction-form { display: grid; gap: 7px; margin-top: 9px; padding: 9px; border: 1px solid rgba(96,165,250,.34); border-radius: 9px; background: rgba(30,58,138,.16); }
+.dualsub-correction-form[hidden] { display: none; }
+.dualsub-correction-form label { color: #bfdbfe; font: 700 10px/1.3 system-ui,sans-serif; }
+.dualsub-correction-input { box-sizing: border-box; width: 100%; margin-top: 5px; padding: 7px 8px; border: 1px solid rgba(148,163,184,.36); border-radius: 7px; outline: 0; color: #f8fafc; background: #0b1526; font: 500 12px/1.35 system-ui,sans-serif; }
+.dualsub-correction-form > div { display: flex; gap: 6px; }
+.dualsub-correction-form button { min-height: 28px; padding: 5px 8px; border: 1px solid rgba(148,163,184,.3); border-radius: 7px; color: #e2e8f0; background: rgba(51,65,85,.7); font: 650 11px/1 system-ui,sans-serif; cursor: pointer; }
 
 .dualsub-card-sentence-source {
   color: #f8fafc;
