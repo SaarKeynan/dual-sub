@@ -6,6 +6,7 @@ module.exports = {
     ".github/**",
     ".agents/**",
     ".codex/**",
+    "docs/**",
     ".web-ext-artifacts/**",
     "web-ext-artifacts",
     "web-ext-artifacts/**",

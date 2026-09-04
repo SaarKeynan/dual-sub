@@ -4,6 +4,9 @@ DualSub is a Firefox WebExtension for French learners. It displays French and
 English YouTube captions **at the same time**, then turns each subtitle into an
 interactive study surface.
 
+For an implementation map and detailed feature flows, see
+[DualSub architecture and behavior](docs/ARCHITECTURE.md).
+
 ## Features
 
 - A resilient translation scheduler prioritizes the current caption, batches a

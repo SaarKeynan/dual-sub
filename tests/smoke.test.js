@@ -15,6 +15,8 @@ function extract(source, startMarker, endMarker) {
 
 async function testCaptionProcessing() {
   const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
+  const architecture = fs.readFileSync(path.join(projectRoot, "docs", "ARCHITECTURE.md"), "utf8");
   const contentCss = fs.readFileSync(path.join(projectRoot, "content.css"), "utf8");
   const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
   const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
@@ -96,6 +98,10 @@ async function testCaptionProcessing() {
   ], 3500, 4));
   assert(warmupWords.includes("mange") && warmupWords.includes("je"), "Frequent video words should be prioritized for warm-up");
   assert(source.includes("video.currentTime * 1000 + effectiveCaptionOffsetMs()"));
+  assert(readme.includes("docs/ARCHITECTURE.md"), "The architecture guide should be linked from the README");
+  for (const documentedPart of ["content.js", "page-bridge.js", "background.js", "translation-engine.js", "language/french.js", "OCR and manual translation", "Persistent data"]) {
+    assert(architecture.includes(documentedPart), `Architecture guide should cover ${documentedPart}`);
+  }
   assert(!source.includes("Math.max(0, Number(settings.subtitleLeadMs)"));
   assert(source.includes('recoverTracksFromNativePlayer(nativeSourceTrack, result.url || "")'));
   assert(source.indexOf("startNativeSourceCapture(sourceTrack);") < source.indexOf("transcriptCues = await requestFullTranscript();"));
