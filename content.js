@@ -73,6 +73,7 @@
   let selectionCard;
   let video;
   let ocrSelectionSession = null;
+  let ocrPopup = null;
   let animationFrame;
   let videoFrameCallbackId;
   const observedVideos = new WeakSet();
@@ -2491,6 +2492,7 @@
   }
 
   function handleNavigation() {
+    hideOcrPopup();
     stopNativeCapture(false);
     window.dispatchEvent(new CustomEvent("dualsub:reset-native-caption-state"));
     stopAheadTranslation();
@@ -2648,6 +2650,30 @@
     if (resume && session.wasPlaying) session.video.play().catch(() => {});
   }
 
+  function hideOcrPopup() {
+    ocrPopup?.remove();
+    ocrPopup = null;
+  }
+
+  function showOcrPopup() {
+    hideOcrPopup();
+    const modal = document.createElement("div");
+    modal.className = "dualsub-ocr-modal";
+    modal.setAttribute("role", "presentation");
+    const frame = document.createElement("iframe");
+    frame.className = "dualsub-ocr-modal-frame";
+    frame.src = browser.runtime.getURL("tools/translator.html?embedded=1#ocr");
+    frame.title = "DualSub OCR translation";
+    frame.allow = "clipboard-write";
+    modal.appendChild(frame);
+    modal.addEventListener("pointerdown", (event) => {
+      if (event.target === modal) hideOcrPopup();
+    });
+    (document.fullscreenElement || document.documentElement).appendChild(modal);
+    ocrPopup = modal;
+    return { ok: true };
+  }
+
   function startOcrSelection() {
     stopOcrSelection({ resume: true });
     const activeVideo = video?.isConnected ? video : document.querySelector("video");
@@ -2760,7 +2786,10 @@
 
   document.addEventListener("yt-navigate-start", handleNavigationStart);
   document.addEventListener("yt-navigate-finish", handleNavigation);
-  document.addEventListener("fullscreenchange", () => setTimeout(attachToPlayer, 50));
+  document.addEventListener("fullscreenchange", () => setTimeout(() => {
+    attachToPlayer();
+    if (ocrPopup) (document.fullscreenElement || document.documentElement).appendChild(ocrPopup);
+  }, 50));
   document.addEventListener("mousedown", (event) => {
     if (phraseSelectionAnchor && !event.target.closest?.(".dualsub-source .dualsub-word")) {
       phraseSelectionAnchor = null;
@@ -2770,10 +2799,21 @@
       hideSelectionCard();
     }
   }, true);
+  window.addEventListener("message", (event) => {
+    const frame = ocrPopup?.querySelector(".dualsub-ocr-modal-frame");
+    if (event.data?.type === "dualsub:close-ocr-popup" && frame && event.source === frame.contentWindow) {
+      hideOcrPopup();
+    }
+  });
 
   browser.runtime.onMessage.addListener((message) => {
     if (message?.type === "get-status") return Promise.resolve(status);
     if (message?.type === "start-video-ocr-selection") return Promise.resolve(startOcrSelection());
+    if (message?.type === "show-video-ocr-popup") return Promise.resolve(showOcrPopup());
+    if (message?.type === "hide-video-ocr-popup") {
+      hideOcrPopup();
+      return Promise.resolve({ ok: true });
+    }
     if (message?.type === "get-transcript-state") return buildTranscriptState(message);
     if (message?.type === "save-current-video-profile") {
       if (!currentVideoId) return Promise.resolve({ ok: false, error: "Open a video first." });

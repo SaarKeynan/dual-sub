@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.4 — in-page OCR results
+
+- OCR recognition and translation now appear in a centered modal inside the
+  current YouTube page instead of opening a separate Firefox window.
+- The modal works in regular and fullscreen layouts, closes from its own Close
+  button or the backdrop, and is removed automatically when navigating videos.
+
 ## 0.8.3 — immediate OCR capture
 
 - Video OCR now captures immediately when the pointer is released after a

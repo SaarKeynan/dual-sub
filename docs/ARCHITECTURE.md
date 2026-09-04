@@ -1,7 +1,7 @@
 # DualSub architecture and behavior
 
 This document explains how the extension is divided, how its parts communicate,
-and how the main user-visible features work. It describes version 0.8.3.
+and how the main user-visible features work. It describes version 0.8.4.
 
 ## Runtime architecture
 
@@ -267,12 +267,13 @@ content script. The content script:
 
 After two animation frames, the selected rectangle is sent back as
 `complete-video-ocr-selection`. The background script captures the visible tab,
-stores the screenshot and rectangle temporarily, and opens a standalone
-translator window. `tools/translator.js` scales CSS coordinates to screenshot
-pixels, crops to the selection, and immediately runs the bundled French
-Tesseract worker and model. Recognized text is placed in the French editor and
-translation begins automatically after a short debounce. Stale translation
-responses are ignored if the text changes while a request is running.
+stores the screenshot and rectangle temporarily, and asks the content script to
+mount the translator as a modal iframe inside the current YouTube page.
+`tools/translator.js` scales CSS coordinates to screenshot pixels, crops to the
+selection, and immediately runs the bundled French Tesseract worker and model.
+Recognized text is placed in the French editor and translation begins
+automatically after a short debounce. Stale translation responses are ignored
+if the text changes while a request is running.
 
 The screenshot is removed from storage after the popup loads. Tesseract runs
 locally; only recognized text is sent to the configured translation provider.

@@ -7,6 +7,15 @@ let translationRequestId = 0;
 
 const element = (id) => document.getElementById(id);
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+const embedded = new URLSearchParams(location.search).get("embedded") === "1";
+document.body.classList.toggle("is-embedded", embedded);
+
+function closeTranslator() {
+  if (embedded) {
+    window.parent.postMessage({ type: "dualsub:close-ocr-popup" }, "*");
+    browser.runtime.sendMessage({ type: "close-embedded-translator" }).catch(() => {});
+  } else window.close();
+}
 
 function setStatus(message, state = "") {
   element("translationStatus").textContent = message;
@@ -347,7 +356,13 @@ element("sourceText").addEventListener("keydown", (event) => {
 });
 element("sourceText").addEventListener("input", () => scheduleAutomaticTranslation());
 element("targetText").addEventListener("input", updateTranslationActions);
-element("closePage").addEventListener("click", () => window.close());
+element("closePage").addEventListener("click", closeTranslator);
+window.addEventListener("keydown", (event) => {
+  if (embedded && event.key === "Escape") {
+    event.preventDefault();
+    closeTranslator();
+  }
+});
 window.addEventListener("pagehide", () => { ocrWorkerPromise?.then((worker) => worker.terminate()).catch(() => {}); });
 
 if (location.hash === "#ocr") activateMode("ocr");

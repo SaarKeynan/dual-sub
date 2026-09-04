@@ -541,7 +541,8 @@ async function captureVideoSelectionForOcr(tab, rawCrop) {
   await browser.storage.local.set({
     ocrCaptureV1: { dataUrl, crop, autoRun: true, capturedAt: Date.now(), sourceUrl: tab.url }
   });
-  await openTranslatorWindow("ocr");
+  const response = await browser.tabs.sendMessage(tab.id, { type: "show-video-ocr-popup" });
+  if (!response?.ok) throw new Error("The OCR popup could not be shown on YouTube.");
   return { ok: true };
 }
 
@@ -558,10 +559,7 @@ browser.commands.onCommand.addListener(async (command) => {
   } else if (command === "open-transcript") {
     await browser.sidebarAction.open().catch(() => {});
   } else if (command === "open-video-ocr") {
-    await startVideoOcrSelection().catch(async (error) => {
-      await browser.storage.local.set({ ocrCaptureErrorV1: error.message || "The video could not be captured." });
-      await openTranslatorWindow("ocr");
-    });
+    await startVideoOcrSelection().catch(() => {});
   } else if (["previous-caption", "next-caption"].includes(command)) {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (tab?.id) browser.tabs.sendMessage(tab.id, { type: "navigate-cue", direction: command === "previous-caption" ? -1 : 1 }).catch(() => {});
@@ -583,6 +581,12 @@ browser.runtime.onMessage.addListener((message, sender) => {
   }
   if (message?.type === "complete-video-ocr-selection") {
     return captureVideoSelectionForOcr(sender.tab, message.crop)
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
+  if (message?.type === "close-embedded-translator") {
+    if (!sender.tab?.id) return Promise.resolve({ ok: false, error: "The YouTube tab is no longer available." });
+    return browser.tabs.sendMessage(sender.tab.id, { type: "hide-video-ocr-popup" })
+      .then(() => ({ ok: true }))
       .catch((error) => ({ ok: false, error: error.message }));
   }
   if (message?.type === "fetch-captions") {

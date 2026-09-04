@@ -10,6 +10,8 @@
 }
 * { box-sizing: border-box; }
 body { min-width: 320px; margin: 0; background: radial-gradient(circle at 15% -10%, rgba(37,99,235,.24), transparent 35%), #08101f; }
+body.is-embedded { min-height: 100vh; }
+body.is-embedded main { margin-bottom: 24px; }
 button, textarea, input { font: inherit; }
 button { min-height: 38px; padding: 8px 12px; border: 1px solid #344158; border-radius: 9px; color: #dce5f3; background: #111c2f; cursor: pointer; }
 button:hover:not(:disabled) { border-color: #64748b; background: #17253c; }

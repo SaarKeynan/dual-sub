@@ -33,7 +33,7 @@ French analysis, and French-to-English word matching are detailed in
 - One-click on/off switch and `Alt+Shift+D` keyboard shortcut.
 - A compact type-or-paste translator and local French OCR workspace. Video OCR
   pauses playback and lets you drag directly over video text; releasing opens a
-  popup that recognizes and translates it without replacing the video tab.
+  modal inside YouTube that recognizes and translates it without leaving the tab.
 - Faster loading through parallel page/extension caption requests, concurrent
   format fallbacks, cached caption payloads, and an event-driven upgrade when
   YouTube exposes an authenticated auto-caption request.

@@ -181,6 +181,9 @@ async function testCaptionProcessing() {
   assert(source.includes('message?.type === "start-video-ocr-selection"'), "The content script should start video-region selection");
   assert(source.includes("await completeOcrSelection()"), "Releasing a valid drag should submit the selected text region");
   assert(contentCss.includes(".dualsub-ocr-selector"), "OCR selection should have an in-player snipping overlay");
+  assert(contentCss.includes(".dualsub-ocr-modal-frame"), "OCR results should use an in-page YouTube modal");
+  assert(source.includes('message?.type === "show-video-ocr-popup"'), "The content script should mount the OCR result modal");
+  assert(translatorSource.includes("dualsub:close-ocr-popup"), "The embedded translator should be closeable");
   assert(translatorSource.includes("capture.autoRun && await runOcr()"), "A confirmed video selection should start OCR automatically");
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(context.captureCropPixels({ left: 100, top: 50, width: 800, height: 450, viewportWidth: 1000, viewportHeight: 600 }, 2000, 1200))),
@@ -375,7 +378,8 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.3");
+  assert.strictEqual(manifest.version, "0.8.4");
+  assert(manifest.web_accessible_resources[0].resources.includes("tools/translator.html"), "The in-page OCR frame must be web-accessible");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
   assert(manifest.commands["open-transcript"], "The transcript sidebar should have a keyboard command");
