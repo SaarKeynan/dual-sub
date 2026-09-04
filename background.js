@@ -551,6 +551,11 @@ browser.commands.onCommand.addListener(async (command) => {
     const settings = await getSettings();
     settings.enabled = !settings.enabled;
     await saveSettings(settings);
+  } else if (command === "toggle-translation-reveal") {
+    const settings = await getSettings();
+    settings.showTranslation = true;
+    settings.recallMode = !settings.recallMode;
+    await saveSettings(settings);
   } else if (command === "replay-current-caption") {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (tab?.id) browser.tabs.sendMessage(tab.id, { type: "replay-current-cue" }).catch(() => {});

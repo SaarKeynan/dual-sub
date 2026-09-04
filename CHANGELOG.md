@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.7 — English reveal shortcut
+
+- Added `Alt+Shift+E` to switch between an always-visible English translation
+  and recall mode, where English stays hidden until the French line is hovered.
+- The shortcut keeps the English row enabled so hover-to-reveal continues to
+  work even if it had previously been disabled in settings.
+- Added the shortcut beside the matching Tools setting and to the user guide.
+
 ## 0.8.6 — separate Home and settings pages
 
 - Added a dedicated Home dashboard for player status and the Transcript, Video

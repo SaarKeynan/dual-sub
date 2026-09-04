@@ -36,7 +36,7 @@ const settingDestinations = [
   ["Translated-word matching", "alignment matching English French words", "wordAlignment", "tools", "lookup"],
   ["Phrase selection", "multiple words drag selection sentence", "selectionTranslation", "tools", "lookup"],
   ["Lookup pauses", "pause card open auto pause each line", "pauseOnLookup", "tools", "lookup"],
-  ["Reveal English on demand", "recall hide English hover", "recallMode", "tools", "playback"],
+  ["Reveal English on demand", "recall hide English hover shortcut Alt Shift E", "recallMode", "tools", "playback"],
   ["Pause each subtitle line", "auto pause study shadow playback", "autoPause", "tools", "playback"],
   ["Skip silent gaps", "silence gap skip playback", "skipCaptionGaps", "tools", "playback"],
   ["French pronunciation", "voice speech speed pronounce", "pronunciationVoiceURI", "tools", "pronunciation"],

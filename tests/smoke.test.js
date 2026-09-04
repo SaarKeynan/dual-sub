@@ -388,7 +388,8 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.6");
+  assert.strictEqual(manifest.version, "0.8.7");
+  assert.strictEqual(manifest.commands["toggle-translation-reveal"].suggested_key.default, "Alt+Shift+E");
   assert(manifest.web_accessible_resources[0].resources.includes("tools/translator.html"), "The in-page OCR frame must be web-accessible");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
@@ -462,6 +463,7 @@ async function testTranslationEngine() {
 async function testVocabularyStorage() {
   const stores = { sync: {}, local: {} };
   let messageListener;
+  let commandListener;
   let fetchCount = 0;
   const makeArea = (name) => ({
     async get(key) {
@@ -482,7 +484,7 @@ async function testVocabularyStorage() {
       onMessage: { addListener(listener) { messageListener = listener; } }
     },
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
-    commands: { onCommand: { addListener() {} } },
+    commands: { onCommand: { addListener(listener) { commandListener = listener; } } },
     i18n: {
       async detectLanguage(text) {
         return /creada/i.test(text)
@@ -528,6 +530,12 @@ async function testVocabularyStorage() {
   assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
   assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
   assert.strictEqual(defaultSettings.settings.skipCaptionGaps, false);
+  assert(commandListener, "Background command listener was not registered");
+  await commandListener("toggle-translation-reveal");
+  assert.strictEqual(stores.sync.settings.recallMode, true, "The shortcut should hide passive English text");
+  assert.strictEqual(stores.sync.settings.showTranslation, true, "Hover reveal should remain available");
+  await commandListener("toggle-translation-reveal");
+  assert.strictEqual(stores.sync.settings.recallMode, false, "A second shortcut press should restore the English line");
 
   const translations = await Promise.all([
     messageListener({ type: "translate-selection", text: "bonjour", sourceLanguage: "fr", targetLanguage: "en", cacheMode: "word" }),

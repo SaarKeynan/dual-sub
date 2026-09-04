@@ -110,6 +110,8 @@ French analysis, and French-to-English word matching are detailed in
 ## Shortcuts
 
 - `Alt+Shift+D`: toggle DualSub.
+- `Alt+Shift+E`: show the English line normally or hide it until the French
+  line is hovered.
 - `Alt+Shift+R`: replay the current French subtitle line.
 - `Alt+Shift+V`: open the vocabulary workspace.
 - `Alt+Shift+O`: pause and drag over video text for OCR (release to capture;

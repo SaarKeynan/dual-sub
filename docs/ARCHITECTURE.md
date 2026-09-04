@@ -1,7 +1,7 @@
 # DualSub architecture and behavior
 
 This document explains how the extension is divided, how its parts communicate,
-and how the main user-visible features work. It describes version 0.8.6.
+and how the main user-visible features work. It describes version 0.8.7.
 
 ## Runtime architecture
 
