@@ -179,7 +179,7 @@ async function testCaptionProcessing() {
   assert(translatorSource.includes("scheduleAutomaticTranslation(80)"), "OCR output should translate automatically");
   assert(translatorSource.includes("Translating as you type"), "Typed text should translate after a debounce");
   assert(source.includes('message?.type === "start-video-ocr-selection"'), "The content script should start video-region selection");
-  assert(source.includes('type: "complete-video-ocr-selection"'), "Enter should submit the selected text region");
+  assert(source.includes("await completeOcrSelection()"), "Releasing a valid drag should submit the selected text region");
   assert(contentCss.includes(".dualsub-ocr-selector"), "OCR selection should have an in-player snipping overlay");
   assert(translatorSource.includes("capture.autoRun && await runOcr()"), "A confirmed video selection should start OCR automatically");
   assert.deepStrictEqual(
@@ -375,7 +375,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.2");
+  assert.strictEqual(manifest.version, "0.8.3");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
   assert(manifest.commands["open-transcript"], "The transcript sidebar should have a keyboard command");

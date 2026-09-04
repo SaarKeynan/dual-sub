@@ -32,8 +32,8 @@ French analysis, and French-to-English word matching are detailed in
   English caption renderer.
 - One-click on/off switch and `Alt+Shift+D` keyboard shortcut.
 - A compact type-or-paste translator and local French OCR workspace. Video OCR
-  pauses playback and lets you drag directly over video text, then Enter opens
-  a popup that recognizes and translates it without replacing the video tab.
+  pauses playback and lets you drag directly over video text; releasing opens a
+  popup that recognizes and translates it without replacing the video tab.
 - Faster loading through parallel page/extension caption requests, concurrent
   format fallbacks, cached caption payloads, and an event-driven upgrade when
   YouTube exposes an authenticated auto-caption request.
@@ -112,7 +112,7 @@ French analysis, and French-to-English word matching are detailed in
 - `Alt+Shift+D`: toggle DualSub.
 - `Alt+Shift+R`: replay the current French subtitle line.
 - `Alt+Shift+V`: open the vocabulary workspace.
-- `Alt+Shift+O`: pause and select video text for OCR (`Enter` confirms and
+- `Alt+Shift+O`: pause and drag over video text for OCR (release to capture;
   `Escape` cancels).
 - `Alt+Shift+Left` / `Alt+Shift+Right`: previous or next caption.
 

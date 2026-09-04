@@ -2669,7 +2669,7 @@
     overlay.className = "dualsub-ocr-selector";
     overlay.innerHTML = `
       <div class="dualsub-ocr-video-frame"></div>
-      <div class="dualsub-ocr-instructions"><strong>Select French text</strong><span>Drag over text · Enter to capture · Esc to cancel</span></div>
+      <div class="dualsub-ocr-instructions"><strong>Select French text</strong><span>Drag over text and release to capture · Esc to cancel</span></div>
       <div class="dualsub-ocr-drag-box" hidden></div>`;
     const frame = overlay.querySelector(".dualsub-ocr-video-frame");
     const box = overlay.querySelector(".dualsub-ocr-drag-box");
@@ -2686,6 +2686,7 @@
       bounds,
       start: null,
       selection: null,
+      completing: false,
       onKeyDown: null,
       onResize: () => stopOcrSelection({ resume: true })
     };
@@ -2711,6 +2712,23 @@
       });
       box.hidden = false;
     };
+    const completeOcrSelection = async () => {
+      if (session.completing) return;
+      if (!session.selection || session.selection.width < 8 || session.selection.height < 8) {
+        overlay.querySelector(".dualsub-ocr-instructions span").textContent = "Drag a larger box around the text";
+        return;
+      }
+      session.completing = true;
+      const crop = session.selection;
+      stopOcrSelection();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const response = await browser.runtime.sendMessage({ type: "complete-video-ocr-selection", crop })
+        .catch((error) => ({ ok: false, error: error.message }));
+      if (!response?.ok) {
+        if (wasPlaying) activeVideo.play().catch(() => {});
+        setStatus("error", response?.error || "The selected video text could not be captured.", 4000);
+      }
+    };
     overlay.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) return;
       event.preventDefault();
@@ -2721,33 +2739,18 @@
     overlay.addEventListener("pointermove", (event) => {
       if (session.start) renderSelection(point(event));
     });
-    overlay.addEventListener("pointerup", (event) => {
+    overlay.addEventListener("pointerup", async (event) => {
       if (!session.start) return;
       renderSelection(point(event));
       session.start = null;
+      await completeOcrSelection();
     });
-    session.onKeyDown = async (event) => {
+    overlay.addEventListener("pointercancel", () => { session.start = null; });
+    session.onKeyDown = (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
         stopOcrSelection({ resume: true });
-        return;
-      }
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (!session.selection || session.selection.width < 8 || session.selection.height < 8) {
-        overlay.querySelector(".dualsub-ocr-instructions span").textContent = "Drag a box around the text before pressing Enter";
-        return;
-      }
-      const crop = session.selection;
-      stopOcrSelection();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const response = await browser.runtime.sendMessage({ type: "complete-video-ocr-selection", crop })
-        .catch((error) => ({ ok: false, error: error.message }));
-      if (!response?.ok) {
-        if (wasPlaying) activeVideo.play().catch(() => {});
-        setStatus("error", response?.error || "The selected video text could not be captured.", 4000);
       }
     };
     window.addEventListener("keydown", session.onKeyDown, true);

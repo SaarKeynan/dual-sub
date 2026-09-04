@@ -1,7 +1,7 @@
 # DualSub architecture and behavior
 
 This document explains how the extension is divided, how its parts communicate,
-and how the main user-visible features work. It describes version 0.8.2.
+and how the main user-visible features work. It describes version 0.8.3.
 
 ## Runtime architecture
 
@@ -262,7 +262,8 @@ content script. The content script:
 2. displays a crosshair selector constrained to the visible `<video>` bounds;
 3. records a viewport-relative rectangle while the user drags;
 4. cancels and restores playback on Escape;
-5. removes the selection overlay before capture when Enter confirms.
+5. removes the selection overlay and continues automatically when the pointer
+   is released after a valid drag.
 
 After two animation frames, the selected rectangle is sent back as
 `complete-video-ocr-selection`. The background script captures the visible tab,

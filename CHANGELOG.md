@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.3 — immediate OCR capture
+
+- Video OCR now captures immediately when the pointer is released after a
+  valid drag; pressing Enter is no longer required.
+- Very small accidental selections remain in capture mode so the user can drag
+  again, while Escape still cancels and restores playback.
+
 ## 0.8.2 — snipping-style OCR
 
 - `Alt+Shift+O` now pauses the video and starts a crosshair selection mode
