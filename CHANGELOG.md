@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.6 — separate Home and settings pages
+
+- Added a dedicated Home dashboard for player status and the Transcript, Video
+  OCR, Translate, and Vocabulary workspaces.
+- General, Appearance, and Tools now contain settings only, so workspace actions
+  no longer compete with controls on every page.
+- Settings search appears only while browsing a settings page, while the global
+  enable switch stays available from anywhere.
+- The toolbar opens on Home each time for a predictable starting point.
+
 ## 0.8.5 — calmer settings menu
 
 - Reduced the toolbar to four compact actions and three stable top-level

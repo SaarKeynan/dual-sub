@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DualSub settings</title>
+    <title>DualSub</title>
     <link rel="stylesheet" href="popup.css">
   </head>
-  <body>
+  <body data-active-panel="home">
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark">DS</span>
@@ -17,30 +17,38 @@
       </label>
     </header>
 
-    <div id="playerStatus" class="status" data-state="waiting" role="status">Open a YouTube video to begin.</div>
-
-    <div class="quick-actions">
-      <button id="openSidebar" class="primary-button" type="button"><span aria-hidden="true">☷</span>Transcript</button>
-      <button id="captureText" type="button"><span aria-hidden="true">⌗</span>Video OCR</button>
-      <button id="openTranslator" type="button"><span aria-hidden="true">A→</span>Translate</button>
-      <button id="openVocabularyQuick" type="button"><span aria-hidden="true">☆</span>Words</button>
-    </div>
-
-    <div class="settings-finder">
-      <label for="settingsSearch"><span aria-hidden="true">⌕</span><span class="visually-hidden">Find a setting</span></label>
-      <input id="settingsSearch" type="search" placeholder="Find any setting…" autocomplete="off">
-      <button id="clearSettingsSearch" type="button" aria-label="Clear settings search" hidden>×</button>
-    </div>
-    <div id="settingsSearchResults" class="settings-search-results" role="listbox" aria-label="Matching settings" hidden></div>
-
-    <nav class="tabs" role="tablist" aria-label="Settings categories">
-      <button id="tab-general" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-general" data-panel="general">General</button>
+    <nav class="tabs" role="tablist" aria-label="DualSub pages">
+      <button id="tab-home" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-home" data-panel="home">Home</button>
+      <button id="tab-general" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-general" data-panel="general">General</button>
       <button id="tab-appearance" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-appearance" data-panel="appearance">Appearance</button>
       <button id="tab-tools" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-tools" data-panel="tools">Tools</button>
     </nav>
 
+    <div class="settings-search-shell">
+      <div class="settings-finder">
+        <label for="settingsSearch"><span aria-hidden="true">⌕</span><span class="visually-hidden">Find a setting</span></label>
+        <input id="settingsSearch" type="search" placeholder="Find any setting…" autocomplete="off">
+        <button id="clearSettingsSearch" type="button" aria-label="Clear settings search" hidden>×</button>
+      </div>
+      <div id="settingsSearchResults" class="settings-search-results" role="listbox" aria-label="Matching settings" hidden></div>
+    </div>
+
     <main>
-      <div id="panel-general" class="panel" data-panel-content="general" role="tabpanel" aria-labelledby="tab-general">
+      <div id="panel-home" class="panel" data-panel-content="home" role="tabpanel" aria-labelledby="tab-home">
+        <section class="home-panel">
+          <div class="section-heading"><div><h2>Ready to learn</h2><p class="section-note">Open a workspace or capture text from the video</p></div></div>
+          <div id="playerStatus" class="status" data-state="waiting" role="status">Open a YouTube video to begin.</div>
+          <div class="quick-actions">
+            <button id="openSidebar" class="primary-button" type="button"><span aria-hidden="true">☷</span><strong>Transcript</strong><small>Browse every caption</small></button>
+            <button id="captureText" type="button"><span aria-hidden="true">⌗</span><strong>Video OCR</strong><small>Select text on screen</small></button>
+            <button id="openTranslator" type="button"><span aria-hidden="true">A→</span><strong>Translate</strong><small>Type or paste French</small></button>
+            <button id="openVocabularyQuick" type="button"><span aria-hidden="true">☆</span><strong>Vocabulary</strong><small>Review saved words</small></button>
+          </div>
+          <p class="home-tip"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> starts video OCR without opening this menu.</p>
+        </section>
+      </div>
+
+      <div id="panel-general" class="panel" data-panel-content="general" role="tabpanel" aria-labelledby="tab-general" hidden>
         <section>
           <div class="section-heading"><div><h2>Watching</h2><p class="section-note">Your everyday caption choices</p></div></div>
           <div class="toggle-grid">
@@ -249,7 +257,7 @@
       </div>
     </main>
 
-    <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="shortcut-hint">Shortcuts and diagnostics are in Tools</span></footer>
+    <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="home-footer">Choose a settings page above to customize DualSub</span><span class="settings-footer">Shortcuts and diagnostics are in Tools</span></footer>
     <script src="popup.js"></script>
   </body>
 </html>

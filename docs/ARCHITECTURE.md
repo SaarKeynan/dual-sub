@@ -1,7 +1,7 @@
 # DualSub architecture and behavior
 
 This document explains how the extension is divided, how its parts communicate,
-and how the main user-visible features work. It describes version 0.8.5.
+and how the main user-visible features work. It describes version 0.8.6.
 
 ## Runtime architecture
 
@@ -47,7 +47,7 @@ YouTube page context                   Firefox extension context
 | `background.js` | Settings defaults, extension messages, vocabulary, corrections, video profiles, caption proxy, commands, and OCR capture |
 | `translation-engine.js` | Translation providers, batching, cache, retry/backoff, cancellation, and health metrics |
 | `language/french.js` | French morphology, infinitives, elisions, lexical information, and word-group classification |
-| `popup/*` | Searchable General, Appearance, and Tools settings |
+| `popup/*` | Home workspace launcher plus searchable General, Appearance, and Tools settings |
 | `sidebar/*` | Live bilingual transcript, seeking, buffer health, and known/unknown-word tools |
 | `vocabulary/*` | Vocabulary browsing, editing, import/export, pronunciation, and spaced review |
 | `tools/translator.*` | Type-to-translate workspace and local French OCR result popup |
@@ -281,11 +281,14 @@ The type-or-paste mode uses the same debounced translation path without OCR.
 
 ## Settings and profiles
 
-The toolbar/options page groups controls into General, Appearance, and Tools.
-Common choices stay visible while timing, provider access, typography, layout,
-lookup details, playback practice, pronunciation, and troubleshooting use
-expandable task-based cards. Search opens the correct category and every nested
-card containing a result. Changes are debounced and written to
+The toolbar/options page opens on a dedicated Home dashboard containing player
+status and the Transcript, Video OCR, Translate, and Vocabulary workspaces.
+Settings live on separate General, Appearance, and Tools pages, and the settings
+finder appears only on those pages. Common choices stay visible while timing,
+provider access, typography, layout, lookup details, playback practice,
+pronunciation, and troubleshooting use expandable task-based cards. Search
+opens the correct settings page and every nested card containing a result.
+Changes are debounced and written to
 `browser.storage.sync.settings`. Both
 `background.js` and `content.js` merge stored values into defaults so upgrades
 can add settings safely. Nested subtitle styles and word-group colors are

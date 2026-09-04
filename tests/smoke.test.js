@@ -21,6 +21,7 @@ async function testCaptionProcessing() {
   const contentCss = fs.readFileSync(path.join(projectRoot, "content.css"), "utf8");
   const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
   const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
+  const popupSource = fs.readFileSync(path.join(projectRoot, "popup", "popup.js"), "utf8");
   const voiceHelpHtml = fs.readFileSync(path.join(projectRoot, "help", "pronunciation.html"), "utf8");
   const translatorHtml = fs.readFileSync(path.join(projectRoot, "tools", "translator.html"), "utf8");
   const translatorSource = fs.readFileSync(path.join(projectRoot, "tools", "translator.js"), "utf8");
@@ -171,6 +172,11 @@ async function testCaptionProcessing() {
   assert(popupCss.includes("overflow-x: hidden"), "The settings popup should not scroll horizontally");
   assert(popupHtml.includes('id="preloadVideoWords"'));
   assert(popupHtml.includes('id="settingsSearch"'), "Settings should be searchable by task");
+  assert(popupHtml.includes('data-panel-content="home"'), "Learning actions should have a dedicated Home page");
+  assert(popupHtml.includes('class="settings-search-shell"'), "Settings search should be scoped to the settings pages");
+  assert(popupHtml.indexOf('data-panel-content="home"') < popupHtml.indexOf('data-panel-content="general"'));
+  assert(popupSource.includes('document.body.dataset.activePanel = selected'), "Page changes should update Home/settings visibility");
+  assert(popupSource.includes('activatePanel("home")'), "The toolbar should open on the workspace dashboard");
   assert(popupHtml.includes("Caption behavior &amp; timing"), "Less-used caption controls should use progressive disclosure");
   assert(popupHtml.includes('data-tool-content="playback"') && popupHtml.includes('data-tool-content="support"'), "Tools should use clear task-based groups");
   assert(!popupHtml.includes('class="tool-tabs"'), "Tools should not add a second layer of tab navigation");
@@ -382,7 +388,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.5");
+  assert.strictEqual(manifest.version, "0.8.6");
   assert(manifest.web_accessible_resources[0].resources.includes("tools/translator.html"), "The in-page OCR frame must be web-accessible");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");

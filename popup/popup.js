@@ -18,8 +18,6 @@ const ids = [
 ];
 
 const settingDestinations = [
-  ["Type text to translate", "manual translation paste incorrect subtitles", "openTranslator", "general"],
-  ["Capture text with OCR", "screen image video French text recognition", "captureText", "general"],
   ["French and English subtitle rows", "French row English row subtitles captions", "showSource", "general"],
   ["Learning mode", "watch focus study shadow mode", "studyMode", "general"],
   ["YouTube native captions", "hide regular native captions", "hideNativeCaptions", "general"],
@@ -111,7 +109,7 @@ function renderSettingsSearch() {
 
 function activatePanel(name) {
   const available = Array.from(document.querySelectorAll("[data-panel-content]"));
-  const selected = available.some((panel) => panel.dataset.panelContent === name) ? name : "general";
+  const selected = available.some((panel) => panel.dataset.panelContent === name) ? name : "home";
   document.querySelectorAll(".tab-button").forEach((button) => {
     const active = button.dataset.panel === selected;
     button.classList.toggle("is-active", active);
@@ -119,6 +117,7 @@ function activatePanel(name) {
     button.tabIndex = active ? 0 : -1;
   });
   available.forEach((panel) => { panel.hidden = panel.dataset.panelContent !== selected; });
+  document.body.dataset.activePanel = selected;
   sessionStorage.setItem("dualsub-settings-panel", selected);
 }
 
@@ -463,7 +462,7 @@ async function initialize() {
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", () => activatePanel(button.dataset.panel));
   });
-  activatePanel(sessionStorage.getItem("dualsub-settings-panel") || "general");
+  activatePanel("home");
   enableTabKeyboardNavigation(".tab-button", (button) => activatePanel(button.dataset.panel));
   document.querySelectorAll(".appearance-button").forEach((button) => {
     button.addEventListener("click", () => activateAppearance(button.dataset.appearance));
