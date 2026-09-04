@@ -22,6 +22,7 @@ async function testCaptionProcessing() {
   const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
   const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
   const popupSource = fs.readFileSync(path.join(projectRoot, "popup", "popup.js"), "utf8");
+  const sidebarHtml = fs.readFileSync(path.join(projectRoot, "sidebar", "sidebar.html"), "utf8");
   const voiceHelpHtml = fs.readFileSync(path.join(projectRoot, "help", "pronunciation.html"), "utf8");
   const translatorHtml = fs.readFileSync(path.join(projectRoot, "tools", "translator.html"), "utf8");
   const translatorSource = fs.readFileSync(path.join(projectRoot, "tools", "translator.js"), "utf8");
@@ -177,6 +178,8 @@ async function testCaptionProcessing() {
   assert(popupHtml.indexOf('data-panel-content="home"') < popupHtml.indexOf('data-panel-content="general"'));
   assert(popupSource.includes('document.body.dataset.activePanel = selected'), "Page changes should update Home/settings visibility");
   assert(popupSource.includes('activatePanel("home")'), "The toolbar should open on the workspace dashboard");
+  assert(!popupHtml.includes('value="focus"') && !sidebarHtml.includes('value="focus"'), "Focus mode should not remain in either mode menu");
+  assert(!source.includes('effectiveStudyMode() === "focus"'), "Focus mode should not secretly control English visibility");
   assert(popupSource.includes("browser.commands.openShortcutSettings()"), "Tools should open Firefox's shortcut editor directly");
   assert(popupHtml.includes(">Remap shortcuts</button>"), "Shortcut remapping should be discoverable in Tools");
   assert(popupHtml.includes("Caption behavior &amp; timing"), "Less-used caption controls should use progressive disclosure");
@@ -390,7 +393,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.8");
+  assert.strictEqual(manifest.version, "0.8.9");
   assert.strictEqual(manifest.commands["toggle-translation-reveal"].suggested_key.default, "Alt+Shift+L");
   assert(manifest.web_accessible_resources[0].resources.includes("tools/translator.html"), "The in-page OCR frame must be web-accessible");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
@@ -532,6 +535,9 @@ async function testVocabularyStorage() {
   assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
   assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
   assert.strictEqual(defaultSettings.settings.skipCaptionGaps, false);
+  assert.strictEqual(context.mergeSettings({ studyMode: "focus" }).studyMode, "watch", "Legacy Focus settings should migrate to Watch");
+  const migratedProfile = await messageListener({ type: "save-video-profile", videoId: "legacy-focus", profile: { studyMode: "focus" } });
+  assert(migratedProfile.ok && migratedProfile.profile.studyMode === "watch", "Legacy per-video Focus profiles should migrate to Watch");
   assert(commandListener, "Background command listener was not registered");
   await commandListener("toggle-translation-reveal");
   assert.strictEqual(stores.sync.settings.recallMode, true, "The shortcut should hide passive English text");

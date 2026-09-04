@@ -119,7 +119,8 @@ async function saveTranslationCorrection(sourceText, translatedText, sourceLangu
 
 async function getVideoProfile(videoId) {
   const stored = await browser.storage.local.get(VIDEO_PROFILES_KEY);
-  return stored[VIDEO_PROFILES_KEY]?.[cleanVocabularyText(videoId, 32)] || null;
+  const profile = stored[VIDEO_PROFILES_KEY]?.[cleanVocabularyText(videoId, 32)] || null;
+  return profile?.studyMode === "focus" ? { ...profile, studyMode: "watch" } : profile;
 }
 
 async function saveVideoProfile(videoId, profile = {}) {
@@ -129,7 +130,7 @@ async function saveVideoProfile(videoId, profile = {}) {
   const profiles = { ...(stored[VIDEO_PROFILES_KEY] || {}) };
   profiles[id] = {
     captionOffsetMs: Math.max(-5000, Math.min(5000, Number(profile.captionOffsetMs) || 0)),
-    studyMode: ["watch", "focus", "study", "shadow"].includes(profile.studyMode) ? profile.studyMode : "watch",
+    studyMode: ["watch", "study", "shadow"].includes(profile.studyMode) ? profile.studyMode : "watch",
     updatedAt: Date.now()
   };
   const compact = Object.fromEntries(Object.entries(profiles)
@@ -325,6 +326,7 @@ function mergeSettings(value = {}) {
   return {
     ...DEFAULT_SETTINGS,
     ...value,
+    studyMode: ["watch", "study", "shadow"].includes(value.studyMode) ? value.studyMode : "watch",
     wordGroupPaletteVersion: 2,
     wordGroupColors,
     sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },

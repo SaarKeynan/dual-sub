@@ -21,7 +21,7 @@ French analysis, and French-to-English word matching are detailed in
 - A Firefox sidebar provides a searchable bilingual transcript, one-click
   seeking, buffer status, known-word coverage, frequent unknown words, and
   repeated phrase mining without covering the video.
-- Watch, Focus, Study, and Shadow modes bundle useful learning behavior. Timing
+- Watch, Study, and Shadow modes bundle useful learning behavior. Timing
   and mode can be remembered per video, and silent captionless gaps can be
   skipped optionally.
 

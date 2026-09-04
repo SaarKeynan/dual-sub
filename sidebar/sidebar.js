@@ -115,7 +115,7 @@ function render() {
   element("coverage").textContent = `${state?.coveragePercent || 0}%`;
   element("coverageBar").style.width = `${Math.min(100, Math.max(0, state?.coveragePercent || 0))}%`;
   element("provider").textContent = state?.provider || "";
-  element("studyMode").value = state?.studyMode || "watch";
+  element("studyMode").value = ["study", "shadow"].includes(state?.studyMode) ? state.studyMode : "watch";
   renderUnknownWords();
   renderTranscript();
 }
@@ -150,7 +150,6 @@ element("unknownOnly").addEventListener("change", renderTranscript);
 element("studyMode").addEventListener("change", async () => {
   const stored = await browser.storage.sync.get("settings");
   const settings = { ...(stored.settings || {}), studyMode: element("studyMode").value };
-  if (settings.studyMode === "focus") settings.recallMode = true;
   if (settings.studyMode === "watch") { settings.recallMode = false; settings.autoPause = false; }
   if (settings.studyMode === "study") { settings.recallMode = false; settings.hoverLookup = true; }
   if (settings.studyMode === "shadow") { settings.autoPause = true; settings.recallMode = false; }

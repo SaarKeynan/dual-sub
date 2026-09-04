@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.9 — active recall without Focus mode
+
+- Removed Focus from the learning-mode menus because `Alt+Shift+L` now provides
+  the same English-on-hover behavior directly.
+- Existing global and per-video Focus selections migrate safely to Watch.
+- Removed Focus-specific rendering logic so only the explicit reveal setting
+  controls whether English is hidden between hovers.
+
 ## 0.8.8 — conflict-free English reveal shortcut
 
 - Changed the English reveal shortcut to `Alt+Shift+L` because Firefox reserves

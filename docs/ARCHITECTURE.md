@@ -1,7 +1,7 @@
 # DualSub architecture and behavior
 
 This document explains how the extension is divided, how its parts communicate,
-and how the main user-visible features work. It describes version 0.8.8.
+and how the main user-visible features work. It describes version 0.8.9.
 
 ## Runtime architecture
 
@@ -227,9 +227,11 @@ voice. DualSub does not download or install OS voices itself.
 Study modes are setting bundles rather than separate renderers:
 
 - **Watch** keeps normal bilingual playback.
-- **Focus** enables active recall by hiding English until interaction.
 - **Study** emphasizes lookup tools without forced pauses.
 - **Shadow** auto-pauses lines for speaking practice.
+
+Active recall is independent of study mode: `Alt+Shift+L` toggles whether the
+English line stays visible or appears only while the French line is hovered.
 
 The sidebar polls the active YouTube tab for `get-transcript-state`. To reduce
 message size, the content script can omit unchanged cue data when the sidebar

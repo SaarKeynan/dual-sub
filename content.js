@@ -174,6 +174,7 @@
     return {
       ...DEFAULT_SETTINGS,
       ...value,
+      studyMode: ["watch", "study", "shadow"].includes(value.studyMode) ? value.studyMode : "watch",
       wordGroupPaletteVersion: 2,
       wordGroupColors,
       sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
@@ -182,7 +183,8 @@
   }
 
   function effectiveStudyMode() {
-    return currentVideoProfile?.studyMode || settings.studyMode || "watch";
+    const mode = currentVideoProfile?.studyMode || settings.studyMode || "watch";
+    return ["study", "shadow"].includes(mode) ? mode : "watch";
   }
 
   function effectiveCaptionOffsetMs() {
@@ -228,7 +230,7 @@
     for (const [group, color] of Object.entries(settings.wordGroupColors)) {
       root.style.setProperty(`--dualsub-group-${group}`, color);
     }
-    root.classList.toggle("dualsub-recall-mode", Boolean(settings.recallMode || effectiveStudyMode() === "focus"));
+    root.classList.toggle("dualsub-recall-mode", Boolean(settings.recallMode));
     root.classList.toggle("dualsub-color-word-groups", Boolean(settings.colorFrenchWordGroups));
     root.dataset.studyMode = effectiveStudyMode();
     applyLineStyle(sourceLine, settings.sourceStyle);

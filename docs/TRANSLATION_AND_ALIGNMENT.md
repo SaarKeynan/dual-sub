@@ -1,6 +1,6 @@
 # How DualSub finds translations and word matches
 
-This guide describes the translation and matching decisions in DualSub 0.8.8.
+This guide describes the translation and matching decisions in DualSub 0.8.9.
 It complements the broader [architecture guide](ARCHITECTURE.md).
 
 ## Three different problems

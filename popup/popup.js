@@ -19,7 +19,7 @@ const ids = [
 
 const settingDestinations = [
   ["French and English subtitle rows", "French row English row subtitles captions", "showSource", "general"],
-  ["Learning mode", "watch focus study shadow mode", "studyMode", "general"],
+  ["Learning mode", "watch study shadow mode", "studyMode", "general"],
   ["YouTube native captions", "hide regular native captions", "hideNativeCaptions", "general"],
   ["Keep live lines together", "whole line auto generated timing", "wholeLiveLines", "general"],
   ["Subtitle synchronization", "timing offset early late delay sync", "captionOffsetMs", "general"],
@@ -480,6 +480,7 @@ async function initialize() {
   settings = {
     ...defaults,
     ...(stored.settings || {}),
+    studyMode: ["watch", "study", "shadow"].includes(stored.settings?.studyMode) ? stored.settings.studyMode : "watch",
     wordGroupPaletteVersion: 2,
     wordGroupColors: storedWordGroupColors,
     sourceStyle: { ...defaults.sourceStyle, ...(stored.settings?.sourceStyle || {}) },
