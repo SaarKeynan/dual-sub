@@ -133,6 +133,10 @@ mode instead uses the retained fragment timing.
 
 ## Translation engine
 
+For the full decision order, provider behavior, cue-alignment formula, French
+morphology pipeline, and word-matching thresholds, see
+[How DualSub finds translations and word matches](TRANSLATION_AND_ALIGNMENT.md).
+
 `translation-engine.js` is loaded before `background.js`, exposing
 `DualSubTranslation` to the background context. All external translation calls
 pass through this service.

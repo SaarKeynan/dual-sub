@@ -5,7 +5,9 @@ English YouTube captions **at the same time**, then turns each subtitle into an
 interactive study surface.
 
 For an implementation map and detailed feature flows, see
-[DualSub architecture and behavior](docs/ARCHITECTURE.md).
+[DualSub architecture and behavior](docs/ARCHITECTURE.md). Translation sources,
+French analysis, and French-to-English word matching are detailed in
+[How DualSub finds translations and word matches](docs/TRANSLATION_AND_ALIGNMENT.md).
 
 ## Features
 

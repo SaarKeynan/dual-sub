@@ -17,6 +17,7 @@ async function testCaptionProcessing() {
   const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
   const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
   const architecture = fs.readFileSync(path.join(projectRoot, "docs", "ARCHITECTURE.md"), "utf8");
+  const translationGuide = fs.readFileSync(path.join(projectRoot, "docs", "TRANSLATION_AND_ALIGNMENT.md"), "utf8");
   const contentCss = fs.readFileSync(path.join(projectRoot, "content.css"), "utf8");
   const popupCss = fs.readFileSync(path.join(projectRoot, "popup", "popup.css"), "utf8");
   const popupHtml = fs.readFileSync(path.join(projectRoot, "popup", "popup.html"), "utf8");
@@ -101,6 +102,10 @@ async function testCaptionProcessing() {
   assert(readme.includes("docs/ARCHITECTURE.md"), "The architecture guide should be linked from the README");
   for (const documentedPart of ["content.js", "page-bridge.js", "background.js", "translation-engine.js", "language/french.js", "OCR and manual translation", "Persistent data"]) {
     assert(architecture.includes(documentedPart), `Architecture guide should cover ${documentedPart}`);
+  }
+  assert(readme.includes("docs/TRANSLATION_AND_ALIGNMENT.md"), "The translation and alignment guide should be linked from the README");
+  for (const documentedDecision of ["Where an English subtitle comes from", "Lookup decision order", "How complete French and English cues are paired", "How a French word is analyzed", "Path A: Azure character alignment", "Path B: lookup translation evidence", "0.86"]) {
+    assert(translationGuide.includes(documentedDecision), `Translation guide should cover ${documentedDecision}`);
   }
   assert(!source.includes("Math.max(0, Number(settings.subtitleLeadMs)"));
   assert(source.includes('recoverTracksFromNativePlayer(nativeSourceTrack, result.url || "")'));
