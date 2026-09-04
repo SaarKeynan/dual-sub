@@ -1,7 +1,7 @@
 {
   "name": "dualsub-firefox",
   "private": true,
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "Synchronized French and English YouTube subtitles with language-learning tools for Firefox.",
   "scripts": {
     "check": "node --check translation-engine.js && node --check background.js && node --check content.js && node --check page-bridge.js && node --check language/french.js && node --check popup/popup.js && node --check sidebar/sidebar.js && node --check vocabulary/vocabulary.js && node --check tools/translator.js",

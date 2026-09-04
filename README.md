@@ -110,7 +110,7 @@ French analysis, and French-to-English word matching are detailed in
 ## Shortcuts
 
 - `Alt+Shift+D`: toggle DualSub.
-- `Alt+Shift+E`: show the English line normally or hide it until the French
+- `Alt+Shift+L`: show the English line normally or hide it until the French
   line is hovered.
 - `Alt+Shift+R`: replay the current French subtitle line.
 - `Alt+Shift+V`: open the vocabulary workspace.
@@ -118,8 +118,9 @@ French analysis, and French-to-English word matching are detailed in
   `Escape` cancels).
 - `Alt+Shift+Left` / `Alt+Shift+Right`: previous or next caption.
 
-Firefox shortcuts can be reassigned from **Add-ons and themes → Extensions →
-Manage Extension Shortcuts**.
+To reassign any shortcut, open DualSub and select **Tools → Shortcuts &
+troubleshooting → Remap shortcuts**. DualSub opens Firefox's shortcut editor
+directly with its commands highlighted.
 
 ## Translation cost and privacy
 

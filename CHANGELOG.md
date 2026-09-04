@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.8 — conflict-free English reveal shortcut
+
+- Changed the English reveal shortcut to `Alt+Shift+L` because Firefox reserves
+  the previous `Alt+Shift+E` combination for its Edit menu.
+- The Tools page now has a **Remap shortcuts** action that opens Firefox's
+  built-in shortcut editor directly instead of the generic Add-ons page.
+
 ## 0.8.7 — English reveal shortcut
 
 - Added `Alt+Shift+E` to switch between an always-visible English translation

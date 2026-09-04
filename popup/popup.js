@@ -36,11 +36,11 @@ const settingDestinations = [
   ["Translated-word matching", "alignment matching English French words", "wordAlignment", "tools", "lookup"],
   ["Phrase selection", "multiple words drag selection sentence", "selectionTranslation", "tools", "lookup"],
   ["Lookup pauses", "pause card open auto pause each line", "pauseOnLookup", "tools", "lookup"],
-  ["Reveal English on demand", "recall hide English hover shortcut Alt Shift E", "recallMode", "tools", "playback"],
+  ["Reveal English on demand", "recall hide English hover shortcut Alt Shift L", "recallMode", "tools", "playback"],
   ["Pause each subtitle line", "auto pause study shadow playback", "autoPause", "tools", "playback"],
   ["Skip silent gaps", "silence gap skip playback", "skipCaptionGaps", "tools", "playback"],
   ["French pronunciation", "voice speech speed pronounce", "pronunciationVoiceURI", "tools", "pronunciation"],
-  ["Diagnostics and shortcuts", "copy diagnostics keyboard keys customize", "copyDiagnostics", "tools", "support"]
+  ["Diagnostics and shortcuts", "copy diagnostics keyboard keys customize remap", "openShortcuts", "tools", "support"]
 ].map(([label, keywords, id, panel, subpanel]) => ({ label, keywords, id, panel, subpanel }));
 
 function element(id) {
@@ -561,10 +561,14 @@ async function initialize() {
       statusNode.dataset.state = "error";
     }
   });
-  element("openShortcuts").addEventListener("click", () => {
-    browser.tabs.create({ url: "about:addons" }).catch(() => {
-      element("playerStatus").textContent = "Open about:addons → Extensions → Manage Extension Shortcuts.";
-    });
+  element("openShortcuts").addEventListener("click", async () => {
+    try {
+      await browser.commands.openShortcutSettings();
+      window.close();
+    } catch (_error) {
+      await browser.tabs.create({ url: "about:addons" });
+      window.close();
+    }
   });
   element("previewPronunciation").addEventListener("click", previewPronunciation);
   element("saveVideoProfile").addEventListener("click", async () => {

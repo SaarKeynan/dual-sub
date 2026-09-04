@@ -177,6 +177,8 @@ async function testCaptionProcessing() {
   assert(popupHtml.indexOf('data-panel-content="home"') < popupHtml.indexOf('data-panel-content="general"'));
   assert(popupSource.includes('document.body.dataset.activePanel = selected'), "Page changes should update Home/settings visibility");
   assert(popupSource.includes('activatePanel("home")'), "The toolbar should open on the workspace dashboard");
+  assert(popupSource.includes("browser.commands.openShortcutSettings()"), "Tools should open Firefox's shortcut editor directly");
+  assert(popupHtml.includes(">Remap shortcuts</button>"), "Shortcut remapping should be discoverable in Tools");
   assert(popupHtml.includes("Caption behavior &amp; timing"), "Less-used caption controls should use progressive disclosure");
   assert(popupHtml.includes('data-tool-content="playback"') && popupHtml.includes('data-tool-content="support"'), "Tools should use clear task-based groups");
   assert(!popupHtml.includes('class="tool-tabs"'), "Tools should not add a second layer of tab navigation");
@@ -388,8 +390,8 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.7");
-  assert.strictEqual(manifest.commands["toggle-translation-reveal"].suggested_key.default, "Alt+Shift+E");
+  assert.strictEqual(manifest.version, "0.8.8");
+  assert.strictEqual(manifest.commands["toggle-translation-reveal"].suggested_key.default, "Alt+Shift+L");
   assert(manifest.web_accessible_resources[0].resources.includes("tools/translator.html"), "The in-page OCR frame must be web-accessible");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
