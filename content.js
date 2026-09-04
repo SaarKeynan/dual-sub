@@ -72,6 +72,7 @@
   const dismissedStatusKeys = new Set();
   let selectionCard;
   let video;
+  let ocrSelectionSession = null;
   let animationFrame;
   let videoFrameCallbackId;
   const observedVideos = new WeakSet();
@@ -124,6 +125,7 @@
   const aheadAlignmentKinds = new Map();
   const aheadTranslationProvenance = new Map();
   const lookupTranslationCache = new Map();
+  const lookupTranslationMetadata = new Map();
   const aheadTranslationPending = new Set();
   const aheadTranslationFailed = new Set();
   const aheadTranslationQueue = [];
@@ -311,6 +313,7 @@
             <div class="dualsub-card-result"></div>
             <div class="dualsub-card-infinitive" hidden></div>
           </div>
+          <div class="dualsub-card-provenance" hidden><span></span><a target="_blank" rel="noopener noreferrer">Open engine lookup &nearr;</a></div>
           <form class="dualsub-correction-form" hidden>
             <label>Preferred English meaning<input class="dualsub-correction-input" type="text" maxlength="300" autocomplete="off"></label>
             <div><button type="submit" data-action="save-correction">Save correction</button><button type="button" data-action="cancel-correction">Cancel</button></div>
@@ -1346,7 +1349,7 @@
     response.results.forEach((result, index) => {
       if (!result?.translatedText) return;
       const cacheKey = lookupTranslationKey(queue[index]);
-      rememberLookupTranslation(cacheKey, result.translatedText);
+      rememberLookupTranslation(cacheKey, result.translatedText, result);
       wordWarmupCompleted += 1;
     });
   }
@@ -1811,12 +1814,52 @@
       .toLocaleLowerCase();
   }
 
-  function rememberLookupTranslation(cacheKey, translatedText) {
+  function rememberLookupTranslation(cacheKey, translatedText, metadata = {}) {
     if (!cacheKey || !translatedText) return;
     lookupTranslationCache.set(cacheKey, translatedText);
+    lookupTranslationMetadata.set(cacheKey, {
+      provider: metadata.provider || settings.translationProvider,
+      provenance: metadata.provenance || "",
+      cacheHit: Boolean(metadata.cacheHit)
+    });
     if (lookupTranslationCache.size > 1200) {
-      lookupTranslationCache.delete(lookupTranslationCache.keys().next().value);
+      const oldestKey = lookupTranslationCache.keys().next().value;
+      lookupTranslationCache.delete(oldestKey);
+      lookupTranslationMetadata.delete(oldestKey);
     }
+  }
+
+  function translationProviderLink(provider, text) {
+    const encoded = encodeURIComponent(text);
+    if (provider === "google") return `https://translate.google.com/?sl=fr&tl=en&text=${encoded}&op=translate`;
+    if (provider === "mymemory") return `https://mymemory.translated.net/en/French/English/${encoded}`;
+    if (provider === "deepl") return `https://www.deepl.com/translator#fr/en/${encoded}`;
+    if (provider === "azure") return `https://www.bing.com/translator?from=fr&to=en&text=${encoded}`;
+    return "";
+  }
+
+  function showLookupProvenance(response, sourceText) {
+    const node = selectionCard.querySelector(".dualsub-card-provenance");
+    const label = node.querySelector("span");
+    const link = node.querySelector("a");
+    const provider = response?.provider || settings.translationProvider;
+    const providerLabel = { google: "Google", mymemory: "MyMemory", azure: "Azure", deepl: "DeepL", libretranslate: "LibreTranslate", correction: "Saved correction" }[provider] || provider;
+    if (provider === "correction") {
+      label.textContent = "Source: your saved correction";
+    } else if (response?.memoryCache) {
+      label.textContent = `Source: instant session cache · ${providerLabel}`;
+    } else if (response?.cacheHit) {
+      label.textContent = `Source: local translation cache · ${providerLabel}`;
+    } else {
+      label.textContent = `Source: ${response?.provenance || `${providerLabel} engine lookup`}`;
+    }
+    const href = translationProviderLink(provider, sourceText);
+    link.hidden = !href;
+    if (href) {
+      link.href = href;
+      link.textContent = `Open in ${providerLabel} ↗`;
+    }
+    node.hidden = false;
   }
 
   function lookupTranslationKey(value) {
@@ -1953,7 +1996,7 @@
         const surfaceResponse = results[0]?.status === "fulfilled" ? results[0].value : null;
         if (surfaceResponse?.ok) {
           const cacheKey = lookupTranslationKey(wordText);
-          rememberLookupTranslation(cacheKey, surfaceResponse.translatedText);
+          rememberLookupTranslation(cacheKey, surfaceResponse.translatedText, surfaceResponse);
         }
         if (translations.length && word.isConnected && word.classList.contains("is-hovered")) {
           refineAlignedTargetWords(translations, alignmentContext);
@@ -2020,6 +2063,7 @@
     pausedByLookup = false;
     const group = word.dataset.wordGroup || particle.group || "unknown";
     selectionCard.classList.add("is-particle-card");
+    selectionCard.querySelector(".dualsub-card-provenance").hidden = true;
     selectionCard.querySelector(".dualsub-card-source").textContent = particle.surface;
     const translationNode = selectionCard.querySelector(".dualsub-card-translation");
     translationNode.dataset.group = group;
@@ -2059,6 +2103,7 @@
     const infinitiveNode = selectionCard.querySelector(".dualsub-card-infinitive");
     const linkNode = selectionCard.querySelector(".dualsub-card-link");
     const wiktionaryNode = selectionCard.querySelector(".dualsub-card-wiktionary");
+    const provenanceNode = selectionCard.querySelector(".dualsub-card-provenance");
     const pinButton = selectionCard.querySelector('[data-action="pin"]');
     const saveButton = selectionCard.querySelector('[data-action="save"]');
     const phraseButton = selectionCard.querySelector('[data-action="phrase"]');
@@ -2103,6 +2148,8 @@
       : "";
     const lookupCacheKey = lookupTranslationKey(cleanText);
     const cachedLookup = kind === "word" ? lookupTranslationCache.get(lookupCacheKey) : null;
+    const cachedMetadata = lookupTranslationMetadata.get(lookupCacheKey) || {};
+    provenanceNode.hidden = true;
     resultNode.textContent = cachedLookup || "Translating…";
     sentenceSourceNode.textContent = sentence;
     sentenceTargetNode.textContent = lookupContext.sentenceTranslation || "Translation available on request";
@@ -2146,7 +2193,13 @@
       pausedByLookup = true;
     }
 
-    const surfacePromise = cachedLookup ? Promise.resolve({ ok: true, translatedText: cachedLookup, cached: true }) : browser.runtime.sendMessage({
+    const surfacePromise = cachedLookup ? Promise.resolve({
+      ok: true,
+      translatedText: cachedLookup,
+      ...cachedMetadata,
+      cacheHit: true,
+      memoryCache: true
+    }) : browser.runtime.sendMessage({
         type: "translate-selection",
         text: cleanText,
         sourceLanguage: settings.sourceLanguage,
@@ -2173,8 +2226,9 @@
       if (sequence !== lookupSequence || !selectionCard.classList.contains("is-visible")) return;
       resultNode.textContent = response?.ok ? response.translatedText : (response?.error || "Translation unavailable");
       if (response?.ok && lookupContext) {
+        showLookupProvenance(response, cleanText);
         if (kind === "word") {
-          rememberLookupTranslation(lookupCacheKey, response.translatedText);
+          rememberLookupTranslation(lookupCacheKey, response.translatedText, response);
         }
         lookupContext.translatedText = response.translatedText;
         saveButton.disabled = false;
@@ -2317,7 +2371,9 @@
       }
       lookupContext.translatedText = corrected;
       selectionCard.querySelector(".dualsub-card-result").textContent = corrected;
-      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText), corrected);
+      const correctionMetadata = { provider: "correction", provenance: "Your correction", cacheHit: true };
+      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText), corrected, correctionMetadata);
+      showLookupProvenance(correctionMetadata, lookupContext.sourceText);
       form.hidden = true;
       const correctionButton = selectionCard.querySelector('[data-action="correct"]');
       correctionButton.textContent = "Corrected ✓";
@@ -2582,6 +2638,123 @@
     }
   });
 
+  function stopOcrSelection({ resume = false } = {}) {
+    const session = ocrSelectionSession;
+    if (!session) return;
+    ocrSelectionSession = null;
+    session.overlay.remove();
+    window.removeEventListener("keydown", session.onKeyDown, true);
+    window.removeEventListener("resize", session.onResize, true);
+    if (resume && session.wasPlaying) session.video.play().catch(() => {});
+  }
+
+  function startOcrSelection() {
+    stopOcrSelection({ resume: true });
+    const activeVideo = video?.isConnected ? video : document.querySelector("video");
+    if (!activeVideo) return { ok: false, error: "No video is visible on this page." };
+    const videoRect = activeVideo.getBoundingClientRect();
+    const bounds = {
+      left: Math.max(0, videoRect.left),
+      top: Math.max(0, videoRect.top),
+      right: Math.min(window.innerWidth, videoRect.right),
+      bottom: Math.min(window.innerHeight, videoRect.bottom)
+    };
+    if (bounds.right - bounds.left < 8 || bounds.bottom - bounds.top < 8) {
+      return { ok: false, error: "The video is not currently visible." };
+    }
+
+    const wasPlaying = !activeVideo.paused;
+    activeVideo.pause();
+    const overlay = document.createElement("div");
+    overlay.className = "dualsub-ocr-selector";
+    overlay.innerHTML = `
+      <div class="dualsub-ocr-video-frame"></div>
+      <div class="dualsub-ocr-instructions"><strong>Select French text</strong><span>Drag over text · Enter to capture · Esc to cancel</span></div>
+      <div class="dualsub-ocr-drag-box" hidden></div>`;
+    const frame = overlay.querySelector(".dualsub-ocr-video-frame");
+    const box = overlay.querySelector(".dualsub-ocr-drag-box");
+    Object.assign(frame.style, {
+      left: `${bounds.left}px`, top: `${bounds.top}px`,
+      width: `${bounds.right - bounds.left}px`, height: `${bounds.bottom - bounds.top}px`
+    });
+    document.documentElement.appendChild(overlay);
+
+    const session = {
+      overlay,
+      video: activeVideo,
+      wasPlaying,
+      bounds,
+      start: null,
+      selection: null,
+      onKeyDown: null,
+      onResize: () => stopOcrSelection({ resume: true })
+    };
+    ocrSelectionSession = session;
+    const point = (event) => ({
+      x: Math.max(bounds.left, Math.min(bounds.right, event.clientX)),
+      y: Math.max(bounds.top, Math.min(bounds.bottom, event.clientY))
+    });
+    const renderSelection = (end) => {
+      const left = Math.min(session.start.x, end.x);
+      const top = Math.min(session.start.y, end.y);
+      session.selection = {
+        left,
+        top,
+        width: Math.max(1, Math.abs(end.x - session.start.x)),
+        height: Math.max(1, Math.abs(end.y - session.start.y)),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      };
+      Object.assign(box.style, {
+        left: `${session.selection.left}px`, top: `${session.selection.top}px`,
+        width: `${session.selection.width}px`, height: `${session.selection.height}px`
+      });
+      box.hidden = false;
+    };
+    overlay.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) return;
+      event.preventDefault();
+      overlay.setPointerCapture(event.pointerId);
+      session.start = point(event);
+      renderSelection(session.start);
+    });
+    overlay.addEventListener("pointermove", (event) => {
+      if (session.start) renderSelection(point(event));
+    });
+    overlay.addEventListener("pointerup", (event) => {
+      if (!session.start) return;
+      renderSelection(point(event));
+      session.start = null;
+    });
+    session.onKeyDown = async (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        stopOcrSelection({ resume: true });
+        return;
+      }
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!session.selection || session.selection.width < 8 || session.selection.height < 8) {
+        overlay.querySelector(".dualsub-ocr-instructions span").textContent = "Drag a box around the text before pressing Enter";
+        return;
+      }
+      const crop = session.selection;
+      stopOcrSelection();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const response = await browser.runtime.sendMessage({ type: "complete-video-ocr-selection", crop })
+        .catch((error) => ({ ok: false, error: error.message }));
+      if (!response?.ok) {
+        if (wasPlaying) activeVideo.play().catch(() => {});
+        setStatus("error", response?.error || "The selected video text could not be captured.", 4000);
+      }
+    };
+    window.addEventListener("keydown", session.onKeyDown, true);
+    window.addEventListener("resize", session.onResize, true);
+    return { ok: true };
+  }
+
   document.addEventListener("yt-navigate-start", handleNavigationStart);
   document.addEventListener("yt-navigate-finish", handleNavigation);
   document.addEventListener("fullscreenchange", () => setTimeout(attachToPlayer, 50));
@@ -2597,29 +2770,7 @@
 
   browser.runtime.onMessage.addListener((message) => {
     if (message?.type === "get-status") return Promise.resolve(status);
-    if (message?.type === "get-video-capture-info") {
-      const activeVideo = video?.isConnected ? video : document.querySelector("video");
-      if (!activeVideo) return Promise.resolve({ ok: false, error: "No video is visible on this page." });
-      const rect = activeVideo.getBoundingClientRect();
-      const left = Math.max(0, rect.left);
-      const top = Math.max(0, rect.top);
-      const right = Math.min(window.innerWidth, rect.right);
-      const bottom = Math.min(window.innerHeight, rect.bottom);
-      if (right - left < 2 || bottom - top < 2) {
-        return Promise.resolve({ ok: false, error: "The video is not currently visible." });
-      }
-      return Promise.resolve({
-        ok: true,
-        crop: {
-          left,
-          top,
-          width: right - left,
-          height: bottom - top,
-          viewportWidth: window.innerWidth,
-          viewportHeight: window.innerHeight
-        }
-      });
-    }
+    if (message?.type === "start-video-ocr-selection") return Promise.resolve(startOcrSelection());
     if (message?.type === "get-transcript-state") return buildTranscriptState(message);
     if (message?.type === "save-current-video-profile") {
       if (!currentVideoId) return Promise.resolve({ ok: false, error: "Open a video first." });

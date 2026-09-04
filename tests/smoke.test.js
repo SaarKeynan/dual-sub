@@ -150,6 +150,8 @@ async function testCaptionProcessing() {
   assert(source.includes('cacheMode: "word"'));
   assert(source.includes('kind === "word" ? "word" : "phrase"'));
   assert(source.includes("dualsub-correction-form"));
+  assert(source.includes("dualsub-card-provenance"), "Lookup cards should identify their translation source");
+  assert(source.includes("translationProviderLink"), "Lookup cards should link to supported translation engines");
   assert(!source.includes("window.prompt(`Correct the English meaning"), "Corrections should use the inline editor");
   assert(source.includes("videoWordWarmupOrder"));
   assert(source.includes("dualsub-status-close"));
@@ -165,7 +167,10 @@ async function testCaptionProcessing() {
   assert(translatorSource.includes('browser.storage.local.remove("ocrCaptureV1")'));
   assert(translatorSource.includes("scheduleAutomaticTranslation(80)"), "OCR output should translate automatically");
   assert(translatorSource.includes("Translating as you type"), "Typed text should translate after a debounce");
-  assert(source.includes('message?.type === "get-video-capture-info"'), "The content script should expose the video rectangle");
+  assert(source.includes('message?.type === "start-video-ocr-selection"'), "The content script should start video-region selection");
+  assert(source.includes('type: "complete-video-ocr-selection"'), "Enter should submit the selected text region");
+  assert(contentCss.includes(".dualsub-ocr-selector"), "OCR selection should have an in-player snipping overlay");
+  assert(translatorSource.includes("capture.autoRun && await runOcr()"), "A confirmed video selection should start OCR automatically");
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(context.captureCropPixels({ left: 100, top: 50, width: 800, height: 450, viewportWidth: 1000, viewportHeight: 600 }, 2000, 1200))),
     { x: 200, y: 100, width: 1600, height: 900 },
@@ -359,7 +364,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.1");
+  assert.strictEqual(manifest.version, "0.8.2");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
   assert(manifest.commands["open-transcript"], "The transcript sidebar should have a keyboard command");

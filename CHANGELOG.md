@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.2 — snipping-style OCR
+
+- `Alt+Shift+O` now pauses the video and starts a crosshair selection mode
+  directly over it instead of taking an immediate screenshot.
+- Drag over the French text and press Enter to confirm. Escape cancels and
+  resumes the video when it had been playing.
+- The selection overlay disappears before capture, OCR starts automatically,
+  and the popup switches to the translated text as soon as recognition ends.
+- French lookup cards now identify saved, cached, or live engine results and
+  link directly to the corresponding provider lookup when available.
+
 ## 0.8.1 — quick video OCR
 
 - OCR captures only the visible YouTube video instead of browser chrome and the

@@ -27,8 +27,8 @@ interactive study surface.
   English caption renderer.
 - One-click on/off switch and `Alt+Shift+D` keyboard shortcut.
 - A compact type-or-paste translator and local French OCR workspace. Video OCR
-  captures only the visible YouTube video, opens without replacing the video
-  tab, and translates typed or recognized text automatically.
+  pauses playback and lets you drag directly over video text, then Enter opens
+  a popup that recognizes and translates it without replacing the video tab.
 - Faster loading through parallel page/extension caption requests, concurrent
   format fallbacks, cached caption payloads, and an event-driven upgrade when
   YouTube exposes an authenticated auto-caption request.
@@ -59,6 +59,8 @@ interactive study surface.
   not flash a loading state or spend provider quota.
   When full timed captions are available, DualSub can also preload a small set
   of the video's most frequent words before they are selected.
+  Each lookup card identifies whether its result came from a correction, local
+  cache, or live engine request and links to the provider's public lookup page.
 - French conjugations are analyzed locally with ablaut's reverse morphology,
   then checked against a 7,820-infinitive Lefff derivative. The lookup card
   shows only the most likely infinitive, keeping grammatical analysis out of
@@ -105,7 +107,8 @@ interactive study surface.
 - `Alt+Shift+D`: toggle DualSub.
 - `Alt+Shift+R`: replay the current French subtitle line.
 - `Alt+Shift+V`: open the vocabulary workspace.
-- `Alt+Shift+O`: capture the visible video and open the OCR translator.
+- `Alt+Shift+O`: pause and select video text for OCR (`Enter` confirms and
+  `Escape` cancels).
 - `Alt+Shift+Left` / `Alt+Shift+Right`: previous or next caption.
 
 Firefox shortcuts can be reassigned from **Add-ons and themes → Extensions →

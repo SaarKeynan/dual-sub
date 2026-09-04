@@ -158,9 +158,11 @@ async function runOcr() {
     element("sourceText").scrollIntoView({ behavior: "smooth", block: "center" });
     element("sourceText").focus({ preventScroll: true });
     scheduleAutomaticTranslation(80);
+    return true;
   } catch (error) {
     element("ocrProgress").hidden = true;
     setStatus(error.message || "OCR could not read this selection.", "error");
+    return false;
   } finally {
     button.disabled = !captureImage;
     button.textContent = "Read selected area";
@@ -282,10 +284,13 @@ async function loadCapture() {
   element("captureEmpty").hidden = true;
   element("captureStage").hidden = false;
   element("runOcr").disabled = false;
-  requestAnimationFrame(() => {
+  requestAnimationFrame(async () => {
     const rect = image.getBoundingClientRect();
-    selection = { left: rect.width * .08, top: rect.height * .55, width: rect.width * .84, height: rect.height * .36 };
+    selection = capture.autoRun
+      ? { left: 0, top: 0, width: rect.width, height: rect.height }
+      : { left: rect.width * .08, top: rect.height * .55, width: rect.width * .84, height: rect.height * .36 };
     updateSelectionBox();
+    if (capture.autoRun && await runOcr()) activateMode("type");
   });
 }
 
