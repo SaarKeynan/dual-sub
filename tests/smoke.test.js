@@ -171,6 +171,10 @@ async function testCaptionProcessing() {
   assert(popupCss.includes("overflow-x: hidden"), "The settings popup should not scroll horizontally");
   assert(popupHtml.includes('id="preloadVideoWords"'));
   assert(popupHtml.includes('id="settingsSearch"'), "Settings should be searchable by task");
+  assert(popupHtml.includes("Caption behavior &amp; timing"), "Less-used caption controls should use progressive disclosure");
+  assert(popupHtml.includes('data-tool-content="playback"') && popupHtml.includes('data-tool-content="support"'), "Tools should use clear task-based groups");
+  assert(!popupHtml.includes('class="tool-tabs"'), "Tools should not add a second layer of tab navigation");
+  assert(popupCss.includes(".sub-settings-group"), "Advanced lookup behavior should be visually subordinate");
   assert(popupHtml.includes('id="openSidebar"'), "The toolbar popup should expose the transcript sidebar");
   assert(popupHtml.includes('id="openTranslator"') && popupHtml.includes('id="captureText"'));
   assert(translatorHtml.includes('id="captureStage"') && translatorHtml.includes('id="sourceText"'));
@@ -378,7 +382,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.4");
+  assert.strictEqual(manifest.version, "0.8.5");
   assert(manifest.web_accessible_resources[0].resources.includes("tools/translator.html"), "The in-page OCR frame must be web-accessible");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");

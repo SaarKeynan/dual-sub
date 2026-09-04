@@ -20,15 +20,15 @@
     <div id="playerStatus" class="status" data-state="waiting" role="status">Open a YouTube video to begin.</div>
 
     <div class="quick-actions">
-      <button id="openSidebar" class="primary-button transcript-button" type="button"><span aria-hidden="true">☷</span> Open transcript</button>
-      <button id="openTranslator" class="primary-button" type="button">Type to translate</button>
-      <button id="captureText" type="button">Capture text (OCR)</button>
-      <button id="openVocabularyQuick" type="button">Vocabulary</button>
+      <button id="openSidebar" class="primary-button" type="button"><span aria-hidden="true">☷</span>Transcript</button>
+      <button id="captureText" type="button"><span aria-hidden="true">⌗</span>Video OCR</button>
+      <button id="openTranslator" type="button"><span aria-hidden="true">A→</span>Translate</button>
+      <button id="openVocabularyQuick" type="button"><span aria-hidden="true">☆</span>Words</button>
     </div>
 
     <div class="settings-finder">
       <label for="settingsSearch"><span aria-hidden="true">⌕</span><span class="visually-hidden">Find a setting</span></label>
-      <input id="settingsSearch" type="search" placeholder="Find a setting…" autocomplete="off">
+      <input id="settingsSearch" type="search" placeholder="Find any setting…" autocomplete="off">
       <button id="clearSettingsSearch" type="button" aria-label="Clear settings search" hidden>×</button>
     </div>
     <div id="settingsSearchResults" class="settings-search-results" role="listbox" aria-label="Matching settings" hidden></div>
@@ -42,7 +42,7 @@
     <main>
       <div id="panel-general" class="panel" data-panel-content="general" role="tabpanel" aria-labelledby="tab-general">
         <section>
-          <div class="section-heading"><div><h2>Caption behavior</h2><p class="section-note">Tracks, timing, and translation</p></div></div>
+          <div class="section-heading"><div><h2>Watching</h2><p class="section-note">Your everyday caption choices</p></div></div>
           <div class="toggle-grid">
             <label class="tile-check"><input id="showSource" type="checkbox"><span>French row</span></label>
             <label class="tile-check"><input id="showTranslation" type="checkbox"><span>English row</span></label>
@@ -55,16 +55,21 @@
               <option value="shadow">Shadow · repeat each line</option>
             </select>
           </label>
-          <label class="check-row"><input id="hideNativeCaptions" type="checkbox"> Hide YouTube’s native captions</label>
-          <label class="check-row"><input id="wholeLiveLines" type="checkbox"> Keep French and English live lines together</label>
-          <label class="range-row">Subtitle timing <output id="captionOffsetOutput"></output>
-            <input id="captionOffsetMs" type="range" min="-1500" max="1500" step="50">
-          </label>
-          <label class="range-row">Hold captions between lines <output id="captionHoldOutput"></output>
-            <input id="captionHoldMs" type="range" min="0" max="2000" step="50">
-          </label>
-          <p class="section-note">Translation is preloaded automatically. Use this only to correct a video that is out of sync.</p>
-          <button id="saveVideoProfile" type="button">Remember timing and mode for this video</button>
+          <details class="settings-group">
+            <summary><span>Caption behavior &amp; timing</span><small>Native captions, sync, hold</small></summary>
+            <div class="settings-group-body">
+              <label class="check-row"><input id="hideNativeCaptions" type="checkbox"> Hide YouTube’s native captions</label>
+              <label class="check-row"><input id="wholeLiveLines" type="checkbox"> Keep French and English live lines together</label>
+              <label class="range-row">Subtitle timing <output id="captionOffsetOutput"></output>
+                <input id="captionOffsetMs" type="range" min="-1500" max="1500" step="50">
+              </label>
+              <label class="range-row">Hold captions between lines <output id="captionHoldOutput"></output>
+                <input id="captionHoldMs" type="range" min="0" max="2000" step="50">
+              </label>
+              <p class="section-note">Only adjust timing when a particular video is out of sync.</p>
+              <button id="saveVideoProfile" type="button">Remember for this video</button>
+            </div>
+          </details>
           <details class="settings-group">
             <summary><span>Translation service</span><small>Engine, preload, and API access</small></summary>
             <div class="settings-group-body">
@@ -117,7 +122,7 @@
 
       <div id="panel-appearance" class="panel" data-panel-content="appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden>
         <section>
-          <div class="section-heading"><div><h2>Subtitle appearance</h2><p class="section-note">Layout and independent language styles</p></div></div>
+          <div class="section-heading"><div><h2>Subtitle style</h2><p class="section-note">French and English are styled independently</p></div></div>
           <div class="appearance-tabs" role="tablist" aria-label="Subtitle language">
             <button id="appearance-source" class="appearance-button is-active" type="button" role="tab" aria-selected="true" aria-controls="appearance-panel-source" data-appearance="source">French</button>
             <button id="appearance-target" class="appearance-button" type="button" role="tab" aria-selected="false" aria-controls="appearance-panel-target" data-appearance="target">English</button>
@@ -130,11 +135,16 @@
               <label>Opacity <output id="sourceOpacityOutput"></output><input id="sourceBackgroundOpacity" type="range" min="0" max="100" step="1"></label>
               <label>Text <input id="sourceTextColor" type="color"></label>
               <label>Background <input id="sourceBackgroundColor" type="color"></label>
-              <label>Font<select id="sourceFontFamily"><option value="Arial, sans-serif">Arial</option><option value="system-ui, sans-serif">System</option><option value="Verdana, sans-serif">Verdana</option><option value="Georgia, serif">Georgia</option><option value="'Courier New', monospace">Courier</option></select></label>
-              <label>Weight<select id="sourceFontWeight"><option value="400">Regular</option><option value="600">Semi-bold</option><option value="700">Bold</option><option value="800">Extra bold</option></select></label>
             </div>
-            <label class="check-row"><input id="sourceItalic" type="checkbox"> Italic French captions</label>
             <label class="check-row"><input id="colorFrenchWordGroups" type="checkbox"> Color French words by grammatical group</label>
+            <details class="settings-group compact-settings-group">
+              <summary><span>Typography</span><small>Font, weight, italic</small></summary>
+              <div class="settings-group-body grid">
+                <label>Font<select id="sourceFontFamily"><option value="Arial, sans-serif">Arial</option><option value="system-ui, sans-serif">System</option><option value="Verdana, sans-serif">Verdana</option><option value="Georgia, serif">Georgia</option><option value="'Courier New', monospace">Courier</option></select></label>
+                <label>Weight<select id="sourceFontWeight"><option value="400">Regular</option><option value="600">Semi-bold</option><option value="700">Bold</option><option value="800">Extra bold</option></select></label>
+                <label class="check-row wide"><input id="sourceItalic" type="checkbox"> Italic French captions</label>
+              </div>
+            </details>
             <details class="palette-settings">
               <summary>Customize word-group colors</summary>
             <div class="grid word-group-grid">
@@ -161,18 +171,27 @@
               <label>Opacity <output id="targetOpacityOutput"></output><input id="targetBackgroundOpacity" type="range" min="0" max="100" step="1"></label>
               <label>Text <input id="targetTextColor" type="color"></label>
               <label>Background <input id="targetBackgroundColor" type="color"></label>
-              <label>Font<select id="targetFontFamily"><option value="Arial, sans-serif">Arial</option><option value="system-ui, sans-serif">System</option><option value="Verdana, sans-serif">Verdana</option><option value="Georgia, serif">Georgia</option><option value="'Courier New', monospace">Courier</option></select></label>
-              <label>Weight<select id="targetFontWeight"><option value="400">Regular</option><option value="600">Semi-bold</option><option value="700">Bold</option><option value="800">Extra bold</option></select></label>
             </div>
-            <label class="check-row"><input id="targetItalic" type="checkbox"> Italic English captions</label>
+            <details class="settings-group compact-settings-group">
+              <summary><span>Typography</span><small>Font, weight, italic</small></summary>
+              <div class="settings-group-body grid">
+                <label>Font<select id="targetFontFamily"><option value="Arial, sans-serif">Arial</option><option value="system-ui, sans-serif">System</option><option value="Verdana, sans-serif">Verdana</option><option value="Georgia, serif">Georgia</option><option value="'Courier New', monospace">Courier</option></select></label>
+                <label>Weight<select id="targetFontWeight"><option value="400">Regular</option><option value="600">Semi-bold</option><option value="700">Bold</option><option value="800">Extra bold</option></select></label>
+                <label class="check-row wide"><input id="targetItalic" type="checkbox"> Italic English captions</label>
+              </div>
+            </details>
           </div>
 
-          <div class="divider"></div>
-          <div class="grid">
-            <label>Bottom offset <output id="bottomOffsetOutput"></output><input id="bottomOffset" type="range" min="30" max="220" step="2"></label>
-            <label>Maximum width <output id="maxWidthOutput"></output><input id="maxWidth" type="range" min="45" max="98" step="1"></label>
-          </div>
-          <div class="appearance-actions"><button id="reset" type="button">Reset appearance</button></div>
+          <details class="settings-group">
+            <summary><span>Position &amp; layout</span><small>Height, width, reset</small></summary>
+            <div class="settings-group-body">
+              <div class="grid">
+                <label>Bottom offset <output id="bottomOffsetOutput"></output><input id="bottomOffset" type="range" min="30" max="220" step="2"></label>
+                <label>Maximum width <output id="maxWidthOutput"></output><input id="maxWidth" type="range" min="45" max="98" step="1"></label>
+              </div>
+              <div class="appearance-actions"><button id="reset" type="button">Reset appearance</button></div>
+            </div>
+          </details>
         </section>
       </div>
 
@@ -182,46 +201,55 @@
             <div><h2>Learning tools</h2><p class="section-note">Lookup, recall, and practice</p></div>
             <button id="openVocabulary" class="primary-button" type="button">Vocabulary <span id="vocabularyCount">0</span></button>
           </div>
-          <div class="tool-tabs" role="tablist" aria-label="Tool options">
-            <button id="tool-lookup" class="tool-button is-active" type="button" role="tab" aria-selected="true" aria-controls="tool-panel-lookup" data-tool-pane="lookup">Lookup &amp; playback</button>
-            <button id="tool-pronunciation" class="tool-button" type="button" role="tab" aria-selected="false" aria-controls="tool-panel-pronunciation" data-tool-pane="pronunciation">Pronunciation</button>
-          </div>
-          <div id="tool-panel-lookup" role="tabpanel" aria-labelledby="tool-lookup" data-tool-content="lookup">
-            <fieldset class="option-group">
-              <legend>Word lookup</legend>
-            <label class="field-label">Lookup card position
-              <select id="lookupCardPosition"><option value="smart">Near subtitles</option><option value="cursor">Beside pointer</option><option value="top-right">Upper right</option></select>
-            </label>
-            <label class="check-row"><input id="hoverLookup" type="checkbox"> Look up a French word after hovering</label>
-            <label class="check-row"><input id="wordAlignment" type="checkbox"> Match translated words when evidence is reliable</label>
-            <label class="check-row"><input id="preloadVideoWords" type="checkbox"> Preload frequent words from timed captions</label>
-            <label class="check-row"><input id="selectionTranslation" type="checkbox"> Allow drag-selection of French phrases</label>
-            <label class="check-row"><input id="pauseOnLookup" type="checkbox"> Pause while a lookup card is open</label>
-            <label class="range-row">Hover delay <output id="hoverDelayOutput"></output><input id="hoverDelay" type="range" min="120" max="1200" step="20"></label>
-            </fieldset>
-            <fieldset class="option-group">
-              <legend>Playback assistance</legend>
-            <label class="check-row"><input id="recallMode" type="checkbox"> Hide English until French is hovered</label>
-            <label class="check-row"><input id="autoPause" type="checkbox"> Pause at each new subtitle line</label>
-            <label class="check-row"><input id="skipCaptionGaps" type="checkbox"> Skip silent gaps longer than 1.5 seconds</label>
-            </fieldset>
-            <p class="privacy">Word preloading sends a limited set of frequent words to your selected translation provider and stops if that provider starts rejecting requests.</p>
-            <p class="privacy">Use “Select phrase” in a word card, then click the final word. Drag-selection also works.</p>
-            <div class="service-actions"><button id="copyDiagnostics" type="button">Copy diagnostics</button><button id="openShortcuts" type="button">Keyboard shortcuts</button></div>
-          </div>
-          <div id="tool-panel-pronunciation" role="tabpanel" aria-labelledby="tool-pronunciation" data-tool-content="pronunciation" hidden>
-            <label class="field-label">French pronunciation voice
-              <select id="pronunciationVoiceURI"><option value="">Best available French voice</option></select>
-            </label>
-            <label class="range-row">Pronunciation speed <output id="pronunciationRateOutput"></output><input id="pronunciationRate" type="range" min="0.65" max="1.1" step="0.05"></label>
-            <button id="previewPronunciation" type="button">Preview French voice</button>
-            <p class="privacy">Firefox receives voices from your operating system. If none is available, use the setup button for Windows, macOS, and Linux instructions, then restart Firefox.</p>
-          </div>
+          <details id="tool-panel-lookup" class="settings-group" data-tool-content="lookup">
+            <summary><span>Word lookup</span><small>Hover, matching, phrases</small></summary>
+            <div class="settings-group-body">
+              <label class="check-row"><input id="hoverLookup" type="checkbox"> Look up French words on hover</label>
+              <label class="check-row"><input id="wordAlignment" type="checkbox"> Highlight reliable English matches</label>
+              <label class="check-row"><input id="selectionTranslation" type="checkbox"> Allow selecting French phrases</label>
+              <label class="field-label">Card position
+                <select id="lookupCardPosition"><option value="smart">Near subtitles</option><option value="cursor">Beside pointer</option><option value="top-right">Upper right</option></select>
+              </label>
+              <details class="sub-settings-group">
+                <summary>More lookup options</summary>
+                <label class="check-row"><input id="preloadVideoWords" type="checkbox"> Preload frequent video words</label>
+                <label class="check-row"><input id="pauseOnLookup" type="checkbox"> Pause while a card is open</label>
+                <label class="range-row">Hover delay <output id="hoverDelayOutput"></output><input id="hoverDelay" type="range" min="120" max="1200" step="20"></label>
+                <p class="privacy">Preloading sends a limited set of frequent words to the selected provider.</p>
+              </details>
+            </div>
+          </details>
+
+          <details class="settings-group" data-tool-content="playback">
+            <summary><span>Playback practice</span><small>Recall, pauses, gaps</small></summary>
+            <div class="settings-group-body">
+              <label class="check-row"><input id="recallMode" type="checkbox"> Hide English until French is hovered</label>
+              <label class="check-row"><input id="autoPause" type="checkbox"> Pause at each new subtitle line</label>
+              <label class="check-row"><input id="skipCaptionGaps" type="checkbox"> Skip silent gaps longer than 1.5 seconds</label>
+            </div>
+          </details>
+
+          <details id="tool-panel-pronunciation" class="settings-group" data-tool-content="pronunciation">
+            <summary><span>Pronunciation</span><small>French voice and speed</small></summary>
+            <div class="settings-group-body">
+              <label class="field-label">French voice
+                <select id="pronunciationVoiceURI"><option value="">Best available French voice</option></select>
+              </label>
+              <label class="range-row">Speed <output id="pronunciationRateOutput"></output><input id="pronunciationRate" type="range" min="0.65" max="1.1" step="0.05"></label>
+              <button id="previewPronunciation" type="button">Preview French voice</button>
+              <p class="privacy">Voices come from your operating system. The setup button appears when no French voice is installed.</p>
+            </div>
+          </details>
+
+          <details class="settings-group" data-tool-content="support">
+            <summary><span>Shortcuts &amp; troubleshooting</span><small>Keys and diagnostics</small></summary>
+            <div class="settings-group-body service-actions"><button id="openShortcuts" type="button">Keyboard shortcuts</button><button id="copyDiagnostics" type="button">Copy diagnostics</button></div>
+          </details>
         </section>
       </div>
     </main>
 
-    <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="shortcut-hint"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> video OCR · <kbd>T</kbd> transcript · <kbd>D</kbd> toggle</span></footer>
+    <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="shortcut-hint">Shortcuts and diagnostics are in Tools</span></footer>
     <script src="popup.js"></script>
   </body>
 </html>

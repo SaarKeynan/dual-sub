@@ -38,10 +38,11 @@ const settingDestinations = [
   ["Translated-word matching", "alignment matching English French words", "wordAlignment", "tools", "lookup"],
   ["Phrase selection", "multiple words drag selection sentence", "selectionTranslation", "tools", "lookup"],
   ["Lookup pauses", "pause card open auto pause each line", "pauseOnLookup", "tools", "lookup"],
-  ["Reveal English on demand", "recall hide English hover", "recallMode", "tools", "lookup"],
-  ["Skip silent gaps", "silence gap skip playback", "skipCaptionGaps", "tools", "lookup"],
+  ["Reveal English on demand", "recall hide English hover", "recallMode", "tools", "playback"],
+  ["Pause each subtitle line", "auto pause study shadow playback", "autoPause", "tools", "playback"],
+  ["Skip silent gaps", "silence gap skip playback", "skipCaptionGaps", "tools", "playback"],
   ["French pronunciation", "voice speech speed pronounce", "pronunciationVoiceURI", "tools", "pronunciation"],
-  ["Diagnostics and shortcuts", "copy diagnostics keyboard keys customize", "copyDiagnostics", "tools", "lookup"]
+  ["Diagnostics and shortcuts", "copy diagnostics keyboard keys customize", "copyDiagnostics", "tools", "support"]
 ].map(([label, keywords, id, panel, subpanel]) => ({ label, keywords, id, panel, subpanel }));
 
 function element(id) {
@@ -57,7 +58,11 @@ function navigateToSetting(destination) {
   if (destination.panel === "appearance") activateAppearance(destination.subpanel || "source");
   if (destination.panel === "tools") activateToolPane(destination.subpanel || "lookup");
   const target = element(destination.id);
-  target?.closest("details")?.setAttribute("open", "");
+  let containingDetails = target?.closest("details");
+  while (containingDetails) {
+    containingDetails.open = true;
+    containingDetails = containingDetails.parentElement?.closest("details");
+  }
   const settingRow = target?.closest("label, .service-actions") || target;
   element("settingsSearchResults").hidden = true;
   requestAnimationFrame(() => {
@@ -147,17 +152,9 @@ function enableTabKeyboardNavigation(selector, activate) {
 }
 
 function activateToolPane(name) {
-  const selected = document.querySelector(`[data-tool-content="${name}"]`) ? name : "lookup";
-  document.querySelectorAll(".tool-button").forEach((button) => {
-    const active = button.dataset.toolPane === selected;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-selected", String(active));
-    button.tabIndex = active ? 0 : -1;
-  });
-  document.querySelectorAll("[data-tool-content]").forEach((pane) => {
-    pane.hidden = pane.dataset.toolContent !== selected;
-  });
-  sessionStorage.setItem("dualsub-tools-pane", selected);
+  const selected = document.querySelector(`[data-tool-content="${name}"]`) || document.querySelector('[data-tool-content="lookup"]');
+  if (selected instanceof HTMLDetailsElement) selected.open = true;
+  sessionStorage.setItem("dualsub-tools-pane", selected?.dataset.toolContent || "lookup");
 }
 
 function updateProviderFields() {
@@ -473,11 +470,6 @@ async function initialize() {
   });
   activateAppearance(sessionStorage.getItem("dualsub-appearance-language") || "source");
   enableTabKeyboardNavigation(".appearance-button", (button) => activateAppearance(button.dataset.appearance));
-  document.querySelectorAll(".tool-button").forEach((button) => {
-    button.addEventListener("click", () => activateToolPane(button.dataset.toolPane));
-  });
-  activateToolPane(sessionStorage.getItem("dualsub-tools-pane") || "lookup");
-  enableTabKeyboardNavigation(".tool-button", (button) => activateToolPane(button.dataset.toolPane));
   const defaultResponse = await browser.runtime.sendMessage({ type: "get-default-settings" });
   defaults = defaultResponse.settings;
   const stored = await browser.storage.sync.get("settings");
@@ -545,6 +537,7 @@ async function initialize() {
   });
   element("captureText").addEventListener("click", async () => {
     const button = element("captureText");
+    const originalLabel = Array.from(button.childNodes, (node) => node.cloneNode(true));
     button.disabled = true;
     button.textContent = "Capturing…";
     try {
@@ -556,7 +549,7 @@ async function initialize() {
       statusNode.textContent = error.message || "Could not capture the video.";
       statusNode.dataset.state = "error";
       button.disabled = false;
-      button.textContent = "Capture text (OCR)";
+      button.replaceChildren(...originalLabel);
     }
   });
   element("openSidebar").addEventListener("click", async () => {
@@ -588,7 +581,7 @@ async function initialize() {
     } catch (_error) {
       button.textContent = "Open a video first";
     }
-    setTimeout(() => { button.textContent = "Remember timing and mode for this video"; }, 1800);
+    setTimeout(() => { button.textContent = "Remember for this video"; }, 1800);
   });
   element("saveProvider").addEventListener("click", async () => {
     const statusNode = element("providerStatus");

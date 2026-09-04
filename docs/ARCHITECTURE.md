@@ -1,7 +1,7 @@
 # DualSub architecture and behavior
 
 This document explains how the extension is divided, how its parts communicate,
-and how the main user-visible features work. It describes version 0.8.4.
+and how the main user-visible features work. It describes version 0.8.5.
 
 ## Runtime architecture
 
@@ -282,7 +282,11 @@ The type-or-paste mode uses the same debounced translation path without OCR.
 ## Settings and profiles
 
 The toolbar/options page groups controls into General, Appearance, and Tools.
-Changes are debounced and written to `browser.storage.sync.settings`. Both
+Common choices stay visible while timing, provider access, typography, layout,
+lookup details, playback practice, pronunciation, and troubleshooting use
+expandable task-based cards. Search opens the correct category and every nested
+card containing a result. Changes are debounced and written to
+`browser.storage.sync.settings`. Both
 `background.js` and `content.js` merge stored values into defaults so upgrades
 can add settings safely. Nested subtitle styles and word-group colors are
 merged separately.

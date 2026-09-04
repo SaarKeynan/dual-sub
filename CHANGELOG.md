@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.5 — calmer settings menu
+
+- Reduced the toolbar to four compact actions and three stable top-level
+  categories: General, Appearance, and Tools.
+- General now keeps only everyday caption choices visible; timing and provider
+  configuration are expandable cards.
+- Appearance keeps previews and common controls prominent while typography,
+  word colors, and layout use progressive disclosure.
+- Replaced the nested Tools tabs and fieldsets with clear Word lookup, Playback
+  practice, Pronunciation, and Troubleshooting cards.
+- Settings search now opens every containing card, including nested advanced
+  options, so simplified navigation does not make controls harder to find.
+
 ## 0.8.4 — in-page OCR results
 
 - OCR recognition and translation now appear in a centered modal inside the
