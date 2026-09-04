@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DualSub for YouTube",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Learn French on YouTube with synchronized bilingual subtitles, instant lookup, vocabulary, and review.",
   "permissions": [
     "activeTab",
@@ -68,6 +68,12 @@
         "default": "Alt+Shift+T"
       },
       "description": "Open the DualSub transcript sidebar"
+    },
+    "open-video-ocr": {
+      "suggested_key": {
+        "default": "Alt+Shift+O"
+      },
+      "description": "Capture and translate text from the current video"
     },
     "previous-caption": {
       "suggested_key": { "default": "Alt+Shift+Left" },

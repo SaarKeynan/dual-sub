@@ -26,6 +26,9 @@ interactive study surface.
   an empty downloadable translation, DualSub falls back to the player's live
   English caption renderer.
 - One-click on/off switch and `Alt+Shift+D` keyboard shortcut.
+- A compact type-or-paste translator and local French OCR workspace. Video OCR
+  captures only the visible YouTube video, opens without replacing the video
+  tab, and translates typed or recognized text automatically.
 - Faster loading through parallel page/extension caption requests, concurrent
   format fallbacks, cached caption payloads, and an event-driven upgrade when
   YouTube exposes an authenticated auto-caption request.
@@ -102,6 +105,7 @@ interactive study surface.
 - `Alt+Shift+D`: toggle DualSub.
 - `Alt+Shift+R`: replay the current French subtitle line.
 - `Alt+Shift+V`: open the vocabulary workspace.
+- `Alt+Shift+O`: capture the visible video and open the OCR translator.
 - `Alt+Shift+Left` / `Alt+Shift+Right`: previous or next caption.
 
 Firefox shortcuts can be reassigned from **Add-ons and themes → Extensions →

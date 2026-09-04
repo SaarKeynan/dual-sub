@@ -2,6 +2,8 @@ let captureImage = null;
 let selection = null;
 let dragStart = null;
 let ocrWorkerPromise = null;
+let translationTimer = 0;
+let translationRequestId = 0;
 
 const element = (id) => document.getElementById(id);
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
@@ -152,9 +154,10 @@ async function runOcr() {
     element("sourceText").value = text;
     element("ocrProgressBar").style.width = "100%";
     element("ocrProgressText").textContent = "Text recognized";
-    setStatus("OCR complete. Check the French text, then translate.", "success");
+    setStatus("Text recognized. Translating automatically…", "success");
     element("sourceText").scrollIntoView({ behavior: "smooth", block: "center" });
     element("sourceText").focus({ preventScroll: true });
+    scheduleAutomaticTranslation(80);
   } catch (error) {
     element("ocrProgress").hidden = true;
     setStatus(error.message || "OCR could not read this selection.", "error");
@@ -170,13 +173,26 @@ function updateTranslationActions() {
   element("saveCorrection").disabled = !ready;
 }
 
-async function translateText() {
+function scheduleAutomaticTranslation(delay = 550) {
+  window.clearTimeout(translationTimer);
+  translationRequestId += 1;
+  const sourceText = element("sourceText").value.replace(/\s+/g, " ").trim();
+  element("targetText").value = "";
+  updateTranslationActions();
+  if (!sourceText) { setStatus(""); return; }
+  setStatus("Waiting for you to finish typing…");
+  translationTimer = window.setTimeout(() => translateText({ automatic: true }), delay);
+}
+
+async function translateText({ automatic = false } = {}) {
+  window.clearTimeout(translationTimer);
   const sourceText = element("sourceText").value.replace(/\s+/g, " ").trim();
   if (!sourceText) { setStatus("Enter or recognize some French text first.", "error"); return; }
+  const requestId = ++translationRequestId;
   const button = element("translateText");
   button.disabled = true;
-  button.textContent = "Translating…";
-  setStatus("Using your selected translation engine…");
+  if (!automatic) button.textContent = "Translating…";
+  setStatus(automatic ? "Translating as you type…" : "Using your selected translation engine…");
   try {
     const wordCount = (sourceText.match(/[\p{L}\p{N}]+/gu) || []).length;
     const response = await browser.runtime.sendMessage({
@@ -187,13 +203,17 @@ async function translateText() {
       cacheMode: wordCount <= 3 ? "word" : "phrase"
     });
     if (!response?.ok) throw new Error(response?.error || "Translation unavailable.");
+    if (requestId !== translationRequestId || sourceText !== element("sourceText").value.replace(/\s+/g, " ").trim()) return;
     element("targetText").value = response.translatedText;
     setStatus(response.provenance === "Your correction" ? "Using your saved correction." : "Translated.", "success");
   } catch (error) {
+    if (requestId !== translationRequestId) return;
     setStatus(error.message || "Translation unavailable.", "error");
   } finally {
-    button.disabled = false;
-    button.textContent = "Translate";
+    if (requestId === translationRequestId) {
+      button.disabled = false;
+      button.textContent = "Translate now";
+    }
     updateTranslationActions();
   }
 }
@@ -212,8 +232,30 @@ async function saveCorrection() {
   setStatus(response?.ok ? "Correction saved for this exact word or phrase." : (response?.error || "Could not save correction."), response?.ok ? "success" : "error");
 }
 
+function captureCropPixels(crop, imageWidth, imageHeight) {
+  const scaleX = imageWidth / Math.max(1, Number(crop?.viewportWidth) || imageWidth);
+  const scaleY = imageHeight / Math.max(1, Number(crop?.viewportHeight) || imageHeight);
+  const x = clamp(Math.round(Number(crop?.left || 0) * scaleX), 0, Math.max(0, imageWidth - 1));
+  const y = clamp(Math.round(Number(crop?.top || 0) * scaleY), 0, Math.max(0, imageHeight - 1));
+  const width = clamp(Math.round(Number(crop?.width || imageWidth) * scaleX), 1, imageWidth - x);
+  const height = clamp(Math.round(Number(crop?.height || imageHeight) * scaleY), 1, imageHeight - y);
+  return { x, y, width, height };
+}
+
+function loadImage(image, source) {
+  return new Promise((resolve, reject) => {
+    image.addEventListener("load", resolve, { once: true });
+    image.addEventListener("error", reject, { once: true });
+    image.src = source;
+  });
+}
+
 async function loadCapture() {
-  const stored = await browser.storage.local.get("ocrCaptureV1");
+  const stored = await browser.storage.local.get(["ocrCaptureV1", "ocrCaptureErrorV1"]);
+  if (stored.ocrCaptureErrorV1) {
+    setStatus(stored.ocrCaptureErrorV1, "error");
+    await browser.storage.local.remove("ocrCaptureErrorV1");
+  }
   const capture = stored.ocrCaptureV1;
   if (!capture?.dataUrl || Date.now() - Number(capture.capturedAt || 0) > 10 * 60_000) {
     if (capture) await browser.storage.local.remove("ocrCaptureV1");
@@ -221,11 +263,18 @@ async function loadCapture() {
   }
   const image = element("captureImage");
   try {
-    await new Promise((resolve, reject) => {
-      image.addEventListener("load", resolve, { once: true });
-      image.addEventListener("error", reject, { once: true });
-      image.src = capture.dataUrl;
-    });
+    const screenshot = new Image();
+    await loadImage(screenshot, capture.dataUrl);
+    if (capture.crop) {
+      const crop = captureCropPixels(capture.crop, screenshot.naturalWidth, screenshot.naturalHeight);
+      const canvas = document.createElement("canvas");
+      canvas.width = crop.width;
+      canvas.height = crop.height;
+      canvas.getContext("2d").drawImage(screenshot, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+      await loadImage(image, canvas.toDataURL("image/jpeg", .95));
+    } else {
+      await loadImage(image, capture.dataUrl);
+    }
   } finally {
     await browser.storage.local.remove("ocrCaptureV1");
   }
@@ -280,6 +329,8 @@ element("copyTranslation").addEventListener("click", async () => {
   }
 });
 element("clearText").addEventListener("click", () => {
+  window.clearTimeout(translationTimer);
+  translationRequestId += 1;
   element("sourceText").value = "";
   element("targetText").value = "";
   setStatus("");
@@ -289,7 +340,7 @@ element("clearText").addEventListener("click", () => {
 element("sourceText").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); translateText(); }
 });
-element("sourceText").addEventListener("input", updateTranslationActions);
+element("sourceText").addEventListener("input", () => scheduleAutomaticTranslation());
 element("targetText").addEventListener("input", updateTranslationActions);
 element("closePage").addEventListener("click", () => window.close());
 window.addEventListener("pagehide", () => { ocrWorkerPromise?.then((worker) => worker.terminate()).catch(() => {}); });

@@ -28,9 +28,10 @@ async function testCaptionProcessing() {
   const wordMatching = extract(source, "  function normalizeLookupWord", "  function handleWordPointerOver");
   const elisionTools = extract(source, "  function splitFrenchElision", "  function tagFrenchWord");
   const nativeMessageFilter = extract(source, "  function isNativeCaptionSystemMessage", "  function readNativeCaptionText");
+  const captureCrop = extract(translatorSource, "function captureCropPixels", "function loadImage");
   const context = { console };
   vm.createContext(context);
-  vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${elisionTools}\n${nativeMessageFilter}`, context);
+  vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${elisionTools}\n${nativeMessageFilter}\nconst clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));\n${captureCrop}`, context);
 
   const payload = JSON.stringify({ events: [
     { tStartMs: 793000, dDurationMs: 3000, segs: [{ utf8: "alors là on fait un micro trottoir sur" }] },
@@ -162,6 +163,14 @@ async function testCaptionProcessing() {
   assert(translatorHtml.includes('id="captureStage"') && translatorHtml.includes('id="sourceText"'));
   assert(translatorSource.includes('Tesseract.createWorker("fra"'));
   assert(translatorSource.includes('browser.storage.local.remove("ocrCaptureV1")'));
+  assert(translatorSource.includes("scheduleAutomaticTranslation(80)"), "OCR output should translate automatically");
+  assert(translatorSource.includes("Translating as you type"), "Typed text should translate after a debounce");
+  assert(source.includes('message?.type === "get-video-capture-info"'), "The content script should expose the video rectangle");
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.captureCropPixels({ left: 100, top: 50, width: 800, height: 450, viewportWidth: 1000, viewportHeight: 600 }, 2000, 1200))),
+    { x: 200, y: 100, width: 1600, height: 900 },
+    "Video crop coordinates should scale from CSS pixels to screenshot pixels"
+  );
   for (const asset of [
     "vendor/tesseract/tesseract.min.js",
     "vendor/tesseract/worker.min.js",
@@ -350,7 +359,8 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.0");
+  assert.strictEqual(manifest.version, "0.8.1");
+  assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
   assert.strictEqual(manifest.sidebar_action.default_panel, "sidebar/sidebar.html");
   assert(manifest.commands["open-transcript"], "The transcript sidebar should have a keyboard command");
   assert(manifest.background.scripts.includes("translation-engine.js"));

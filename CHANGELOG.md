@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.1 — quick video OCR
+
+- OCR captures only the visible YouTube video instead of browser chrome and the
+  rest of the page.
+- OCR and typed translation now open in a compact standalone window, so the
+  YouTube tab remains in place.
+- Added `Alt+Shift+O` to capture the current video and open OCR immediately.
+- Typed and OCR-recognized French now translates automatically with a short
+  debounce, while stale translation responses are ignored.
+
 ## 0.8.0 — manual translation and local OCR
 
 - Replaced the native correction prompt with an inline editor that visibly

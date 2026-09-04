@@ -501,6 +501,34 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   browser.action.setBadgeBackgroundColor({ color: settings.enabled ? "#16a34a" : "#64748b" });
 });
 
+async function openTranslatorWindow(mode = "type") {
+  const suffix = mode === "ocr" ? "#ocr" : "";
+  return browser.windows.create({
+    url: browser.runtime.getURL(`tools/translator.html${suffix}`),
+    type: "popup",
+    width: 720,
+    height: 780,
+    focused: true
+  });
+}
+
+async function captureVideoForOcr() {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !tab.windowId || !tab.url?.includes("youtube.com/")) {
+    throw new Error("Open a YouTube video first.");
+  }
+  const captureInfo = await browser.tabs.sendMessage(tab.id, { type: "get-video-capture-info" });
+  if (!captureInfo?.ok || !captureInfo.crop) {
+    throw new Error(captureInfo?.error || "The video could not be located on this page.");
+  }
+  const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 94 });
+  await browser.storage.local.set({
+    ocrCaptureV1: { dataUrl, crop: captureInfo.crop, capturedAt: Date.now(), sourceUrl: tab.url }
+  });
+  await openTranslatorWindow("ocr");
+  return { ok: true };
+}
+
 browser.commands.onCommand.addListener(async (command) => {
   if (command === "toggle-dualsub") {
     const settings = await getSettings();
@@ -513,6 +541,11 @@ browser.commands.onCommand.addListener(async (command) => {
     await browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
   } else if (command === "open-transcript") {
     await browser.sidebarAction.open().catch(() => {});
+  } else if (command === "open-video-ocr") {
+    await captureVideoForOcr().catch(async (error) => {
+      await browser.storage.local.set({ ocrCaptureErrorV1: error.message || "The video could not be captured." });
+      await openTranslatorWindow("ocr");
+    });
   } else if (["previous-caption", "next-caption"].includes(command)) {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (tab?.id) browser.tabs.sendMessage(tab.id, { type: "navigate-cue", direction: command === "previous-caption" ? -1 : 1 }).catch(() => {});
@@ -523,6 +556,15 @@ browser.commands.onCommand.addListener(async (command) => {
 });
 
 browser.runtime.onMessage.addListener((message) => {
+  if (message?.type === "open-translator-popup") {
+    return openTranslatorWindow("type")
+      .then(() => ({ ok: true }))
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
+  if (message?.type === "open-video-ocr-popup") {
+    return captureVideoForOcr()
+      .catch((error) => ({ ok: false, error: error.message }));
+  }
   if (message?.type === "fetch-captions") {
     return fetchCaptions(message.url).then((text) => ({ ok: true, text }));
   }

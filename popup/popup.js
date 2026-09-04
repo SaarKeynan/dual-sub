@@ -533,26 +533,27 @@ async function initialize() {
     browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") });
     window.close();
   });
-  element("openTranslator").addEventListener("click", () => {
-    browser.tabs.create({ url: browser.runtime.getURL("tools/translator.html") });
-    window.close();
+  element("openTranslator").addEventListener("click", async () => {
+    const response = await browser.runtime.sendMessage({ type: "open-translator-popup" });
+    if (response?.ok) {
+      window.close();
+    } else {
+      const statusNode = element("playerStatus");
+      statusNode.textContent = response?.error || "Could not open the translator.";
+      statusNode.dataset.state = "error";
+    }
   });
   element("captureText").addEventListener("click", async () => {
     const button = element("captureText");
     button.disabled = true;
     button.textContent = "Capturing…";
     try {
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.windowId || !tab.url?.includes("youtube.com/")) throw new Error("Open a YouTube video first.");
-      const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 92 });
-      await browser.storage.local.set({
-        ocrCaptureV1: { dataUrl, capturedAt: Date.now(), sourceUrl: tab.url }
-      });
-      await browser.tabs.create({ url: browser.runtime.getURL("tools/translator.html#ocr") });
+      const response = await browser.runtime.sendMessage({ type: "open-video-ocr-popup" });
+      if (!response?.ok) throw new Error(response?.error || "Could not capture the video.");
       window.close();
     } catch (error) {
       const statusNode = element("playerStatus");
-      statusNode.textContent = error.message || "Could not capture the visible tab.";
+      statusNode.textContent = error.message || "Could not capture the video.";
       statusNode.dataset.state = "error";
       button.disabled = false;
       button.textContent = "Capture text (OCR)";

@@ -15,17 +15,17 @@
     <main>
       <nav class="mode-tabs" role="tablist" aria-label="Text input method">
         <button id="modeType" class="is-active" type="button" role="tab" aria-selected="true" data-mode="type">Type or paste</button>
-        <button id="modeOcr" type="button" role="tab" aria-selected="false" data-mode="ocr">Screen capture OCR</button>
+        <button id="modeOcr" type="button" role="tab" aria-selected="false" data-mode="ocr">Video OCR</button>
       </nav>
 
       <section id="ocrPanel" class="ocr-panel" role="tabpanel" aria-labelledby="modeOcr" hidden>
         <div class="section-heading"><div><h2>Select the French text</h2><p>Drag a box around the text, then run OCR.</p></div><button id="discardCapture" type="button">Discard image</button></div>
         <div id="captureEmpty" class="empty-capture">
           <strong>No capture loaded</strong>
-          <span>Return to YouTube and choose <b>Capture text (OCR)</b> from the DualSub toolbar.</span>
+          <span>On YouTube, press <b>Alt+Shift+O</b> or choose <b>Capture text (OCR)</b> from DualSub.</span>
         </div>
         <div id="captureStage" class="capture-stage" hidden>
-          <img id="captureImage" alt="Captured browser tab; drag to select French text">
+          <img id="captureImage" alt="Captured YouTube video; drag to select French text">
           <div id="selectionBox" class="selection-box" aria-hidden="true"></div>
         </div>
         <div class="ocr-controls">
@@ -49,7 +49,7 @@
           </label>
         </div>
         <div class="workspace-actions">
-          <button id="translateText" class="primary" type="button">Translate</button>
+          <button id="translateText" class="primary" type="button">Translate now</button>
           <button id="copyTranslation" type="button" disabled>Copy translation</button>
           <button id="saveCorrection" type="button" disabled>Use this correction</button>
           <button id="clearText" type="button">Clear</button>

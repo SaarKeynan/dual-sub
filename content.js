@@ -2597,6 +2597,29 @@
 
   browser.runtime.onMessage.addListener((message) => {
     if (message?.type === "get-status") return Promise.resolve(status);
+    if (message?.type === "get-video-capture-info") {
+      const activeVideo = video?.isConnected ? video : document.querySelector("video");
+      if (!activeVideo) return Promise.resolve({ ok: false, error: "No video is visible on this page." });
+      const rect = activeVideo.getBoundingClientRect();
+      const left = Math.max(0, rect.left);
+      const top = Math.max(0, rect.top);
+      const right = Math.min(window.innerWidth, rect.right);
+      const bottom = Math.min(window.innerHeight, rect.bottom);
+      if (right - left < 2 || bottom - top < 2) {
+        return Promise.resolve({ ok: false, error: "The video is not currently visible." });
+      }
+      return Promise.resolve({
+        ok: true,
+        crop: {
+          left,
+          top,
+          width: right - left,
+          height: bottom - top,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight
+        }
+      });
+    }
     if (message?.type === "get-transcript-state") return buildTranscriptState(message);
     if (message?.type === "save-current-video-profile") {
       if (!currentVideoId) return Promise.resolve({ ok: false, error: "Open a video first." });
