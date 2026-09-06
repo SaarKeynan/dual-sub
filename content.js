@@ -28,6 +28,12 @@
     pauseOnLookup: false,
     recallMode: false,
     autoPause: false,
+    studyMode: "watch",
+    captionHoldMs: 350,
+    smartPauseUnknownOnly: true,
+    skipCaptionGaps: false,
+    translationBufferSeconds: 90,
+    translationBatchSize: 30,
     lookupCardPosition: "smart",
     hoverDelay: 420,
     pronunciationVoiceURI: "",
@@ -66,10 +72,15 @@
   const dismissedStatusKeys = new Set();
   let selectionCard;
   let video;
+  let ocrSelectionSession = null;
+  let ocrPopup = null;
   let animationFrame;
+  let videoFrameCallbackId;
+  const observedVideos = new WeakSet();
   let sourceCues = [];
   let targetCues = [];
   let currentVideoId = "";
+  let sourceTrackState = "unknown";
   let currentSourceText = "";
   let currentTargetText = "";
   let currentSourceCue = null;
@@ -111,7 +122,11 @@
   let timedTrackRecoveryLastError = "";
   let usingAheadTranslation = false;
   const aheadTranslations = new Map();
+  const aheadAlignments = new Map();
+  const aheadAlignmentKinds = new Map();
+  const aheadTranslationProvenance = new Map();
   const lookupTranslationCache = new Map();
+  const lookupTranslationMetadata = new Map();
   const aheadTranslationPending = new Set();
   const aheadTranslationFailed = new Set();
   const aheadTranslationQueue = [];
@@ -119,6 +134,10 @@
   let aheadTranslationGeneration = 0;
   let lastAheadPrefetchAt = 0;
   let aheadTranslationFocusIndex = -1;
+  let aheadTranslationSessionId = "";
+  let aheadTranslationBlockedUntil = 0;
+  let aheadTranslationLastError = "";
+  let aheadTranslationRetryTimer;
   let wordWarmupGeneration = 0;
   let wordWarmupTimer;
   let wordWarmupQueued = 0;
@@ -135,6 +154,16 @@
   let loopCueRange = null;
   let playbackRateBeforeSlow = 1;
   let lastPlaybackCueIndex = -1;
+  let lastSkippedGapIndex = -1;
+  let wordStatesCache = {};
+  let wordStatesRevision = 0;
+  let transcriptRevision = 0;
+  let transcriptSourceRevision = 0;
+  let transcriptSourceReference = null;
+  let transcriptTargetReference = null;
+  let transcriptTranslationCount = -1;
+  let transcriptAnalysisCache = null;
+  let currentVideoProfile = null;
 
   function mergeSettings(value = {}) {
     const wordGroupColors = { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) };
@@ -145,11 +174,21 @@
     return {
       ...DEFAULT_SETTINGS,
       ...value,
+      studyMode: ["watch", "study", "shadow"].includes(value.studyMode) ? value.studyMode : "watch",
       wordGroupPaletteVersion: 2,
       wordGroupColors,
       sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
       targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
     };
+  }
+
+  function effectiveStudyMode() {
+    const mode = currentVideoProfile?.studyMode || settings.studyMode || "watch";
+    return ["study", "shadow"].includes(mode) ? mode : "watch";
+  }
+
+  function effectiveCaptionOffsetMs() {
+    return Number(currentVideoProfile?.captionOffsetMs ?? settings.captionOffsetMs ?? 0);
   }
 
   function hexToRgba(hex, opacity) {
@@ -173,17 +212,19 @@
   }
 
   function applySettings() {
-    if (!root) return;
-    const active = settings.enabled && location.pathname === "/watch";
-    root.hidden = !active;
+    const onWatchPage = settings.enabled && location.pathname === "/watch";
+    const active = onWatchPage && sourceTrackState !== "unavailable";
+    const sourceTrackConfirmed = onWatchPage && sourceTrackState === "available";
     document.documentElement.classList.toggle(
       "dualsub-enabled",
-      active && settings.hideNativeCaptions
+      sourceTrackConfirmed && settings.hideNativeCaptions
     );
     document.documentElement.classList.toggle(
       "dualsub-native-fallback",
-      active && (usingNativeTranslation || usingNativeSource)
+      sourceTrackConfirmed && (usingNativeTranslation || usingNativeSource)
     );
+    if (!root) return;
+    root.hidden = !active;
     root.style.setProperty("--dualsub-bottom", `${settings.bottomOffset}px`);
     root.style.setProperty("--dualsub-width", `${settings.maxWidth}%`);
     for (const [group, color] of Object.entries(settings.wordGroupColors)) {
@@ -191,10 +232,12 @@
     }
     root.classList.toggle("dualsub-recall-mode", Boolean(settings.recallMode));
     root.classList.toggle("dualsub-color-word-groups", Boolean(settings.colorFrenchWordGroups));
+    root.dataset.studyMode = effectiveStudyMode();
     applyLineStyle(sourceLine, settings.sourceStyle);
     applyLineStyle(targetLine, settings.targetStyle);
 
     if (!active) {
+      stopRenderScheduler();
       stopVideoWordWarmup();
       loopCueRange = null;
       sourceLine.parentElement.classList.remove("is-visible");
@@ -204,8 +247,39 @@
       if (usingAheadTranslation) stopAheadTranslation();
     } else if (!usingNativeSource && !usingNativeTranslation && !usingAheadTranslation) {
       if (sourceCues.length && !targetCues.length) startAheadTranslation();
-      else if (!sourceCues.length) requestTrackData();
+      else if (!sourceCues.length && sourceTrackState === "unknown") requestTrackData();
+      requestRender();
     }
+  }
+
+  function stopRenderScheduler() {
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+    if (videoFrameCallbackId && video?.cancelVideoFrameCallback) video.cancelVideoFrameCallback(videoFrameCallbackId);
+    videoFrameCallbackId = null;
+  }
+
+  function scheduleNextRender() {
+    if (!settings.enabled || !video || video.paused || video.ended) return;
+    if (typeof video.requestVideoFrameCallback === "function") {
+      videoFrameCallbackId = video.requestVideoFrameCallback(() => {
+        videoFrameCallbackId = null;
+        renderLoop();
+      });
+    } else {
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = null;
+        renderLoop();
+      });
+    }
+  }
+
+  function requestRender() {
+    if (animationFrame || videoFrameCallbackId) return;
+    animationFrame = requestAnimationFrame(() => {
+      animationFrame = null;
+      renderLoop();
+    });
   }
 
   function createOverlay() {
@@ -234,36 +308,45 @@
             </div>
           </div>
           <div class="dualsub-card-source"></div>
+          <div class="dualsub-card-lexical" hidden>
+            <div class="dualsub-card-lexical-info"></div>
+          </div>
           <div class="dualsub-card-translation" data-group="unknown">
             <div class="dualsub-card-group" hidden></div>
             <div class="dualsub-card-result"></div>
+            <div class="dualsub-card-infinitive" hidden></div>
           </div>
-          <div class="dualsub-card-conjugation" hidden>
-            <div class="dualsub-card-label">Verb</div>
-            <div class="dualsub-card-lemma"></div>
-            <div class="dualsub-card-grammar"></div>
-            <div class="dualsub-card-example"></div>
-          </div>
+          <div class="dualsub-card-provenance" hidden><span></span><a target="_blank" rel="noopener noreferrer">Open engine lookup &nearr;</a></div>
+          <form class="dualsub-correction-form" hidden>
+            <label>Preferred English meaning<input class="dualsub-correction-input" type="text" maxlength="300" autocomplete="off"></label>
+            <div><button type="submit" data-action="save-correction">Save correction</button><button type="button" data-action="cancel-correction">Cancel</button></div>
+          </form>
           <div class="dualsub-card-context">
             <div class="dualsub-card-label">In this line</div>
             <div class="dualsub-card-sentence-source"></div>
             <div class="dualsub-card-sentence-target"></div>
           </div>
           <div class="dualsub-card-actions">
-            <button type="button" data-action="previous" title="Previous French word">← Word</button>
-            <button type="button" data-action="next" title="Next French word">Word →</button>
-            <button type="button" data-action="speak">Pronounce</button>
-            <button type="button" data-action="copy">Copy</button>
-            <button type="button" data-action="save">+ Vocabulary</button>
-            <button type="button" data-action="phrase">Select phrase</button>
-            <button type="button" data-action="replay">Replay</button>
-            <button type="button" data-action="slow">0.75× replay</button>
-            <button type="button" data-action="loop">Loop line</button>
+            <div class="dualsub-action-group dualsub-action-navigation">
+              <button type="button" data-action="previous" title="Previous French word" aria-label="Previous French word">←</button>
+              <button type="button" data-action="next" title="Next French word" aria-label="Next French word">→</button>
+            </div>
+            <div class="dualsub-action-group dualsub-action-primary">
+              <button type="button" data-action="speak">Pronounce</button>
+              <button type="button" data-action="save">+ Vocabulary</button>
+              <button type="button" data-action="phrase">Select phrase</button>
+            </div>
+            <div class="dualsub-action-group dualsub-action-secondary">
+              <button type="button" data-action="copy">Copy</button>
+              <button type="button" data-action="correct">Correct meaning</button>
+              <button type="button" data-action="replay">Replay</button>
+              <button type="button" data-action="slow">Slow replay</button>
+              <button type="button" data-action="loop">Loop line</button>
+            </div>
           </div>
           <div class="dualsub-card-links">
             <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>
             <a class="dualsub-card-wiktionary" target="_blank" rel="noopener noreferrer">Wiktionary &nearr;</a>
-            <a class="dualsub-card-examples" target="_blank" rel="noopener noreferrer">Example sentences &nearr;</a>
           </div>
         </div>`;
       player.appendChild(root);
@@ -284,6 +367,10 @@
       statusCloseNode.addEventListener("pointerdown", dismissStatus);
       statusCloseNode.addEventListener("click", dismissStatus);
       selectionCard = root.querySelector(".dualsub-selection-card");
+      selectionCard.querySelector(".dualsub-correction-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        selectionCard.querySelector('[data-action="save-correction"]').click();
+      });
       selectionCard.addEventListener("pointerenter", cancelLookupDismiss);
       selectionCard.addEventListener("pointerleave", () => scheduleLookupDismiss(180));
       sourceLine.addEventListener("pointerleave", () => {
@@ -314,7 +401,7 @@
   }
 
   function requestTrackData() {
-    if (!settings.enabled || location.pathname !== "/watch") return;
+    if (!settings.enabled || location.pathname !== "/watch" || sourceTrackState === "unavailable") return;
     window.dispatchEvent(new CustomEvent("dualsub:request-tracks"));
   }
 
@@ -362,7 +449,7 @@
       const cue = cues[cueIndex];
       const previous = folded[folded.length - 1];
       if (!previous) {
-        folded.push({ ...cue });
+        folded.push({ ...cue, fragments: (cue.fragments || [{ start: cue.start, end: cue.end, text: cue.text }]).map((fragment) => ({ ...fragment })) });
         continue;
       }
 
@@ -391,8 +478,9 @@
       ) {
         previous.text = joinCaptionParts([previous.text, cue.text]);
         previous.end = Math.max(previous.end, cue.end);
+        previous.fragments.push(...(cue.fragments || [{ start: cue.start, end: cue.end, text: cue.text }]).map((fragment) => ({ ...fragment, folded: true })));
       } else {
-        folded.push({ ...cue });
+        folded.push({ ...cue, fragments: (cue.fragments || [{ start: cue.start, end: cue.end, text: cue.text }]).map((fragment) => ({ ...fragment })) });
       }
     }
 
@@ -557,7 +645,8 @@
         const cue = {
           start,
           end: start + Number(event.dDurationMs || 0),
-          text
+          text,
+          fragments: [{ start, end: start + Number(event.dDurationMs || 0), text, append: Boolean(event.aAppend) }]
         };
 
         // `aAppend` is YouTube's explicit signal that this event extends the
@@ -566,6 +655,7 @@
           const previous = provisional[provisional.length - 1];
           previous.text = joinCaptionParts([previous.text, cue.text]);
           previous.end = Math.max(previous.end, cue.end);
+          previous.fragments.push(...cue.fragments);
         } else {
           provisional.push(cue);
         }
@@ -733,14 +823,22 @@
         type: "translate-selection",
         text,
         sourceLanguage: settings.sourceLanguage,
-        targetLanguage: settings.targetLanguage
+        targetLanguage: settings.targetLanguage,
+        context: liveSourceText || text
       });
       if (!usingNativeSource || sequence !== liveTranslationSequence || liveTranslationRequestText !== text) return;
       if (!response?.ok) throw new Error(response?.error || "Translation unavailable");
       if (revealTogether) liveSourceText = text;
       liveTargetText = response.translatedText;
       if (revealTogether && !observedNativeText) scheduleLiveLineClear();
-      const providerLabel = response.provider === "google" ? "Google" : "MyMemory";
+      const providerLabel = {
+        azure: "Azure",
+        deepl: "DeepL",
+        libretranslate: "LibreTranslate",
+        mymemory: "MyMemory",
+        google: "Google",
+        correction: "Your correction"
+      }[response.provider] || "Translation provider";
       clearTimeout(nativeFallbackTimer);
       if (timedTrackUpgradePending) {
         setStatus(
@@ -817,7 +915,8 @@
           type: "translate-selection",
           text: nativeSourceText,
           sourceLanguage: settings.sourceLanguage,
-          targetLanguage: settings.targetLanguage
+          targetLanguage: settings.targetLanguage,
+          context: nativeSourceText
         }).catch(() => {});
       }, 90);
       clearTimeout(pendingLiveTimer);
@@ -845,7 +944,11 @@
   function stopNativeCapture(restorePlayer = false) {
     captionRecoveryGeneration += 1;
     timedTrackUpgradePending = false;
-    if (!usingNativeTranslation && !usingNativeSource) return;
+    if (!usingNativeTranslation && !usingNativeSource) {
+      document.documentElement.classList.remove("dualsub-native-fallback");
+      if (restorePlayer) window.dispatchEvent(new CustomEvent("dualsub:restore-native-captions"));
+      return;
+    }
     usingNativeTranslation = false;
     usingNativeSource = false;
     nativeSourceTrack = null;
@@ -868,6 +971,28 @@
     }
   }
 
+  function useYouTubeNativeCaptions() {
+    sourceTrackState = "unavailable";
+    loadGeneration += 1;
+    stopNativeCapture(true);
+    stopAheadTranslation();
+    stopVideoWordWarmup();
+    sourceCues = [];
+    targetCues = [];
+    alignedTargetCues = [];
+    lastPlaybackCueIndex = -1;
+    loopCueRange = null;
+    renderCueText("", "");
+    hideSelectionCard();
+    clearTimeout(statusTimer);
+    status = { state: "native-only", message: "YouTube captions active · no French track" };
+    if (statusNode) {
+      statusNode.classList.remove("is-visible");
+      statusTextNode.textContent = "";
+    }
+    applySettings();
+  }
+
   async function loadTracks(payload) {
     if (!payload.ok) {
       setStatus("waiting", payload.error || "Waiting for captions…");
@@ -877,11 +1002,17 @@
     if (
       payload.videoId &&
       payload.videoId === currentVideoId &&
-      (sourceCues.length || usingNativeSource || usingNativeTranslation || usingAheadTranslation)
+      (sourceTrackState === "unavailable" || sourceCues.length || usingNativeSource || usingNativeTranslation || usingAheadTranslation)
     ) return;
 
     const generation = ++loadGeneration;
     currentVideoId = payload.videoId || "";
+    currentVideoProfile = null;
+    if (currentVideoId) {
+      const profileResponse = await browser.runtime.sendMessage({ type: "get-video-profile", videoId: currentVideoId }).catch(() => null);
+      currentVideoProfile = profileResponse?.profile || null;
+      applySettings();
+    }
     currentVideoTitle = payload.title || document.title.replace(/\s*-\s*YouTube\s*$/i, "");
     sourceCues = [];
     targetCues = [];
@@ -891,10 +1022,12 @@
 
     const sourceTrack = chooseTrack(payload.tracks || [], settings.sourceLanguage);
     if (!sourceTrack) {
-      setStatus("error", "This video has no French caption track.");
+      useYouTubeNativeCaptions();
       return;
     }
 
+    sourceTrackState = "available";
+    applySettings();
     const nativeTargetTrack = chooseTrack(payload.tracks || [], settings.targetLanguage);
     setStatus("loading", "Loading French + English subtitles…");
     try {
@@ -1040,14 +1173,24 @@
   }
 
   function stopAheadTranslation() {
+    const sessionId = aheadTranslationSessionId;
     usingAheadTranslation = false;
     aheadTranslationGeneration += 1;
     aheadTranslations.clear();
+    aheadAlignments.clear();
+    aheadAlignmentKinds.clear();
+    aheadTranslationProvenance.clear();
     aheadTranslationPending.clear();
     aheadTranslationFailed.clear();
     aheadTranslationQueue.length = 0;
     aheadTranslationActive = 0;
     aheadTranslationFocusIndex = -1;
+    aheadTranslationBlockedUntil = 0;
+    aheadTranslationLastError = "";
+    clearTimeout(aheadTranslationRetryTimer);
+    aheadTranslationRetryTimer = null;
+    aheadTranslationSessionId = "";
+    if (sessionId) browser.runtime.sendMessage({ type: "cancel-translation-session", sessionId }).catch(() => {});
   }
 
   function translationPrefetchOrder(cues, timeMs, leadMs = 60000, backfillMs = 8000) {
@@ -1088,6 +1231,89 @@
       .map((entry) => entry.text);
   }
 
+  function learningTokens(text) {
+    return (String(text || "").match(/[\p{L}]+(?:['\u2019][\p{L}]+)*/gu) || [])
+      .map((word) => word.normalize("NFC").toLocaleLowerCase("fr"))
+      .filter((word) => word.length > 1);
+  }
+
+  async function buildTranscriptState(request = {}) {
+    const sourceChanged = transcriptSourceReference !== sourceCues;
+    const targetChanged = transcriptTargetReference !== targetCues;
+    const translationCountChanged = transcriptTranslationCount !== aheadTranslations.size;
+    if (sourceChanged || targetChanged || translationCountChanged) {
+      transcriptRevision += 1;
+      if (sourceChanged) transcriptSourceRevision += 1;
+      transcriptSourceReference = sourceCues;
+      transcriptTargetReference = targetCues;
+      transcriptTranslationCount = aheadTranslations.size;
+    }
+    const analysisKey = `${transcriptSourceRevision}:${wordStatesRevision}`;
+    if (!transcriptAnalysisCache || transcriptAnalysisCache.key !== analysisKey) {
+      const wordStates = wordStatesCache;
+      const counts = new Map();
+      const phraseCounts = new Map();
+      sourceCues.forEach((cue) => {
+        const tokens = learningTokens(cue.text);
+        tokens.forEach((word) => counts.set(word, (counts.get(word) || 0) + 1));
+        for (const length of [2, 3]) {
+          for (let index = 0; index <= tokens.length - length; index += 1) {
+            const phrase = tokens.slice(index, index + length).join(" ");
+            phraseCounts.set(phrase, (phraseCounts.get(phrase) || 0) + 1);
+          }
+        }
+      });
+      const vocabulary = Array.from(counts, ([word, count]) => ({
+        word,
+        count,
+        state: wordStates[word]?.state || "unknown"
+      })).sort((left, right) => right.count - left.count || left.word.localeCompare(right.word, "fr"));
+      const considered = vocabulary.filter((item) => item.state !== "ignored");
+      const knownOccurrences = considered.reduce((total, item) => total + (["known", "learning"].includes(item.state) ? item.count : 0), 0);
+      const totalOccurrences = considered.reduce((total, item) => total + item.count, 0);
+      transcriptAnalysisCache = {
+        key: analysisKey,
+        vocabulary,
+        coveragePercent: totalOccurrences ? Math.round(knownOccurrences / totalOccurrences * 100) : 0,
+        topUnknown: vocabulary.filter((item) => item.state === "unknown").slice(0, 12),
+        topPhrases: Array.from(phraseCounts, ([phrase, count]) => ({ phrase, count }))
+          .filter((item) => item.count >= 2)
+          .sort((left, right) => right.count - left.count || right.phrase.length - left.phrase.length)
+          .slice(0, 10)
+      };
+    }
+    const revision = `${transcriptRevision}:${wordStatesRevision}`;
+    return {
+      ok: true,
+      revision,
+      videoId: currentVideoId,
+      title: currentVideoTitle,
+      status: status.message,
+      currentCueIndex: currentSourceCueIndex,
+      currentTimeMs: Math.round((video?.currentTime || 0) * 1000),
+      bufferAheadSeconds: translationBufferAheadSeconds(),
+      provider: settings.translationProvider,
+      studyMode: effectiveStudyMode(),
+      coveragePercent: transcriptAnalysisCache.coveragePercent,
+      topUnknown: transcriptAnalysisCache.topUnknown,
+      topPhrases: transcriptAnalysisCache.topPhrases,
+      vocabulary: transcriptAnalysisCache.vocabulary,
+      cues: request.lastRevision === revision ? null : sourceCues.slice(0, 5000).map((cue, index) => ({
+        index,
+        start: cue.start,
+        end: cue.end,
+        text: cue.text,
+        translation: aheadTranslations.get(index) || alignedTargetCues[index]?.text || "",
+        provenance: aheadTranslationProvenance.get(index) || (alignedTargetCues[index] ? "YouTube track" : ""),
+        active: index === currentSourceCueIndex
+      }))
+    };
+  }
+
+  function cueContainsLearningWord(cue) {
+    return learningTokens(cue?.text).some((word) => !["known", "ignored"].includes(wordStatesCache[word]?.state));
+  }
+
   function stopVideoWordWarmup() {
     wordWarmupGeneration += 1;
     clearTimeout(wordWarmupTimer);
@@ -1109,41 +1335,36 @@
     const limit = settings.translationProvider === "mymemory" ? 12 : 36;
     const queue = videoWordWarmupOrder(sourceCues, (video?.currentTime || 0) * 1000, limit);
     wordWarmupQueued = queue.length;
-    let cursor = 0;
-    let stop = false;
-    const worker = async () => {
-      while (!stop && generation === wordWarmupGeneration && cursor < queue.length) {
-        const word = queue[cursor];
-        cursor += 1;
-        const response = await browser.runtime.sendMessage({
-          type: "translate-selection",
-          text: word,
-          sourceLanguage: settings.sourceLanguage,
-          targetLanguage: settings.targetLanguage,
-          cacheMode: "word",
-          allowProviderFallback: false
-        }).catch((error) => ({ ok: false, error: error.message }));
-        if (generation !== wordWarmupGeneration) return;
-        if (response?.ok) {
-          const cacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(word)}`;
-          rememberLookupTranslation(cacheKey, response.translatedText);
-          wordWarmupCompleted += 1;
-        } else {
-          wordWarmupFailed += 1;
-          if (response?.errorCode === "MYMEMORY_RATE_LIMITED" || wordWarmupFailed >= 3) stop = true;
-        }
-      }
-    };
-    await Promise.all([worker(), worker()]);
+    if (!queue.length) return;
+    const response = await browser.runtime.sendMessage({
+      type: "translate-batch",
+      items: queue.map((word) => ({ text: word, cacheId: `word:${normalizeLookupWord(word)}` })),
+      sourceLanguage: settings.sourceLanguage,
+      targetLanguage: settings.targetLanguage,
+      videoId: currentVideoId,
+      sessionId: `warmup-${currentVideoId}-${generation}`
+    }).catch((error) => ({ ok: false, error: error.message }));
+    if (generation !== wordWarmupGeneration) return;
+    if (!response?.ok) {
+      wordWarmupFailed = queue.length;
+      return;
+    }
+    response.results.forEach((result, index) => {
+      if (!result?.translatedText) return;
+      const cacheKey = lookupTranslationKey(queue[index]);
+      rememberLookupTranslation(cacheKey, result.translatedText, result);
+      wordWarmupCompleted += 1;
+    });
   }
 
   function startAheadTranslation() {
     stopNativeCapture(true);
     stopAheadTranslation();
     usingAheadTranslation = true;
+    aheadTranslationSessionId = `video-${currentVideoId}-${aheadTranslationGeneration}-${Date.now()}`;
     lastAheadPrefetchAt = performance.now();
     const timeMs = (video?.currentTime || 0) * 1000;
-    prefetchAheadTranslations(timeMs, 90000);
+    prefetchAheadTranslations(timeMs, Number(settings.translationBufferSeconds || 90) * 1000);
     setStatus("loading", "Timed French loaded · preparing English around the current position…");
     status = { state: "loading", message: "Timed French ready · prioritizing English near playback" };
   }
@@ -1176,40 +1397,87 @@
     pumpAheadTranslationQueue();
   }
 
-  function pumpAheadTranslationQueue() {
+  function pumpAheadTranslationBatch() {
     const generation = aheadTranslationGeneration;
-    while (usingAheadTranslation && aheadTranslationActive < 6 && aheadTranslationQueue.length) {
-      const index = aheadTranslationQueue.shift();
-      const cue = sourceCues[index];
-      if (!cue) {
-        aheadTranslationPending.delete(index);
-        continue;
-      }
-      aheadTranslationActive += 1;
-      browser.runtime.sendMessage({
-        type: "translate-selection",
-        text: cue.text,
-        sourceLanguage: settings.sourceLanguage,
-        targetLanguage: settings.targetLanguage
-      }).then((response) => {
-        if (usingAheadTranslation && generation === aheadTranslationGeneration && response?.ok) {
-          aheadTranslations.set(index, response.translatedText);
-          if (index === aheadTranslationFocusIndex && status.state !== "ready") {
-            setStatus("ready", "English ready here · continuing to buffer ahead.", 2200);
-            status = { state: "ready", message: "French + English active · buffering ahead" };
-          }
-        } else if (generation === aheadTranslationGeneration) {
-          aheadTranslationFailed.add(index);
-        }
-      }).catch(() => {
-        if (generation === aheadTranslationGeneration) aheadTranslationFailed.add(index);
-      }).finally(() => {
-        if (generation !== aheadTranslationGeneration) return;
-        aheadTranslationActive = Math.max(0, aheadTranslationActive - 1);
-        aheadTranslationPending.delete(index);
-        pumpAheadTranslationQueue();
-      });
+    if (!usingAheadTranslation || aheadTranslationActive || !aheadTranslationQueue.length) return;
+    if (aheadTranslationBlockedUntil > Date.now()) {
+      clearTimeout(aheadTranslationRetryTimer);
+      aheadTranslationRetryTimer = setTimeout(pumpAheadTranslationBatch, aheadTranslationBlockedUntil - Date.now() + 25);
+      return;
     }
+    const providerLimit = { mymemory: 2, libretranslate: 10, google: 30, deepl: 50, azure: 100 }[settings.translationProvider] || 30;
+    const batchSize = Math.max(1, Math.min(providerLimit, Number(settings.translationBatchSize || 30)));
+    const indices = aheadTranslationQueue.splice(0, batchSize).filter((index) => sourceCues[index]);
+    if (!indices.length) return;
+    let requeued = false;
+    aheadTranslationActive = 1;
+    browser.runtime.sendMessage({
+      type: "translate-batch",
+      items: indices.map((index) => ({
+        text: sourceCues[index].text,
+        start: sourceCues[index].start,
+        end: sourceCues[index].end,
+        cacheId: `${sourceCues[index].start}:${sourceCues[index].end}:${sourceCues[index].text}`
+      })),
+      sourceLanguage: settings.sourceLanguage,
+      targetLanguage: settings.targetLanguage,
+      videoId: currentVideoId,
+      context: sourceCues.slice(Math.max(0, indices[0] - 1), Math.min(sourceCues.length, indices[indices.length - 1] + 2)).map((cue) => cue.text).join(" "),
+      sessionId: aheadTranslationSessionId
+    }).then((response) => {
+      if (!usingAheadTranslation || generation !== aheadTranslationGeneration) return;
+      if (!response?.ok) {
+        const retryable = ["PROVIDER_RATE_LIMITED", "PROVIDER_TEMPORARY_FAILURE", "PROVIDER_CIRCUIT_OPEN"].includes(response?.errorCode);
+        aheadTranslationLastError = response?.error || "Translation batch failed.";
+        if (retryable) {
+          requeued = true;
+          aheadTranslationBlockedUntil = Date.now() + Math.max(1500, Number(response.retryAfterMs || 3000));
+          indices.reverse().forEach((index) => aheadTranslationQueue.unshift(index));
+          setStatus("loading", `${aheadTranslationLastError} French remains available while English waits.`);
+        } else {
+          indices.forEach((index) => aheadTranslationFailed.add(index));
+        }
+        return;
+      }
+      aheadTranslationBlockedUntil = 0;
+      aheadTranslationLastError = "";
+      indices.forEach((index, resultIndex) => {
+        const result = response.results?.[resultIndex];
+        if (!result?.translatedText) return;
+        aheadTranslations.set(index, result.translatedText);
+        aheadAlignments.set(index, result.alignment || []);
+        aheadAlignmentKinds.set(index, result.alignmentKind || (result.provider === "azure" && result.alignment?.length ? "character" : "none"));
+        aheadTranslationProvenance.set(index, result.provenance || result.provider || "translated");
+      });
+      if (aheadTranslations.has(aheadTranslationFocusIndex) && status.state !== "ready") {
+        setStatus("ready", `English ready here · ${translationBufferAheadSeconds()}s buffered ahead.`, 2200);
+        status = { state: "ready", message: "French + English active · buffering ahead" };
+      }
+    }).catch((error) => {
+      if (generation !== aheadTranslationGeneration) return;
+      aheadTranslationLastError = error.message || "Translation batch failed.";
+      indices.forEach((index) => aheadTranslationFailed.add(index));
+    }).finally(() => {
+      if (generation !== aheadTranslationGeneration) return;
+      aheadTranslationActive = 0;
+      if (!requeued) indices.forEach((index) => aheadTranslationPending.delete(index));
+      pumpAheadTranslationBatch();
+    });
+  }
+
+  function translationBufferAheadSeconds(timeMs = (video?.currentTime || 0) * 1000) {
+    if (!sourceCues.length) return 0;
+    let index = Math.max(0, cueIndexAt(sourceCues, timeMs));
+    let bufferedUntil = timeMs;
+    while (index < sourceCues.length && aheadTranslations.has(index)) {
+      bufferedUntil = Math.max(bufferedUntil, sourceCues[index].end);
+      index += 1;
+    }
+    return Math.max(0, Math.round((bufferedUntil - timeMs) / 1000));
+  }
+
+  function pumpAheadTranslationQueue() {
+    pumpAheadTranslationBatch();
   }
 
   const WORD_GROUP_LABELS = Object.freeze({
@@ -1367,12 +1635,32 @@
     ) {
       // Translation is prefetched separately. Keep display timing tied to the
       // media clock, with only the user's explicit synchronization correction.
-      const timeMs = video.currentTime * 1000 + Number(settings.captionOffsetMs || 0);
-      const sourceIndex = cueIndexAt(sourceCues, timeMs);
-      const sourceCue = sourceCues[sourceIndex];
-      const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end;
+      const timeMs = video.currentTime * 1000 + effectiveCaptionOffsetMs();
+      let sourceIndex = cueIndexAt(sourceCues, timeMs);
       if (
-        settings.autoPause &&
+        settings.skipCaptionGaps &&
+        !video.paused &&
+        sourceCues[sourceIndex]?.start - timeMs > 1500 &&
+        lastSkippedGapIndex !== sourceIndex
+      ) {
+        lastSkippedGapIndex = sourceIndex;
+        video.currentTime = Math.max(0, (sourceCues[sourceIndex].start - effectiveCaptionOffsetMs() - 250) / 1000);
+        requestRender();
+        return;
+      }
+      if (sourceCues[sourceIndex]?.start <= timeMs) lastSkippedGapIndex = -1;
+      if (sourceCues[sourceIndex]?.start > timeMs && sourceIndex > 0) {
+        const previousCue = sourceCues[sourceIndex - 1];
+        const heldUntil = Math.min(sourceCues[sourceIndex].start, previousCue.end + Math.max(0, Number(settings.captionHoldMs || 0)));
+        if (timeMs < heldUntil) sourceIndex -= 1;
+      }
+      const sourceCue = sourceCues[sourceIndex];
+      const nextSourceCue = sourceCues[sourceIndex + 1];
+      const sourceCueVisibleUntil = Math.min(nextSourceCue?.start ?? Number.POSITIVE_INFINITY, sourceCue.end + Math.max(0, Number(settings.captionHoldMs || 0)));
+      const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCueVisibleUntil;
+      if (
+        (settings.autoPause || effectiveStudyMode() === "shadow") &&
+        (effectiveStudyMode() === "shadow" || !settings.smartPauseUnknownOnly || cueContainsLearningWord(sourceCue)) &&
         sourceCueIsActive &&
         lastPlaybackCueIndex >= 0 &&
         sourceIndex === lastPlaybackCueIndex + 1 &&
@@ -1411,7 +1699,7 @@
       }
       renderCueText(sourceCueIsActive ? sourceCue.text : "", targetText, sourceCueIsActive ? sourceCue : null, targetCue, sourceIndex);
     }
-    animationFrame = requestAnimationFrame(renderLoop);
+    scheduleNextRender();
   }
 
   function handleSubtitleSelection(event) {
@@ -1478,6 +1766,47 @@
   function highlightAlignedWord(sourceWord) {
     clearWordHighlights();
     sourceWord.classList.add("is-hovered");
+    applyPreciseProviderAlignment(sourceWord);
+  }
+
+  function wordCharacterRange(word, line, text) {
+    const words = Array.from(line?.querySelectorAll(".dualsub-word") || []);
+    let cursor = 0;
+    for (const candidate of words) {
+      const surface = candidate.textContent || "";
+      const start = String(text || "").indexOf(surface, cursor);
+      const safeStart = start >= 0 ? start : cursor;
+      const range = { start: safeStart, end: safeStart + Math.max(0, surface.length - 1) };
+      if (candidate === word) return range;
+      cursor = range.end + 1;
+    }
+    return null;
+  }
+
+  function rangesOverlap(left, right) {
+    return left && right && left.start <= right.end && right.start <= left.end;
+  }
+
+  function applyPreciseProviderAlignment(sourceWord) {
+    if (!settings.wordAlignment || currentSourceCueIndex < 0) return false;
+    if (aheadAlignmentKinds.get(currentSourceCueIndex) !== "character") return false;
+    const alignment = aheadAlignments.get(currentSourceCueIndex);
+    if (!alignment?.length) return false;
+    const sourceRange = wordCharacterRange(sourceWord, sourceLine, currentSourceText);
+    if (!sourceRange) return false;
+    const targetRanges = alignment
+      .filter((entry) => rangesOverlap(sourceRange, { start: entry.sourceStart, end: entry.sourceEnd }))
+      .map((entry) => ({ start: entry.targetStart, end: entry.targetEnd }));
+    if (!targetRanges.length) return false;
+    let highlighted = false;
+    targetLine.querySelectorAll(".dualsub-word").forEach((targetWord) => {
+      const range = wordCharacterRange(targetWord, targetLine, currentTargetText);
+      if (targetRanges.some((targetRange) => rangesOverlap(range, targetRange))) {
+        targetWord.classList.add("is-aligned");
+        highlighted = true;
+      }
+    });
+    return highlighted;
   }
 
   function normalizeLookupWord(value) {
@@ -1488,12 +1817,56 @@
       .toLocaleLowerCase();
   }
 
-  function rememberLookupTranslation(cacheKey, translatedText) {
+  function rememberLookupTranslation(cacheKey, translatedText, metadata = {}) {
     if (!cacheKey || !translatedText) return;
     lookupTranslationCache.set(cacheKey, translatedText);
+    lookupTranslationMetadata.set(cacheKey, {
+      provider: metadata.provider || settings.translationProvider,
+      provenance: metadata.provenance || "",
+      cacheHit: Boolean(metadata.cacheHit)
+    });
     if (lookupTranslationCache.size > 1200) {
-      lookupTranslationCache.delete(lookupTranslationCache.keys().next().value);
+      const oldestKey = lookupTranslationCache.keys().next().value;
+      lookupTranslationCache.delete(oldestKey);
+      lookupTranslationMetadata.delete(oldestKey);
     }
+  }
+
+  function translationProviderLink(provider, text) {
+    const encoded = encodeURIComponent(text);
+    if (provider === "google") return `https://translate.google.com/?sl=fr&tl=en&text=${encoded}&op=translate`;
+    if (provider === "mymemory") return `https://mymemory.translated.net/en/French/English/${encoded}`;
+    if (provider === "deepl") return `https://www.deepl.com/translator#fr/en/${encoded}`;
+    if (provider === "azure") return `https://www.bing.com/translator?from=fr&to=en&text=${encoded}`;
+    return "";
+  }
+
+  function showLookupProvenance(response, sourceText) {
+    const node = selectionCard.querySelector(".dualsub-card-provenance");
+    const label = node.querySelector("span");
+    const link = node.querySelector("a");
+    const provider = response?.provider || settings.translationProvider;
+    const providerLabel = { google: "Google", mymemory: "MyMemory", azure: "Azure", deepl: "DeepL", libretranslate: "LibreTranslate", correction: "Saved correction" }[provider] || provider;
+    if (provider === "correction") {
+      label.textContent = "Source: your saved correction";
+    } else if (response?.memoryCache) {
+      label.textContent = `Source: instant session cache · ${providerLabel}`;
+    } else if (response?.cacheHit) {
+      label.textContent = `Source: local translation cache · ${providerLabel}`;
+    } else {
+      label.textContent = `Source: ${response?.provenance || `${providerLabel} engine lookup`}`;
+    }
+    const href = translationProviderLink(provider, sourceText);
+    link.hidden = !href;
+    if (href) {
+      link.href = href;
+      link.textContent = `Open in ${providerLabel} ↗`;
+    }
+    node.hidden = false;
+  }
+
+  function lookupTranslationKey(value) {
+    return `${settings.translationProvider}|${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(value)}`;
   }
 
   function stemEnglishWord(value) {
@@ -1545,6 +1918,8 @@
 
   function refineAlignedTargetWords(translatedText, alignmentContext = lookupContext) {
     if (!settings.wordAlignment || alignmentContext?.sentence !== currentSourceText) return;
+    const hoveredSourceWord = sourceLine?.querySelector(".dualsub-word.is-hovered");
+    if (hoveredSourceWord && applyPreciseProviderAlignment(hoveredSourceWord)) return;
     const evidencePhrases = (Array.isArray(translatedText) ? translatedText : [translatedText])
       .map((text) => (String(text || "").match(/[\p{L}\p{N}]+/gu) || []).map(normalizeLookupWord).filter(Boolean))
       .filter((words) => words.length);
@@ -1577,7 +1952,7 @@
         length: 1,
         score: Math.max(...translatedWords.map((translatedWord) => wordSimilarity(targetWord, translatedWord))),
         distance: Math.abs(index - estimatedCenter)
-      })).filter((match) => match.score >= 0.78);
+      })).filter((match) => match.score >= 0.86);
       fuzzyMatches.sort((left, right) => right.score - left.score || left.distance - right.distance);
       best = fuzzyMatches[0] || null;
     }
@@ -1589,7 +1964,8 @@
   }
 
   function handleWordPointerOver(event) {
-    if (!settings.enabled || !settings.hoverLookup) return;
+    if (!settings.enabled || (!settings.hoverLookup && effectiveStudyMode() !== "study")) return;
+    if (event.altKey) return;
     if (phraseSelectionAnchor || event.buttons) return;
     const word = event.target.closest?.(".dualsub-source .dualsub-word");
     if (!word || word.contains(event.relatedTarget)) return;
@@ -1608,24 +1984,22 @@
       try {
         const wordText = lookupTextForWord(word);
         const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText, currentSourceText);
-        const evidenceTexts = [
-          wordText,
-          conjugation?.lemma,
-          ...(conjugation?.alternatives || []).map((item) => item.lemma)
-        ].filter((text, index, values) => text && values.indexOf(text) === index).slice(0, 4);
+        const evidenceTexts = [wordText, conjugation?.pronominalLemma || conjugation?.lemma]
+          .filter((text, index, values) => text && values.indexOf(text) === index);
         const results = await Promise.allSettled(evidenceTexts.map((text) => browser.runtime.sendMessage({
           type: "translate-selection", text,
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
-          cacheMode: "word"
+          cacheMode: "word",
+          context: currentSourceText
         })));
         const translations = results
           .filter((result) => result.status === "fulfilled" && result.value?.ok)
           .map((result) => result.value.translatedText);
         const surfaceResponse = results[0]?.status === "fulfilled" ? results[0].value : null;
         if (surfaceResponse?.ok) {
-          const cacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(wordText)}`;
-          rememberLookupTranslation(cacheKey, surfaceResponse.translatedText);
+          const cacheKey = lookupTranslationKey(wordText);
+          rememberLookupTranslation(cacheKey, surfaceResponse.translatedText, surfaceResponse);
         }
         if (translations.length && word.isConnected && word.classList.contains("is-hovered")) {
           refineAlignedTargetWords(translations, alignmentContext);
@@ -1692,6 +2066,7 @@
     pausedByLookup = false;
     const group = word.dataset.wordGroup || particle.group || "unknown";
     selectionCard.classList.add("is-particle-card");
+    selectionCard.querySelector(".dualsub-card-provenance").hidden = true;
     selectionCard.querySelector(".dualsub-card-source").textContent = particle.surface;
     const translationNode = selectionCard.querySelector(".dualsub-card-translation");
     translationNode.dataset.group = group;
@@ -1726,13 +2101,12 @@
     const resultNode = selectionCard.querySelector(".dualsub-card-result");
     const sentenceSourceNode = selectionCard.querySelector(".dualsub-card-sentence-source");
     const sentenceTargetNode = selectionCard.querySelector(".dualsub-card-sentence-target");
-    const conjugationNode = selectionCard.querySelector(".dualsub-card-conjugation");
-    const lemmaNode = selectionCard.querySelector(".dualsub-card-lemma");
-    const grammarNode = selectionCard.querySelector(".dualsub-card-grammar");
-    const exampleNode = selectionCard.querySelector(".dualsub-card-example");
+    const lexicalNode = selectionCard.querySelector(".dualsub-card-lexical");
+    const lexicalInfoNode = selectionCard.querySelector(".dualsub-card-lexical-info");
+    const infinitiveNode = selectionCard.querySelector(".dualsub-card-infinitive");
     const linkNode = selectionCard.querySelector(".dualsub-card-link");
     const wiktionaryNode = selectionCard.querySelector(".dualsub-card-wiktionary");
-    const examplesNode = selectionCard.querySelector(".dualsub-card-examples");
+    const provenanceNode = selectionCard.querySelector(".dualsub-card-provenance");
     const pinButton = selectionCard.querySelector('[data-action="pin"]');
     const saveButton = selectionCard.querySelector('[data-action="save"]');
     const phraseButton = selectionCard.querySelector('[data-action="phrase"]');
@@ -1741,9 +2115,11 @@
     const nextButton = selectionCard.querySelector('[data-action="next"]');
     const slowButton = selectionCard.querySelector('[data-action="slow"]');
     const loopButton = selectionCard.querySelector('[data-action="loop"]');
+    const correctionForm = selectionCard.querySelector(".dualsub-correction-form");
     const sentence = currentSourceText || cleanText;
     const hoveredWordIndex = sourceWords.indexOf(hoveredWord);
     const conjugation = kind === "word" ? globalThis.DualSubFrench?.analyzeWord(cleanText, currentSourceText) : null;
+    const lexicalInfo = kind === "word" ? globalThis.DualSubFrench?.lexicalInfo(cleanText) : null;
     const wordGroup = kind === "word"
       ? (hoveredWord
           ? tagFrenchWord(hoveredWord)
@@ -1766,44 +2142,33 @@
       conjugation
     };
     sourceNode.textContent = cleanText;
+    correctionForm.hidden = true;
     translationNode.dataset.group = wordGroup?.group || "unknown";
     groupNode.hidden = !wordGroup;
     groupNode.dataset.group = wordGroup?.group || "unknown";
     groupNode.textContent = wordGroup
       ? [WORD_GROUP_LABELS[wordGroup.group] || "Word", ...(wordGroup.alternatives || []).map((group) => `also ${WORD_GROUP_LABELS[group]?.toLocaleLowerCase() || group}`)].join(" · ")
       : "";
-    const lookupCacheKey = `${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(cleanText)}`;
+    const lookupCacheKey = lookupTranslationKey(cleanText);
     const cachedLookup = kind === "word" ? lookupTranslationCache.get(lookupCacheKey) : null;
+    const cachedMetadata = lookupTranslationMetadata.get(lookupCacheKey) || {};
+    provenanceNode.hidden = true;
     resultNode.textContent = cachedLookup || "Translating…";
     sentenceSourceNode.textContent = sentence;
     sentenceTargetNode.textContent = lookupContext.sentenceTranslation || "Translation available on request";
-    conjugationNode.hidden = !conjugation;
-    if (conjugation) {
-      if (conjugation.partOfSpeech === "nominal") {
-        lemmaNode.textContent = normalizeLookupWord(conjugation.lemma) !== normalizeLookupWord(cleanText)
-          ? `In this sentence, “${cleanText}” is most likely the noun “${conjugation.lemma}”.`
-          : `In this sentence, “${cleanText}” is being used as a noun or adjective.`;
-        grammarNode.textContent = conjugation.verbReadings?.length
-          ? `In another context, it could be a form of ${conjugation.verbReadings.map((item) => `“${item.lemma}”`).join(" or ")}.`
-          : "The word before it makes a verb meaning unlikely here.";
-      } else {
-        const confidenceLabel = ["high", "verified"].includes(conjugation.confidence) ? "" : "Possible: ";
-        const displayLemma = conjugation.pronominalLemma || conjugation.lemma;
-        lemmaNode.textContent = `${confidenceLabel}${cleanText} → ${displayLemma}`;
-        const description = globalThis.DualSubFrench?.describe(conjugation) || "verb";
-        grammarNode.textContent = conjugation.alternatives?.length
-          ? `${description} · also ${conjugation.alternatives.map((item) => `${item.lemma} (${globalThis.DualSubFrench.describe(item)})`).join(" / ")}`
-          : description;
-      }
-      const example = conjugation.partOfSpeech === "verb"
-        ? globalThis.DualSubFrench?.example(conjugation, cleanText)
-        : "";
-      exampleNode.hidden = !example;
-      exampleNode.textContent = example ? `Example: ${example}` : "";
-    } else {
-      exampleNode.hidden = true;
-      exampleNode.textContent = "";
-    }
+    lexicalNode.hidden = !lexicalInfo;
+    lexicalInfoNode.textContent = lexicalInfo
+      ? [
+          lexicalInfo.pronunciation ? `/${lexicalInfo.pronunciation}/` : "",
+          lexicalInfo.gender,
+          lexicalInfo.number
+        ].filter(Boolean).join(" · ")
+      : "";
+    const infinitive = conjugation?.partOfSpeech === "verb"
+      ? (conjugation.pronominalLemma || conjugation.lemma || "")
+      : "";
+    infinitiveNode.hidden = !infinitive;
+    infinitiveNode.textContent = infinitive ? `Infinitive: ${infinitive}` : "";
     saveButton.disabled = true;
     saveButton.textContent = "+ Vocabulary";
     phraseButton.disabled = kind !== "word" || hoveredWordIndex < 0;
@@ -1821,7 +2186,6 @@
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
     const dictionaryWord = conjugation?.pronominalLemma || conjugation?.lemma || cleanText;
     wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
-    examplesNode.href = `https://tatoeba.org/en/sentences/search?from=fra&query=${encodeURIComponent(dictionaryWord)}&to=eng`;
     selectionCard.classList.add("is-visible");
     cancelLookupDismiss();
     root.classList.add("dualsub-learning-open");
@@ -1832,15 +2196,22 @@
       pausedByLookup = true;
     }
 
-    const surfacePromise = cachedLookup ? Promise.resolve({ ok: true, translatedText: cachedLookup, cached: true }) : browser.runtime.sendMessage({
+    const surfacePromise = cachedLookup ? Promise.resolve({
+      ok: true,
+      translatedText: cachedLookup,
+      ...cachedMetadata,
+      cacheHit: true,
+      memoryCache: true
+    }) : browser.runtime.sendMessage({
         type: "translate-selection",
         text: cleanText,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
-        cacheMode: kind === "word" ? "word" : "transient"
+        cacheMode: kind === "word" ? "word" : "phrase",
+        context: sentence
       });
     const lemmaTexts = conjugation?.partOfSpeech === "verb"
-      ? [conjugation?.pronominalLemma, conjugation?.lemma, ...(conjugation?.alternatives || []).map((item) => item.pronominalLemma || item.lemma)]
+      ? [conjugation?.pronominalLemma || conjugation?.lemma]
       .filter((lemma, index, values) => lemma && values.indexOf(lemma) === index)
       .filter((lemma) => normalizeLookupWord(lemma) !== normalizeLookupWord(cleanText))
       .slice(0, 3)
@@ -1850,15 +2221,17 @@
       text: lemma,
       sourceLanguage: settings.sourceLanguage,
       targetLanguage: settings.targetLanguage,
-      cacheMode: "word"
+      cacheMode: "word",
+      context: sentence
       }));
     try {
       const response = await surfacePromise;
       if (sequence !== lookupSequence || !selectionCard.classList.contains("is-visible")) return;
       resultNode.textContent = response?.ok ? response.translatedText : (response?.error || "Translation unavailable");
       if (response?.ok && lookupContext) {
+        showLookupProvenance(response, cleanText);
         if (kind === "word") {
-          rememberLookupTranslation(lookupCacheKey, response.translatedText);
+          rememberLookupTranslation(lookupCacheKey, response.translatedText, response);
         }
         lookupContext.translatedText = response.translatedText;
         saveButton.disabled = false;
@@ -1961,6 +2334,55 @@
       setTimeout(() => {
         if (button.isConnected) button.textContent = "Copy";
       }, 1200);
+      return;
+    }
+
+    if (action === "correct") {
+      const form = selectionCard.querySelector(".dualsub-correction-form");
+      const input = form.querySelector(".dualsub-correction-input");
+      form.hidden = false;
+      input.value = lookupContext.translatedText;
+      cancelLookupDismiss();
+      input.focus();
+      input.select();
+      return;
+    }
+
+    if (action === "cancel-correction") {
+      selectionCard.querySelector(".dualsub-correction-form").hidden = true;
+      scheduleLookupDismiss(500);
+      return;
+    }
+
+    if (action === "save-correction") {
+      const form = selectionCard.querySelector(".dualsub-correction-form");
+      const corrected = form.querySelector(".dualsub-correction-input").value.trim();
+      if (!corrected) return;
+      button.disabled = true;
+      button.textContent = "Saving…";
+      const response = await browser.runtime.sendMessage({
+        type: "save-translation-correction",
+        sourceText: lookupContext.sourceText,
+        translatedText: corrected,
+        sourceLanguage: settings.sourceLanguage,
+        targetLanguage: settings.targetLanguage
+      }).catch((error) => ({ ok: false, error: error.message }));
+      if (!response?.ok) {
+        button.disabled = false;
+        button.textContent = "Try again";
+        return;
+      }
+      lookupContext.translatedText = corrected;
+      selectionCard.querySelector(".dualsub-card-result").textContent = corrected;
+      const correctionMetadata = { provider: "correction", provenance: "Your correction", cacheHit: true };
+      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText), corrected, correctionMetadata);
+      showLookupProvenance(correctionMetadata, lookupContext.sourceText);
+      form.hidden = true;
+      const correctionButton = selectionCard.querySelector('[data-action="correct"]');
+      correctionButton.textContent = "Corrected ✓";
+      setTimeout(() => { if (correctionButton.isConnected) correctionButton.textContent = "Correct meaning"; }, 1600);
+      button.disabled = false;
+      button.textContent = "Save correction";
       return;
     }
 
@@ -2072,10 +2494,14 @@
   }
 
   function handleNavigation() {
+    hideOcrPopup();
     stopNativeCapture(false);
+    window.dispatchEvent(new CustomEvent("dualsub:reset-native-caption-state"));
     stopAheadTranslation();
     stopVideoWordWarmup();
     currentVideoId = "";
+    currentVideoProfile = null;
+    sourceTrackState = "unknown";
     dismissedStatusKeys.clear();
     lastPlaybackCueIndex = -1;
     sourceCues = [];
@@ -2085,14 +2511,31 @@
     loadGeneration += 1;
     renderCueText("", "");
     hideSelectionCard();
+    clearTimeout(statusTimer);
+    status = { state: "waiting", message: "Checking for French captions" };
+    statusNode?.classList.remove("is-visible");
     attachToPlayer();
+    applySettings();
     setTimeout(requestTrackData, 350);
     setTimeout(requestTrackData, 1200);
+  }
+
+  function handleNavigationStart() {
+    // Restore the user's original YouTube caption choice while the old player
+    // is still active. The finish handler then forgets that per-video snapshot.
+    if (usingNativeTranslation || usingNativeSource) stopNativeCapture(true);
   }
 
   function attachToPlayer() {
     if (!createOverlay()) return;
     video = document.querySelector(".html5-video-player video");
+    if (video && !observedVideos.has(video)) {
+      observedVideos.add(video);
+      ["play", "pause", "seeking", "seeked", "ratechange", "loadedmetadata"].forEach((eventName) => {
+        video.addEventListener(eventName, requestRender, { passive: true });
+      });
+    }
+    requestRender();
   }
 
   function injectBridge() {
@@ -2199,8 +2642,156 @@
     }
   });
 
+  function stopOcrSelection({ resume = false } = {}) {
+    const session = ocrSelectionSession;
+    if (!session) return;
+    ocrSelectionSession = null;
+    session.overlay.remove();
+    window.removeEventListener("keydown", session.onKeyDown, true);
+    window.removeEventListener("resize", session.onResize, true);
+    if (resume && session.wasPlaying) session.video.play().catch(() => {});
+  }
+
+  function hideOcrPopup() {
+    ocrPopup?.remove();
+    ocrPopup = null;
+  }
+
+  function showOcrPopup() {
+    hideOcrPopup();
+    const modal = document.createElement("div");
+    modal.className = "dualsub-ocr-modal";
+    modal.setAttribute("role", "presentation");
+    const frame = document.createElement("iframe");
+    frame.className = "dualsub-ocr-modal-frame";
+    frame.src = browser.runtime.getURL("tools/translator.html?embedded=1#ocr");
+    frame.title = "DualSub OCR translation";
+    frame.allow = "clipboard-write";
+    modal.appendChild(frame);
+    modal.addEventListener("pointerdown", (event) => {
+      if (event.target === modal) hideOcrPopup();
+    });
+    (document.fullscreenElement || document.documentElement).appendChild(modal);
+    ocrPopup = modal;
+    return { ok: true };
+  }
+
+  function startOcrSelection() {
+    stopOcrSelection({ resume: true });
+    const activeVideo = video?.isConnected ? video : document.querySelector("video");
+    if (!activeVideo) return { ok: false, error: "No video is visible on this page." };
+    const videoRect = activeVideo.getBoundingClientRect();
+    const bounds = {
+      left: Math.max(0, videoRect.left),
+      top: Math.max(0, videoRect.top),
+      right: Math.min(window.innerWidth, videoRect.right),
+      bottom: Math.min(window.innerHeight, videoRect.bottom)
+    };
+    if (bounds.right - bounds.left < 8 || bounds.bottom - bounds.top < 8) {
+      return { ok: false, error: "The video is not currently visible." };
+    }
+
+    const wasPlaying = !activeVideo.paused;
+    activeVideo.pause();
+    const overlay = document.createElement("div");
+    overlay.className = "dualsub-ocr-selector";
+    overlay.innerHTML = `
+      <div class="dualsub-ocr-video-frame"></div>
+      <div class="dualsub-ocr-instructions"><strong>Select French text</strong><span>Drag over text and release to capture · Esc to cancel</span></div>
+      <div class="dualsub-ocr-drag-box" hidden></div>`;
+    const frame = overlay.querySelector(".dualsub-ocr-video-frame");
+    const box = overlay.querySelector(".dualsub-ocr-drag-box");
+    Object.assign(frame.style, {
+      left: `${bounds.left}px`, top: `${bounds.top}px`,
+      width: `${bounds.right - bounds.left}px`, height: `${bounds.bottom - bounds.top}px`
+    });
+    document.documentElement.appendChild(overlay);
+
+    const session = {
+      overlay,
+      video: activeVideo,
+      wasPlaying,
+      bounds,
+      start: null,
+      selection: null,
+      completing: false,
+      onKeyDown: null,
+      onResize: () => stopOcrSelection({ resume: true })
+    };
+    ocrSelectionSession = session;
+    const point = (event) => ({
+      x: Math.max(bounds.left, Math.min(bounds.right, event.clientX)),
+      y: Math.max(bounds.top, Math.min(bounds.bottom, event.clientY))
+    });
+    const renderSelection = (end) => {
+      const left = Math.min(session.start.x, end.x);
+      const top = Math.min(session.start.y, end.y);
+      session.selection = {
+        left,
+        top,
+        width: Math.max(1, Math.abs(end.x - session.start.x)),
+        height: Math.max(1, Math.abs(end.y - session.start.y)),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      };
+      Object.assign(box.style, {
+        left: `${session.selection.left}px`, top: `${session.selection.top}px`,
+        width: `${session.selection.width}px`, height: `${session.selection.height}px`
+      });
+      box.hidden = false;
+    };
+    const completeOcrSelection = async () => {
+      if (session.completing) return;
+      if (!session.selection || session.selection.width < 8 || session.selection.height < 8) {
+        overlay.querySelector(".dualsub-ocr-instructions span").textContent = "Drag a larger box around the text";
+        return;
+      }
+      session.completing = true;
+      const crop = session.selection;
+      stopOcrSelection();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const response = await browser.runtime.sendMessage({ type: "complete-video-ocr-selection", crop })
+        .catch((error) => ({ ok: false, error: error.message }));
+      if (!response?.ok) {
+        if (wasPlaying) activeVideo.play().catch(() => {});
+        setStatus("error", response?.error || "The selected video text could not be captured.", 4000);
+      }
+    };
+    overlay.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) return;
+      event.preventDefault();
+      overlay.setPointerCapture(event.pointerId);
+      session.start = point(event);
+      renderSelection(session.start);
+    });
+    overlay.addEventListener("pointermove", (event) => {
+      if (session.start) renderSelection(point(event));
+    });
+    overlay.addEventListener("pointerup", async (event) => {
+      if (!session.start) return;
+      renderSelection(point(event));
+      session.start = null;
+      await completeOcrSelection();
+    });
+    overlay.addEventListener("pointercancel", () => { session.start = null; });
+    session.onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        stopOcrSelection({ resume: true });
+      }
+    };
+    window.addEventListener("keydown", session.onKeyDown, true);
+    window.addEventListener("resize", session.onResize, true);
+    return { ok: true };
+  }
+
+  document.addEventListener("yt-navigate-start", handleNavigationStart);
   document.addEventListener("yt-navigate-finish", handleNavigation);
-  document.addEventListener("fullscreenchange", () => setTimeout(attachToPlayer, 50));
+  document.addEventListener("fullscreenchange", () => setTimeout(() => {
+    attachToPlayer();
+    if (ocrPopup) (document.fullscreenElement || document.documentElement).appendChild(ocrPopup);
+  }, 50));
   document.addEventListener("mousedown", (event) => {
     if (phraseSelectionAnchor && !event.target.closest?.(".dualsub-source .dualsub-word")) {
       phraseSelectionAnchor = null;
@@ -2210,9 +2801,71 @@
       hideSelectionCard();
     }
   }, true);
+  window.addEventListener("message", (event) => {
+    const frame = ocrPopup?.querySelector(".dualsub-ocr-modal-frame");
+    if (event.data?.type === "dualsub:close-ocr-popup" && frame && event.source === frame.contentWindow) {
+      hideOcrPopup();
+    }
+  });
 
   browser.runtime.onMessage.addListener((message) => {
     if (message?.type === "get-status") return Promise.resolve(status);
+    if (message?.type === "start-video-ocr-selection") return Promise.resolve(startOcrSelection());
+    if (message?.type === "show-video-ocr-popup") return Promise.resolve(showOcrPopup());
+    if (message?.type === "hide-video-ocr-popup") {
+      hideOcrPopup();
+      return Promise.resolve({ ok: true });
+    }
+    if (message?.type === "get-transcript-state") return buildTranscriptState(message);
+    if (message?.type === "save-current-video-profile") {
+      if (!currentVideoId) return Promise.resolve({ ok: false, error: "Open a video first." });
+      const profile = {
+        captionOffsetMs: Number(message.profile?.captionOffsetMs ?? settings.captionOffsetMs ?? 0),
+        studyMode: message.profile?.studyMode || settings.studyMode || "watch"
+      };
+      return browser.runtime.sendMessage({ type: "save-video-profile", videoId: currentVideoId, profile }).then((response) => {
+        if (response?.ok) {
+          currentVideoProfile = response.profile;
+          applySettings();
+          requestRender();
+        }
+        return response;
+      });
+    }
+    if (message?.type === "seek-to-cue") {
+      const cue = sourceCues[Number(message.index)];
+      if (!video || !cue) return Promise.resolve({ ok: false });
+      video.currentTime = Math.max(0, cue.start / 1000 - 0.08);
+      if (message.play !== false) video.play().catch(() => {});
+      requestRender();
+      return Promise.resolve({ ok: true });
+    }
+    if (message?.type === "navigate-cue") {
+      const direction = Number(message.direction) < 0 ? -1 : 1;
+      const index = Math.max(0, Math.min(sourceCues.length - 1, currentSourceCueIndex + direction));
+      const cue = sourceCues[index];
+      if (!video || !cue) return Promise.resolve({ ok: false });
+      video.currentTime = Math.max(0, cue.start / 1000 - 0.08);
+      requestRender();
+      return Promise.resolve({ ok: true, index });
+    }
+    if (message?.type === "adjust-caption-offset") {
+      const nextOffset = Math.max(-5000, Math.min(5000, effectiveCaptionOffsetMs() + Number(message.deltaMs || 0)));
+      if (currentVideoProfile && currentVideoId) {
+        return browser.runtime.sendMessage({
+          type: "save-video-profile",
+          videoId: currentVideoId,
+          profile: { ...currentVideoProfile, captionOffsetMs: nextOffset }
+        }).then((response) => {
+          if (response?.ok) currentVideoProfile = response.profile;
+          requestRender();
+          return { ok: Boolean(response?.ok), captionOffsetMs: nextOffset };
+        });
+      }
+      browser.storage.sync.set({ settings: { ...settings, captionOffsetMs: nextOffset } });
+      requestRender();
+      return Promise.resolve({ ok: true, captionOffsetMs: nextOffset });
+    }
     if (message?.type === "get-diagnostics") {
       const mode = usingNativeSource
         ? "live-source"
@@ -2220,9 +2873,11 @@
           ? "live-youtube-translation"
           : usingAheadTranslation
             ? "prefetched-provider-translation"
-            : sourceCues.length && targetCues.length
-              ? "full-tracks"
-              : "waiting";
+            : sourceTrackState === "unavailable"
+              ? "youtube-native-captions"
+              : sourceCues.length && targetCues.length
+                ? "full-tracks"
+                : "waiting";
       return Promise.resolve({
         ok: true,
         diagnostics: {
@@ -2232,13 +2887,29 @@
           status: status.message,
           sourceCueCount: sourceCues.length,
           targetCueCount: targetCues.length,
+          rawSourceFragmentCount: sourceCues.reduce((total, cue) => total + (cue.fragments?.length || 1), 0),
           alignedCueCount: alignedTargetCues.filter(Boolean).length,
           currentCueIndex: currentSourceCueIndex,
           currentTimeSeconds: Number((video?.currentTime || 0).toFixed(2)),
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
           translationProvider: settings.translationProvider,
-          captionOffsetMs: settings.captionOffsetMs,
+          translationBufferAheadSeconds: translationBufferAheadSeconds(),
+          translationQueueLength: aheadTranslationQueue.length,
+          translationBatchActive: Boolean(aheadTranslationActive),
+          translationBlockedUntil: aheadTranslationBlockedUntil || null,
+          translationLastError: aheadTranslationLastError,
+          currentTranslationProvenance: aheadTranslationProvenance.get(currentSourceCueIndex) || "",
+          currentAlignmentSpanCount: aheadAlignments.get(currentSourceCueIndex)?.length || 0,
+          currentAlignmentKind: aheadAlignmentKinds.get(currentSourceCueIndex) || "none",
+          captionOffsetMs: effectiveCaptionOffsetMs(),
+          studyMode: effectiveStudyMode(),
+          cueWindow: sourceCues.slice(Math.max(0, currentSourceCueIndex - 3), currentSourceCueIndex + 4).map((cue, offset) => ({
+            index: Math.max(0, currentSourceCueIndex - 3) + offset,
+            start: cue.start,
+            end: cue.end,
+            text: String(cue.text || "").slice(0, 200)
+          })),
           timedTrackUpgradePending,
           timedTrackRecoveryAttempt,
           timedTrackRecoveryLastError,
@@ -2261,6 +2932,11 @@
   });
 
   browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.wordStatesV1) {
+      wordStatesCache = changes.wordStatesV1.newValue || {};
+      wordStatesRevision += 1;
+      return;
+    }
     if (areaName !== "sync" || !changes.settings) return;
     const previousSource = settings.sourceLanguage;
     const previousTarget = settings.targetLanguage;
@@ -2268,6 +2944,7 @@
     const previousTranslationProvider = settings.translationProvider;
     const previousPreloadVideoWords = settings.preloadVideoWords;
     settings = mergeSettings(changes.settings.newValue);
+    if (previousSource !== settings.sourceLanguage) sourceTrackState = "unknown";
     if (previousWholeLiveLines !== settings.wholeLiveLines) {
       observedNativeText = "";
       pendingLiveSourceText = "";
@@ -2285,6 +2962,7 @@
     }
     if (settings.enabled && (previousSource !== settings.sourceLanguage || previousTarget !== settings.targetLanguage)) {
       currentVideoId = "";
+      currentVideoProfile = null;
       requestTrackData();
     }
   });
@@ -2297,11 +2975,18 @@
     if (!animationFrame) renderLoop();
     setTimeout(requestTrackData, 500);
   });
+  browser.runtime.sendMessage({ type: "get-word-states" }).then((response) => {
+    if (response?.ok) {
+      wordStatesCache = response.states || {};
+      wordStatesRevision += 1;
+    }
+  }).catch(() => {});
 
   globalThis.DualSubFrench?.ready?.then(() => retagCurrentFrenchWords()).catch(() => {});
 
   const playerObserver = new MutationObserver(() => {
     if (!root?.isConnected || !video?.isConnected) attachToPlayer();
+    else if (usingNativeSource || usingNativeTranslation) requestRender();
   });
-  playerObserver.observe(document.documentElement, { childList: true, subtree: true });
+  playerObserver.observe(document.querySelector("ytd-app") || document.body || document.documentElement, { childList: true, subtree: true });
 })();

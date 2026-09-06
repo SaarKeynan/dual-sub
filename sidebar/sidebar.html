@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DualSub transcript</title>
+    <link rel="stylesheet" href="sidebar.css">
+  </head>
+  <body>
+    <header>
+      <div><h1>DualSub</h1><p id="videoTitle">Open a French YouTube video</p></div>
+      <div class="header-actions"><button id="vocabulary" type="button" title="Open vocabulary" aria-label="Open vocabulary"><span aria-hidden="true">Aa</span></button><button id="settings" type="button" title="Open settings" aria-label="Open settings"><span aria-hidden="true">⚙</span></button></div>
+    </header>
+    <section class="status-panel">
+      <label>Mode
+        <select id="studyMode">
+          <option value="watch">Watch</option><option value="study">Study</option><option value="shadow">Shadow</option>
+        </select>
+      </label>
+      <div><span>English buffer</span><strong id="buffer">0s</strong></div>
+      <div class="coverage-stat"><span>Known coverage</span><strong id="coverage">0%</strong><span class="coverage-track" aria-hidden="true"><span id="coverageBar"></span></span></div>
+    </section>
+    <nav class="playback" aria-label="Caption navigation">
+      <button id="previous" type="button">← Previous</button>
+      <button id="replay" type="button">Replay</button>
+      <button id="next" type="button">Next →</button>
+    </nav>
+    <section class="unknown-panel">
+      <div class="section-heading"><h2>Useful unknown words</h2><span id="provider" class="provider-badge"></span></div>
+      <div id="unknownWords" class="chips"><span class="muted">Waiting for captions…</span></div>
+      <div class="section-heading phrase-heading"><h2>Repeated phrases</h2></div>
+      <div id="phrases" class="chips"></div>
+    </section>
+    <section class="transcript-panel">
+      <div class="transcript-controls" aria-label="Transcript display options">
+        <input id="search" type="search" placeholder="Search transcript…" aria-label="Search transcript">
+        <label><input id="showEnglish" type="checkbox" checked> English</label>
+        <label><input id="unknownOnly" type="checkbox"> Unknown lines</label>
+      </div>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+    </section>
+    <div id="empty" class="empty">DualSub will stay out of the way on videos without French captions.</div>
+    <script src="sidebar.js"></script>
+  </body>
+</html>

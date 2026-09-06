@@ -4,6 +4,7 @@ const path = require("path");
 const projectRoot = path.resolve(__dirname, "..");
 const sourcePath = process.argv[2] || path.join(projectRoot, "vendor", "lexique", "Lexique383.tsv");
 const outputPath = process.argv[3] || path.join(projectRoot, "vendor", "lexique", "french-word-groups.json");
+const infoOutputPath = process.argv[4] || path.join(projectRoot, "vendor", "lexique", "french-lexical-info.json");
 const groupCodes = new Map([
   ["NOM", "n"], ["VER", "v"], ["AUX", "v"], ["ADJ", "j"], ["ADV", "r"],
   ["PRO", "p"], ["DET", "d"], ["ART", "d"], ["PRE", "s"], ["CON", "c"],
@@ -15,6 +16,7 @@ const headers = lines.shift().split("\t");
 const column = Object.fromEntries(headers.map((name, index) => [name, index]));
 const entries = new Map();
 const categoryCounts = new Map();
+const lexicalInfo = new Map();
 
 for (const line of lines) {
   if (!line) continue;
@@ -28,6 +30,17 @@ for (const line of lines) {
   scores.set(group, Math.max(scores.get(group) || 0, Number.isFinite(frequency) ? frequency : 0));
   entries.set(word, scores);
   categoryCounts.set(rawCategory, (categoryCounts.get(rawCategory) || 0) + 1);
+  const existingInfo = lexicalInfo.get(word);
+  if (!existingInfo || frequency > existingInfo.frequency) {
+    lexicalInfo.set(word, {
+      lemma: String(cells[column.lemme] || word).trim().toLocaleLowerCase("fr").normalize("NFC"),
+      phonetic: String(cells[column.phon] || "").trim(),
+      gender: String(cells[column.genre] || "").trim().toLocaleLowerCase(),
+      number: String(cells[column.nombre] || "").trim().toLocaleLowerCase(),
+      syllables: Math.max(0, Number(cells[column.nbsyll] || 0)),
+      frequency: Number.isFinite(frequency) ? Math.round(frequency * 100) / 100 : 0
+    });
+  }
 }
 
 const compact = {};
@@ -39,8 +52,18 @@ for (const [word, scores] of Array.from(entries).sort(([left], [right]) => left.
 }
 
 fs.writeFileSync(outputPath, JSON.stringify(compact));
+const compactInfo = {};
+for (const [word, info] of Array.from(lexicalInfo)
+  .sort((left, right) => right[1].frequency - left[1].frequency)
+  .slice(0, 50_000)
+  .sort(([left], [right]) => left.localeCompare(right, "fr"))) {
+  compactInfo[word] = [info.lemma, info.phonetic, info.gender, info.number, info.syllables, info.frequency];
+}
+fs.writeFileSync(infoOutputPath, JSON.stringify(compactInfo));
 console.log(JSON.stringify({
   words: Object.keys(compact).length,
   bytes: fs.statSync(outputPath).size,
+  lexicalInfoWords: Object.keys(compactInfo).length,
+  lexicalInfoBytes: fs.statSync(infoOutputPath).size,
   categories: Object.fromEntries(Array.from(categoryCounts).sort())
 }, null, 2));

@@ -1,5 +1,196 @@
 # Changelog
 
+## 0.8.9 — active recall without Focus mode
+
+- Removed Focus from the learning-mode menus because `Alt+Shift+L` now provides
+  the same English-on-hover behavior directly.
+- Existing global and per-video Focus selections migrate safely to Watch.
+- Removed Focus-specific rendering logic so only the explicit reveal setting
+  controls whether English is hidden between hovers.
+
+## 0.8.8 — conflict-free English reveal shortcut
+
+- Changed the English reveal shortcut to `Alt+Shift+L` because Firefox reserves
+  the previous `Alt+Shift+E` combination for its Edit menu.
+- The Tools page now has a **Remap shortcuts** action that opens Firefox's
+  built-in shortcut editor directly instead of the generic Add-ons page.
+
+## 0.8.7 — English reveal shortcut
+
+- Added `Alt+Shift+E` to switch between an always-visible English translation
+  and recall mode, where English stays hidden until the French line is hovered.
+- The shortcut keeps the English row enabled so hover-to-reveal continues to
+  work even if it had previously been disabled in settings.
+- Added the shortcut beside the matching Tools setting and to the user guide.
+
+## 0.8.6 — separate Home and settings pages
+
+- Added a dedicated Home dashboard for player status and the Transcript, Video
+  OCR, Translate, and Vocabulary workspaces.
+- General, Appearance, and Tools now contain settings only, so workspace actions
+  no longer compete with controls on every page.
+- Settings search appears only while browsing a settings page, while the global
+  enable switch stays available from anywhere.
+- The toolbar opens on Home each time for a predictable starting point.
+
+## 0.8.5 — calmer settings menu
+
+- Reduced the toolbar to four compact actions and three stable top-level
+  categories: General, Appearance, and Tools.
+- General now keeps only everyday caption choices visible; timing and provider
+  configuration are expandable cards.
+- Appearance keeps previews and common controls prominent while typography,
+  word colors, and layout use progressive disclosure.
+- Replaced the nested Tools tabs and fieldsets with clear Word lookup, Playback
+  practice, Pronunciation, and Troubleshooting cards.
+- Settings search now opens every containing card, including nested advanced
+  options, so simplified navigation does not make controls harder to find.
+
+## 0.8.4 — in-page OCR results
+
+- OCR recognition and translation now appear in a centered modal inside the
+  current YouTube page instead of opening a separate Firefox window.
+- The modal works in regular and fullscreen layouts, closes from its own Close
+  button or the backdrop, and is removed automatically when navigating videos.
+
+## 0.8.3 — immediate OCR capture
+
+- Video OCR now captures immediately when the pointer is released after a
+  valid drag; pressing Enter is no longer required.
+- Very small accidental selections remain in capture mode so the user can drag
+  again, while Escape still cancels and restores playback.
+
+## 0.8.2 — snipping-style OCR
+
+- `Alt+Shift+O` now pauses the video and starts a crosshair selection mode
+  directly over it instead of taking an immediate screenshot.
+- Drag over the French text and press Enter to confirm. Escape cancels and
+  resumes the video when it had been playing.
+- The selection overlay disappears before capture, OCR starts automatically,
+  and the popup switches to the translated text as soon as recognition ends.
+- French lookup cards now identify saved, cached, or live engine results and
+  link directly to the corresponding provider lookup when available.
+
+## 0.8.1 — quick video OCR
+
+- OCR captures only the visible YouTube video instead of browser chrome and the
+  rest of the page.
+- OCR and typed translation now open in a compact standalone window, so the
+  YouTube tab remains in place.
+- Added `Alt+Shift+O` to capture the current video and open OCR immediately.
+- Typed and OCR-recognized French now translates automatically with a short
+  debounce, while stale translation responses are ignored.
+
+## 0.8.0 — manual translation and local OCR
+
+- Replaced the native correction prompt with an inline editor that visibly
+  confirms saves and works for both individual words and selected phrases.
+- Added persistent exact-phrase corrections; subsequent phrase lookups now
+  consult the same local correction store as word lookups.
+- Preserved MyMemory as a word provider while adding target-language detection;
+  a confidently mislabeled result such as Spanish `creada` in an English
+  response is rejected and retried through the concise fallback.
+- Added a standalone French translation workspace for text that is typed,
+  pasted, or corrected after OCR, with copy and correction actions.
+- Added one-click visible-tab capture from the toolbar, draggable region
+  selection, optional subtitle contrast enhancement, progress feedback, and a
+  bundled French Tesseract model. OCR runs entirely inside Firefox and the
+  temporary screenshot is removed from storage after loading.
+- Added searchable toolbar destinations for manual translation and OCR.
+
+## 0.7.3 — findable settings and safer word meanings
+
+- Added task-based settings search that opens the correct category, nested tab,
+  and collapsed section, with full keyboard navigation between results.
+- Grouped learning options into word-lookup and playback-assistance sections,
+  collapsed the detailed color palette, and added prominent transcript and
+  vocabulary actions at the top of the toolbar popup.
+- Added an Open transcript button plus an `Alt+Shift+T` command so the Firefox
+  sidebar can be restored immediately after it is closed.
+- Added a quality gate for single-word translations. Implausibly long
+  translation-memory results are rejected and retried through a concise word
+  translation path instead of being shown or cached in the lookup card.
+- Added a Correct meaning action to word cards so an inaccurate result can be
+  replaced immediately and reused as the preferred local translation.
+
+## 0.7.2 — cohesive, calmer interface
+
+- Refined the settings popup with clearer hierarchy, larger controls, visible
+  save feedback, wrapped player status, a collapsible translation-service
+  section, and appearance reset in its expected category.
+- Improved the transcript sidebar with clearer active-line treatment, compact
+  status cards, a known-word coverage bar, accessible word actions, and a more
+  useful sticky search area.
+- Reorganized lookup-card actions into navigation, learning, and playback
+  groups, while making the selected word and primary learning actions easier to
+  scan without increasing the card footprint.
+- Simplified vocabulary import/export into a menu, added sticky filters and
+  responsive cards, and improved review with progress feedback, backdrop close,
+  focus containment, focus restoration, and small-screen layout.
+- Polished the pronunciation setup page with platform navigation, clearer
+  sections, responsive spacing, and consistent keyboard focus styling.
+
+## 0.7.1 — quieter lookups and conservative alignment
+
+- Removed the translation-source badge from the English subtitle so both rows
+  remain visually centered.
+- Limited exact character-span matching to Azure alignments; Google segment
+  boundaries now fall back to conservative lexical matching instead of
+  highlighting an oversized translated phrase.
+- Raised the fuzzy-match threshold, reduced lemma requests to the primary
+  infinitive, and made the immediate word cache provider-specific.
+- Reduced verb information to one `Infinitive` line inside the existing
+  color-coded translation panel, removing the duplicate verb panel, tense and
+  person breakdown, and generated examples.
+- Demoted pronunciation, gender, and number to a small muted line beneath the
+  selected word. Removed frequency/syllable prominence, video concordances,
+  and external example-sentence links from lookup cards.
+
+## 0.7.0 — resilient translation and study workspace
+
+- Replaced individual lookahead requests with a priority batch scheduler that
+  starts at the playback position, buffers in both directions, cancels stale
+  video sessions, honors rate-limit recovery, and reports its queue health.
+- Added Azure Translator, DeepL API Free, and custom LibreTranslate adapters in
+  addition to Google web translation and manual MyMemory use. Provider secrets
+  stay in local Firefox storage and optional host access is requested only when
+  configured.
+- Added a bounded 180-day IndexedDB translation cache with a local-storage
+  fallback, provider/version-aware keys, cache statistics, and explicit clear.
+- Added exact Azure character alignment and Google segment alignment ahead of
+  conservative local word matching. Translation provenance is shown beside the
+  English row and personal vocabulary corrections override later word lookups.
+- Kept raw YouTube cue fragments as timing provenance, moved rendering to video
+  frame/media events, added a configurable line hold, and expanded diagnostics
+  with the nearby cue window, alignment spans, buffer state, and provider health.
+- Added a Firefox transcript sidebar with bilingual search, seeking, current-line
+  tracking, translation buffer status, known-word coverage, frequent unknown
+  words, and repeated phrase mining. Incremental revisions avoid rebuilding the
+  complete transcript on every poll.
+- Added Watch, Focus, Study, and Shadow modes, unknown-word smart pauses,
+  optional silent-gap skipping, per-video timing/mode profiles, caption
+  navigation commands, and a fixed-modifier bypass for other dictionary tools.
+- Enriched the offline Lexique derivative with lemma, IPA-like pronunciation,
+  gender, number, syllable count, and frequency data for 50,000 common forms.
+- Expanded review with forward, reverse, cloze, and listening exercises,
+  tolerant answer checks, adaptive scheduling, and safe Anki TSV export.
+- Added keyboard-accessible settings tabs, contrast warnings, a responsive
+  options page, automated manifest linting, tests, packaging, and CI checks.
+
+## 0.6.9 — silent native-caption fallback
+
+- Removed the DualSub error notice on videos without a French caption track.
+- Kept YouTube's regular subtitle renderer visible until a French track has
+  actually been confirmed.
+- Silently disabled the DualSub overlay for the current video when French is
+  unavailable, while leaving the extension enabled for the next video.
+- Prevented repeated caption-track requests after a video is known not to have
+  French captions.
+- Cleared saved native-caption state during YouTube SPA navigation so a track
+  from the previous video cannot interfere with regular captions on the next.
+- Restored the user's original YouTube caption choice at navigation start,
+  before the old player and its caption state are replaced.
+
 ## 0.6.8 — elision-aware subtitle words and compact particles
 
 - Split French elisions into adjacent grammatical targets without changing the

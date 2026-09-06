@@ -298,4 +298,10 @@
       previousCaptionState = null;
     }
   });
+
+  window.addEventListener("dualsub:reset-native-caption-state", () => {
+    // YouTube owns caption state again after SPA navigation. Do not apply a
+    // track saved from the previous video to the newly loaded player.
+    previousCaptionState = null;
+  });
 })();

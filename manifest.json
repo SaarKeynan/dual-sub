@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DualSub for YouTube",
-  "version": "0.6.8",
+  "version": "0.8.9",
   "description": "Learn French on YouTube with synchronized bilingual subtitles, instant lookup, vocabulary, and review.",
   "permissions": [
     "activeTab",
@@ -12,18 +12,33 @@
     "https://api.mymemory.translated.net/*",
     "https://translate.googleapis.com/*"
   ],
+  "optional_host_permissions": [
+    "https://api.cognitive.microsofttranslator.com/*",
+    "https://api-free.deepl.com/*",
+    "https://*/*"
+  ],
   "background": {
     "scripts": [
+      "translation-engine.js",
       "background.js"
     ]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'self';"
   },
   "action": {
-    "default_title": "DualSub settings",
+    "default_title": "DualSub controls and transcript",
     "default_popup": "popup/popup.html",
     "default_icon": "icons/dualsub.svg"
+  },
+  "sidebar_action": {
+    "default_title": "DualSub transcript",
+    "default_panel": "sidebar/sidebar.html",
+    "default_icon": "icons/dualsub.svg"
+  },
+  "options_ui": {
+    "page": "popup/popup.html",
+    "open_in_tab": true
   },
   "icons": {
     "48": "icons/dualsub.svg",
@@ -36,6 +51,12 @@
       },
       "description": "Toggle both subtitle tracks"
     },
+    "toggle-translation-reveal": {
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      },
+      "description": "Show or hide English except while French is hovered"
+    },
     "replay-current-caption": {
       "suggested_key": {
         "default": "Alt+Shift+R"
@@ -47,6 +68,32 @@
         "default": "Alt+Shift+V"
       },
       "description": "Open the DualSub vocabulary workspace"
+    },
+    "open-transcript": {
+      "suggested_key": {
+        "default": "Alt+Shift+T"
+      },
+      "description": "Open the DualSub transcript sidebar"
+    },
+    "open-video-ocr": {
+      "suggested_key": {
+        "default": "Alt+Shift+O"
+      },
+      "description": "Select and translate text from the current video"
+    },
+    "previous-caption": {
+      "suggested_key": { "default": "Alt+Shift+Left" },
+      "description": "Go to the previous French caption"
+    },
+    "next-caption": {
+      "suggested_key": { "default": "Alt+Shift+Right" },
+      "description": "Go to the next French caption"
+    },
+    "caption-50ms-earlier": {
+      "description": "Move DualSub captions 50 milliseconds earlier"
+    },
+    "caption-50ms-later": {
+      "description": "Move DualSub captions 50 milliseconds later"
     }
   },
   "content_scripts": [
@@ -69,9 +116,18 @@
     {
       "resources": [
         "page-bridge.js",
+        "tools/translator.html",
+        "tools/translator.css",
+        "tools/translator.js",
+        "vendor/tesseract/tesseract.min.js",
+        "vendor/tesseract/worker.min.js",
+        "vendor/tesseract/tesseract-core-simd-lstm.wasm.js",
+        "vendor/tesseract/tesseract-core-simd-lstm.wasm",
+        "vendor/tesseract/lang/fra.traineddata.gz",
         "vendor/ablaut/ablaut_bg.wasm",
         "vendor/lefff/french-verb-lemmas.json",
-        "vendor/lexique/french-word-groups.json"
+        "vendor/lexique/french-word-groups.json",
+        "vendor/lexique/french-lexical-info.json"
       ],
       "matches": [
         "*://www.youtube.com/*"
@@ -81,7 +137,12 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "dualsub@local",
-      "strict_min_version": "109.0"
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "websiteContent"
+        ]
+      }
     }
   }
 }

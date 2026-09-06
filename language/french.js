@@ -5,11 +5,14 @@
   let morphologyState = "fallback";
   let wordGroupIndex = null;
   let wordGroupState = "fallback";
+  let lexicalInfoIndex = null;
+  let lexicalInfoState = "fallback";
 
   async function initializeResources() {
     if (typeof browser === "undefined") return;
     morphologyState = "loading";
     wordGroupState = "loading";
+    lexicalInfoState = "loading";
     const morphologyPromise = (async () => {
       if (typeof wasm_bindgen !== "function") throw new Error("Morphology engine unavailable");
       const [, lemmaResponse] = await Promise.all([
@@ -24,7 +27,12 @@
         if (!response.ok) throw new Error(`Word-group resource returned ${response.status}`);
         return response.json();
       });
-    const [morphologyResult, wordGroupResult] = await Promise.allSettled([morphologyPromise, wordGroupPromise]);
+    const lexicalInfoPromise = fetch(browser.runtime.getURL("vendor/lexique/french-lexical-info.json"))
+      .then((response) => {
+        if (!response.ok) throw new Error(`Lexical-info resource returned ${response.status}`);
+        return response.json();
+      });
+    const [morphologyResult, wordGroupResult, lexicalInfoResult] = await Promise.allSettled([morphologyPromise, wordGroupPromise, lexicalInfoPromise]);
     if (morphologyResult.status === "fulfilled") {
       attestedLemmas = morphologyResult.value;
       morphologyEngine = wasm_bindgen;
@@ -34,10 +42,37 @@
       wordGroupIndex = wordGroupResult.value;
       wordGroupState = "ready";
     } else wordGroupState = "fallback";
+    if (lexicalInfoResult.status === "fulfilled") {
+      lexicalInfoIndex = lexicalInfoResult.value;
+      lexicalInfoState = "ready";
+    } else lexicalInfoState = "fallback";
   }
 
   function normalize(value) {
     return String(value || "").trim().toLocaleLowerCase("fr").normalize("NFC");
+  }
+
+  function lexiqueToIpa(value) {
+    const mapping = {
+      "@": "ɑ̃", "§": "ɔ̃", "5": "ɛ̃", "1": "œ̃", "2": "ø", "9": "œ",
+      "E": "ɛ", "O": "ɔ", "S": "ʃ", "Z": "ʒ", "R": "ʁ", "N": "ɲ", "G": "ŋ"
+    };
+    return Array.from(String(value || ""), (character) => mapping[character] || character).join("");
+  }
+
+  function lexicalInfo(rawWord) {
+    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const value = lexicalInfoIndex?.[word];
+    if (!Array.isArray(value)) return null;
+    return {
+      surface: word,
+      lemma: value[0] || word,
+      pronunciation: lexiqueToIpa(value[1]),
+      gender: value[2] === "m" ? "masculine" : value[2] === "f" ? "feminine" : "",
+      number: value[3] === "s" ? "singular" : value[3] === "p" ? "plural" : "",
+      syllables: Number(value[4]) || 0,
+      frequency: Number(value[5]) || 0
+    };
   }
 
   function indexForm(form, analysis) {
@@ -562,66 +597,15 @@
     };
   }
 
-  function describe(analysis) {
-    if (!analysis) return "";
-    if (analysis.partOfSpeech === "nominal") return "noun or adjective";
-    const person = analysis.person && analysis.number ? `${analysis.person} person ${analysis.number}` : "";
-    let form = "";
-    if (analysis.mood === "participle") form = `${analysis.tense || ""} participle`.trim();
-    else if (analysis.mood === "infinitive") form = "infinitive";
-    else if (analysis.mood === "imperative") form = "imperative";
-    else if (analysis.mood === "conditional") form = analysis.tense === "present" ? "present conditional" : `${analysis.tense || ""} conditional`.trim();
-    else if (analysis.mood === "subjunctive") form = `${analysis.tense || "present"} subjunctive`;
-    else form = analysis.tense || analysis.mood || "verb";
-    const clitic = analysis.clitic
-      ? `${analysis.clitic.surface} = ${analysis.clitic.expanded} (${analysis.clitic.role})`
-      : "";
-    return [form, person, clitic].filter(Boolean).join(" · ");
-  }
-
-  function example(analysis, rawSurface = "") {
-    if (!analysis || analysis.partOfSpeech !== "verb") return "";
-    let surface = normalize(rawSurface || analysis.surface || analysis.lemma);
-    if (!surface) return "";
-    if (analysis.pronominal && analysis.clitic && !analysis.clitic.attached) {
-      const reflexiveForms = {
-        "1st singular": "me", "2nd singular": "te", "3rd singular": "se",
-        "1st plural": "nous", "2nd plural": "vous", "3rd plural": "se"
-      };
-      let reflexive = reflexiveForms[`${analysis.person} ${analysis.number}`] || "se";
-      if (/^[aeiouyàâäéèêëîïôöùûühœ]/iu.test(surface) && ["me", "te", "se"].includes(reflexive)) {
-        reflexive = `${reflexive[0]}’`;
-      }
-      surface = reflexive.endsWith("’") ? `${reflexive}${surface}` : `${reflexive} ${surface}`;
-    }
-    if (analysis.mood === "imperative") return `${surface[0].toLocaleUpperCase("fr")}${surface.slice(1)} !`;
-    if (analysis.mood === "infinitive") return `Je veux ${analysis.lemma || surface}.`;
-    if (analysis.mood === "participle") return "";
-    const subjects = {
-      "1st singular": "je",
-      "2nd singular": "tu",
-      "3rd singular": "il",
-      "1st plural": "nous",
-      "2nd plural": "vous",
-      "3rd plural": "ils"
-    };
-    let subject = subjects[`${analysis.person} ${analysis.number}`] || "";
-    if (!subject) return "";
-    if (subject === "je" && /^[aeiouyàâäéèêëîïôöùûüœh]/iu.test(surface)) subject = "j’";
-    const separator = subject.endsWith("’") ? "" : " ";
-    const sentence = `${subject}${separator}${surface}`;
-    return `${sentence[0].toLocaleUpperCase("fr")}${sentence.slice(1)}.`;
-  }
-
   const ready = initializeResources();
   globalThis.DualSubFrench = Object.freeze({
     analyzeWord,
     analyzeElisionParticle,
     classifyWord,
-    describe,
-    example,
+    lexicalInfo,
     ready,
     get engineState() { return morphologyState; },
-    get wordGroupState() { return wordGroupState; }
+    get wordGroupState() { return wordGroupState; },
+    get lexicalInfoState() { return lexicalInfoState; }
   });
 })();

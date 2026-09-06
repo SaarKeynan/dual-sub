@@ -17,9 +17,15 @@
       </div>
       <div class="header-actions">
         <button id="reviewButton" class="primary" type="button">Review due <span id="dueCount">0</span></button>
-        <button id="exportCsv" type="button">Export CSV</button>
-        <button id="exportJson" type="button">Backup JSON</button>
-        <button id="importJson" type="button">Restore backup</button>
+        <details class="export-menu">
+          <summary>Import / export</summary>
+          <div class="export-menu-panel">
+            <button id="exportCsv" type="button">Export CSV</button>
+            <button id="exportAnki" type="button">Export Anki TSV</button>
+            <button id="exportJson" type="button">Backup JSON</button>
+            <button id="importJson" type="button">Restore backup</button>
+          </div>
+        </details>
         <input id="importFile" type="file" accept="application/json,.json" hidden>
       </div>
     </header>
@@ -68,14 +74,18 @@
           <span id="reviewProgress">1 / 1</span>
           <button id="closeReview" class="icon-button" type="button" aria-label="Close review">×</button>
         </div>
-        <p class="eyebrow">French</p>
+        <div class="review-progress-track" aria-hidden="true"><span id="reviewProgressBar"></span></div>
+        <label class="review-mode">Exercise
+          <select id="reviewMode"><option value="forward">French → English</option><option value="reverse">English → French</option><option value="cloze">French sentence cloze</option><option value="listen">Listen → French</option></select>
+        </label>
+        <p id="reviewPromptLabel" class="eyebrow">French</p>
         <h2 id="reviewTitle"></h2>
         <p id="reviewSentence" class="review-sentence"></p>
         <button id="speakReview" class="speak-button" type="button">Listen in French</button>
         <input id="typedAnswer" class="typed-answer" type="text" placeholder="Type the English meaning (optional)" autocomplete="off">
         <p id="answerFeedback" class="answer-feedback" hidden></p>
         <div id="reviewAnswer" class="review-answer" hidden>
-          <p class="eyebrow">English</p>
+          <p id="reviewAnswerLabel" class="eyebrow">English</p>
           <h3 id="reviewTranslation"></h3>
           <p id="reviewSentenceTranslation"></p>
         </div>
