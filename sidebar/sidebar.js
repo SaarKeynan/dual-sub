@@ -1,4 +1,5 @@
 let currentTabId = null;
+let refreshGeneration = 0;
 let state = null;
 let lastActiveIndex = -1;
 let lastTranscriptRenderKey = "";
@@ -13,12 +14,11 @@ function formatTime(milliseconds) {
 
 async function activeTab() {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  currentTabId = tab?.id || null;
   return tab;
 }
 
 async function send(message) {
-  if (!currentTabId) await activeTab();
+  if (!currentTabId) currentTabId = (await activeTab())?.id || null;
   if (!currentTabId) return null;
   return browser.tabs.sendMessage(currentTabId, message).catch(() => null);
 }
@@ -110,6 +110,16 @@ function renderTranscript() {
 }
 
 function render() {
+  const exercise = state?.practice;
+  const hidden = exercise?.mode === "dictation" && !exercise.revealed;
+  document.querySelector(".transcript-panel").hidden = hidden;
+  document.querySelector(".unknown-panel").hidden = hidden;
+  element("dictationPanel").hidden = exercise?.mode !== "dictation";
+  element("sessionSummary").textContent = state?.session
+    ? state.session.encountered + " different words encountered; " + state.session.saved + " words saved this session"
+    : "Start watching to collect a session recap.";
+  for (const id of ["startShadow", "startDictation", "useCurrent"]) element(id).disabled = !state?.cues?.length;
+  element("reviewSession").disabled = !state?.session?.words?.length;
   element("videoTitle").textContent = state?.title || state?.status || "Open a French YouTube video";
   element("buffer").textContent = `${state?.bufferAheadSeconds || 0}s`;
   element("coverage").textContent = `${state?.coveragePercent || 0}%`;
@@ -121,12 +131,21 @@ function render() {
 }
 
 async function refresh() {
+  const generation = ++refreshGeneration;
   const tab = await activeTab();
-  if (!tab || (tab.url && !tab.url.includes("youtube.com/watch"))) {
+  if (generation !== refreshGeneration) return;
+  if (currentTabId !== tab?.id) {
+    currentTabId = tab?.id || null;
+    state = null;
+    lastTranscriptRenderKey = "";
+    lastActiveIndex = -1;
+  }
+  if (!tab || (tab.url && !/^https?:\/\/www\.youtube\.com\/watch(?:\?|$)/.test(tab.url))) {
     state = null; render(); return;
   }
-  const response = await send({ type: "get-transcript-state", lastRevision: state?.revision || "" });
-  if (response?.ok) state = { ...response, cues: response.cues || state?.cues || [] };
+  const response = await browser.tabs.sendMessage(tab.id, { type: "get-transcript-state", lastRevision: state?.revision || "" }).catch(() => null);
+  if (generation !== refreshGeneration || currentTabId !== tab.id) return;
+  state = response?.ok ? { ...response, cues: response.cues || (response.videoId === state?.videoId ? state.cues : []) } : null;
   render();
 }
 
@@ -149,10 +168,7 @@ element("showEnglish").addEventListener("change", renderTranscript);
 element("unknownOnly").addEventListener("change", renderTranscript);
 element("studyMode").addEventListener("change", async () => {
   const stored = await browser.storage.sync.get("settings");
-  const settings = { ...(stored.settings || {}), studyMode: element("studyMode").value };
-  if (settings.studyMode === "watch") { settings.recallMode = false; settings.autoPause = false; }
-  if (settings.studyMode === "study") { settings.recallMode = false; settings.hoverLookup = true; }
-  if (settings.studyMode === "shadow") { settings.autoPause = true; settings.recallMode = false; }
+  const settings = DualSubSettings.applyStudyMode(stored.settings, element("studyMode").value);
   await browser.storage.sync.set({ settings });
   refresh();
 });
@@ -162,3 +178,43 @@ browser.tabs.onActivated.addListener(refresh);
 browser.tabs.onUpdated.addListener((_tabId, changeInfo) => { if (changeInfo.url || changeInfo.status === "complete") refresh(); });
 refresh();
 setInterval(refresh, 900);
+
+async function startPractice(mode) {
+  element("dictationFeedback").replaceChildren(); element("dictationAnswer").value = "";
+  const response = await send({ type: "start-practice", mode,
+    first: Number(element("practiceFirst").value) - 1, last: Number(element("practiceLast").value) - 1,
+    pauseSeconds: Number(element("practicePause").value) });
+  element("practiceStatus").textContent = response?.ok ? (mode === "dictation" ? "Listen and type. Captions are hidden until you check." : "Range repeats with a speaking pause.") : response?.error || "Open a video with timed captions.";
+  refresh();
+}
+element("useCurrent").addEventListener("click", () => {
+  element("practiceFirst").value = element("practiceLast").value = Math.max(1, (state?.currentCueIndex ?? 0) + 1);
+});
+element("startShadow").addEventListener("click", () => startPractice("shadow"));
+element("startDictation").addEventListener("click", () => startPractice("dictation"));
+element("stopPractice").addEventListener("click", async () => { await send({ type: "stop-practice" }); element("practiceStatus").textContent = "Practice stopped."; refresh(); });
+element("checkDictation").addEventListener("click", async () => {
+  const response = await send({ type: "reveal-dictation" });
+  if (!response?.ok) { element("practiceStatus").textContent = response?.error || "Start a dictation first."; return; }
+  const changes = DualSubPractice.compareWords(response.answer, element("dictationAnswer").value);
+  element("dictationFeedback").replaceChildren(...changes.map((change) => {
+    const word = document.createElement("span"); word.className = "answer-" + change.type;
+    word.textContent = (change.type === "replace" ? change.actual + " -> " + change.expected : change.expected || change.actual) + " ";
+    word.title = change.type; return word;
+  }));
+  refresh();
+});
+element("reviewSession").addEventListener("click", async () => {
+  const response = await browser.runtime.sendMessage({ type: "get-vocabulary" });
+  const words = new Set(state?.session?.words || []);
+  const ids = (response?.entries || []).filter((entry) => words.has(entry.normalized) || (entry.videoId === state?.videoId && entry.sourceText.split(/\s+/).every((word) => words.has(word.toLocaleLowerCase("fr"))))).slice(0, 10).map((entry) => entry.id);
+  if (!ids.length) { element("practiceStatus").textContent = "Save some words from this video to review them here."; return; }
+  await browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") + "?review=" + encodeURIComponent(ids.join(",")) });
+});
+
+element("replayDictation").addEventListener("click", async () => {
+  const response = await send({ type: "replay-practice" });
+  if (!response?.ok) element("practiceStatus").textContent = response?.error || "Start a dictation first.";
+  else element("dictationFeedback").replaceChildren();
+  refresh();
+});

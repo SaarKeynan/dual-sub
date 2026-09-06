@@ -1,68 +1,18 @@
 (() => {
-  const DEFAULT_SETTINGS = {
-    enabled: true,
-    showSource: true,
-    showTranslation: true,
-    sourceLanguage: "fr",
-    targetLanguage: "en",
-    hideNativeCaptions: true,
-    selectionTranslation: true,
-    wholeLiveLines: true,
-    preloadVideoWords: true,
-    hoverLookup: true,
-    wordAlignment: true,
-    colorFrenchWordGroups: false,
-    wordGroupPaletteVersion: 2,
-    wordGroupColors: {
-      unknown: "#ffffff",
-      noun: "#60a5fa",
-      verb: "#a78bfa",
-      adjective: "#fb7185",
-      adverb: "#facc15",
-      pronoun: "#22d3ee",
-      determiner: "#4ade80",
-      preposition: "#fb923c",
-      conjunction: "#f472b6",
-      interjection: "#94a3b8"
-    },
-    pauseOnLookup: false,
-    recallMode: false,
-    autoPause: false,
-    studyMode: "watch",
-    captionHoldMs: 350,
-    smartPauseUnknownOnly: true,
-    skipCaptionGaps: false,
-    translationBufferSeconds: 90,
-    translationBatchSize: 30,
-    lookupCardPosition: "smart",
-    hoverDelay: 420,
-    pronunciationVoiceURI: "",
-    pronunciationRate: 0.88,
-    captionOffsetMs: 0,
-    translationProvider: "google",
-    bottomOffset: 72,
-    maxWidth: 88,
-    sourceStyle: {
-      fontSize: 30,
-      textColor: "#ffffff",
-      backgroundColor: "#111827",
-      backgroundOpacity: 82,
-      fontFamily: "Arial, sans-serif",
-      fontWeight: "700",
-      italic: false
-    },
-    targetStyle: {
-      fontSize: 25,
-      textColor: "#fde68a",
-      backgroundColor: "#111827",
-      backgroundOpacity: 82,
-      fontFamily: "Arial, sans-serif",
-      fontWeight: "600",
-      italic: false
-    }
-  };
+  const DEFAULT_SETTINGS = DualSubSettings.defaults;
 
+  const { joinCaptionParts, foldLateCaptionFragments, parseCaptionPayload, cueAt, cueIndexAt } = DualSubCaptions;
+  const { translationPrefetchOrder } = DualSubScheduler;
   let settings = DEFAULT_SETTINGS;
+  const tabSessionId = crypto.randomUUID();
+  let warmupSessionId = "";
+  const sessionWords = new Set();
+  const sessionSaved = new Set();
+  const practice = DualSubPractice.createController({
+    getVideo: () => video, getCues: () => sourceCues, getOffset: () => effectiveCaptionOffsetMs(),
+    hideCaptions: (hidden) => document.documentElement.classList.toggle("dualsub-dictation", hidden),
+    requestRender: () => requestRender()
+  });
   let root;
   let sourceLine;
   let targetLine;
@@ -74,12 +24,37 @@
   let video;
   let ocrSelectionSession = null;
   let ocrPopup = null;
+  let ocrCapturePending = false;
+
+  function updateOcrCaptionVisibility() {
+    document.documentElement.classList.toggle("dualsub-ocr-active", Boolean(ocrSelectionSession || ocrPopup || ocrCapturePending));
+  }
   let animationFrame;
   let videoFrameCallbackId;
   const observedVideos = new WeakSet();
   let sourceCues = [];
   let targetCues = [];
   let currentVideoId = "";
+  let videoCacheScope = null;
+  let videoCacheCapturedAt = 0;
+  let videoCacheSaveTimer = null;
+  let restoredVideoSnapshot = false;
+
+  function saveVideoSnapshot() {
+    clearTimeout(videoCacheSaveTimer); videoCacheSaveTimer = null;
+    if (!videoCacheScope || videoCacheScope.videoId !== currentVideoId || videoCacheScope.sourceLanguage !== settings.sourceLanguage || videoCacheScope.targetLanguage !== settings.targetLanguage || !sourceCues.length || usingNativeSource) return;
+    browser.runtime.sendMessage({ type: "save-video-caption-cache", scope: { ...videoCacheScope }, snapshot: {
+      capturedAt: videoCacheCapturedAt, sourceCues, targetCues,
+      translations: Array.from(aheadTranslations, ([index, text]) => ({ index, text,
+        alignment: aheadAlignments.get(index) || [], alignmentKind: aheadAlignmentKinds.get(index) || "none",
+        provenance: aheadTranslationProvenance.get(index) || "" }))
+    } }).catch(() => {});
+  }
+
+  function scheduleVideoSnapshot() {
+    if (!videoCacheSaveTimer) videoCacheSaveTimer = setTimeout(saveVideoSnapshot, 400);
+  }
+
   let sourceTrackState = "unknown";
   let currentSourceText = "";
   let currentTargetText = "";
@@ -111,7 +86,7 @@
   let statusTimer;
   let pageCaptionRequestId = 0;
   const pendingPageCaptionRequests = new Map();
-  const captionPayloadCache = new Map();
+  const { requestCaptionPayload } = DualSubCaptionLoader.create({ requestCaptionFromPage, sendMessage: (message) => browser.runtime.sendMessage(message) });
   let transcriptRequestId = 0;
   const pendingTranscriptRequests = new Map();
   let playerCaptionUrlRequestId = 0;
@@ -165,22 +140,7 @@
   let transcriptAnalysisCache = null;
   let currentVideoProfile = null;
 
-  function mergeSettings(value = {}) {
-    const wordGroupColors = { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) };
-    if (!value.wordGroupPaletteVersion && wordGroupColors.verb === "#fb7185" && wordGroupColors.adjective === "#c084fc") {
-      wordGroupColors.verb = DEFAULT_SETTINGS.wordGroupColors.verb;
-      wordGroupColors.adjective = DEFAULT_SETTINGS.wordGroupColors.adjective;
-    }
-    return {
-      ...DEFAULT_SETTINGS,
-      ...value,
-      studyMode: ["watch", "study", "shadow"].includes(value.studyMode) ? value.studyMode : "watch",
-      wordGroupPaletteVersion: 2,
-      wordGroupColors,
-      sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
-      targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
-    };
-  }
+  const mergeSettings = DualSubSettings.merge;
 
   function effectiveStudyMode() {
     const mode = currentVideoProfile?.studyMode || settings.studyMode || "watch";
@@ -237,6 +197,7 @@
     applyLineStyle(targetLine, settings.targetStyle);
 
     if (!active) {
+      practice.stop();
       stopRenderScheduler();
       stopVideoWordWarmup();
       loopCueRange = null;
@@ -290,65 +251,7 @@
     if (!root || !root.isConnected) {
       root = document.createElement("div");
       root.className = "dualsub-root";
-      root.innerHTML = `
-        <div class="dualsub-stack">
-          <div class="dualsub-status" role="status" aria-live="polite">
-            <span class="dualsub-status-text"></span>
-            <button class="dualsub-status-close" type="button" aria-label="Dismiss message" title="Dismiss"></button>
-          </div>
-          <div class="dualsub-line dualsub-source"><span class="dualsub-line-text"></span></div>
-          <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span></div>
-        </div>
-        <div class="dualsub-selection-card" role="dialog" aria-live="polite" aria-label="Subtitle lookup">
-          <div class="dualsub-card-heading">
-            <div class="dualsub-card-label">French lookup</div>
-            <div class="dualsub-card-heading-actions">
-              <button class="dualsub-card-pin" type="button" data-action="pin" aria-label="Keep lookup open" title="Keep open">Pin</button>
-              <button class="dualsub-card-close" type="button" data-action="close" aria-label="Close lookup">&times;</button>
-            </div>
-          </div>
-          <div class="dualsub-card-source"></div>
-          <div class="dualsub-card-lexical" hidden>
-            <div class="dualsub-card-lexical-info"></div>
-          </div>
-          <div class="dualsub-card-translation" data-group="unknown">
-            <div class="dualsub-card-group" hidden></div>
-            <div class="dualsub-card-result"></div>
-            <div class="dualsub-card-infinitive" hidden></div>
-          </div>
-          <div class="dualsub-card-provenance" hidden><span></span><a target="_blank" rel="noopener noreferrer">Open engine lookup &nearr;</a></div>
-          <form class="dualsub-correction-form" hidden>
-            <label>Preferred English meaning<input class="dualsub-correction-input" type="text" maxlength="300" autocomplete="off"></label>
-            <div><button type="submit" data-action="save-correction">Save correction</button><button type="button" data-action="cancel-correction">Cancel</button></div>
-          </form>
-          <div class="dualsub-card-context">
-            <div class="dualsub-card-label">In this line</div>
-            <div class="dualsub-card-sentence-source"></div>
-            <div class="dualsub-card-sentence-target"></div>
-          </div>
-          <div class="dualsub-card-actions">
-            <div class="dualsub-action-group dualsub-action-navigation">
-              <button type="button" data-action="previous" title="Previous French word" aria-label="Previous French word">←</button>
-              <button type="button" data-action="next" title="Next French word" aria-label="Next French word">→</button>
-            </div>
-            <div class="dualsub-action-group dualsub-action-primary">
-              <button type="button" data-action="speak">Pronounce</button>
-              <button type="button" data-action="save">+ Vocabulary</button>
-              <button type="button" data-action="phrase">Select phrase</button>
-            </div>
-            <div class="dualsub-action-group dualsub-action-secondary">
-              <button type="button" data-action="copy">Copy</button>
-              <button type="button" data-action="correct">Correct meaning</button>
-              <button type="button" data-action="replay">Replay</button>
-              <button type="button" data-action="slow">Slow replay</button>
-              <button type="button" data-action="loop">Loop line</button>
-            </div>
-          </div>
-          <div class="dualsub-card-links">
-            <a class="dualsub-card-link" target="_blank" rel="noopener noreferrer">Google Translate &nearr;</a>
-            <a class="dualsub-card-wiktionary" target="_blank" rel="noopener noreferrer">Wiktionary &nearr;</a>
-          </div>
-        </div>`;
+      root.replaceChildren(DualSubLookupView.create());
       player.appendChild(root);
       sourceLine = root.querySelector(".dualsub-source .dualsub-line-text");
       targetLine = root.querySelector(".dualsub-target .dualsub-line-text");
@@ -424,69 +327,6 @@
     return url.toString();
   }
 
-  function joinCaptionParts(parts) {
-    let result = "";
-    for (const rawPart of parts) {
-      const part = String(rawPart || "").replace(/\s+/g, " ").trim();
-      if (!part) continue;
-      const punctuationStart = /^[,.;:!?%…'’\)\]\}]/u.test(part);
-      const joiningEnd = /[-'’\(\[\{]$/u.test(result);
-      if (result && !punctuationStart && !joiningEnd) result += " ";
-      result += part;
-    }
-    return result.trim();
-  }
-
-  function foldLateCaptionFragments(cues) {
-    const folded = [];
-    const connectingWords = new Set([
-      "a", "an", "the", "to", "of", "on", "in", "for", "with", "at", "from", "about",
-      "de", "du", "des", "\u00e0", "au", "aux", "en", "sur", "avec", "pour", "sans", "chez",
-      "dans", "par", "que", "qui", "un", "une", "le", "la", "les"
-    ]);
-
-    for (let cueIndex = 0; cueIndex < cues.length; cueIndex += 1) {
-      const cue = cues[cueIndex];
-      const previous = folded[folded.length - 1];
-      if (!previous) {
-        folded.push({ ...cue, fragments: (cue.fragments || [{ start: cue.start, end: cue.end, text: cue.text }]).map((fragment) => ({ ...fragment })) });
-        continue;
-      }
-
-      const previousWords = previous.text.match(/[\p{L}\p{N}]+(?:['\u2019][\p{L}\p{N}]+)*/gu) || [];
-      const fragmentWords = cue.text.match(/[\p{L}\p{N}]+(?:['\u2019][\p{L}\p{N}]+)*/gu) || [];
-      const lastPreviousWord = (previousWords[previousWords.length - 1] || "").toLocaleLowerCase();
-      const previousLooksOpen = !/[.!?\u2026]["'\u2019\u201d)\]]*$/u.test(previous.text);
-      const nextCue = cues[cueIndex + 1];
-      const followsConnector = connectingWords.has(lastPreviousWord);
-      const startsAtPreviousBoundary = Math.abs(cue.start - previous.end) <= 500;
-      const immediatelySuperseded = Boolean(
-        nextCue &&
-        nextCue.start > cue.start &&
-        nextCue.start <= cue.end &&
-        nextCue.start - cue.start <= 1600
-      );
-
-      if (
-        previousLooksOpen &&
-        previousWords.length >= 4 &&
-        previousWords.length + fragmentWords.length <= 16 &&
-        fragmentWords.length > 0 && fragmentWords.length <= 3 &&
-        followsConnector &&
-        startsAtPreviousBoundary &&
-        immediatelySuperseded
-      ) {
-        previous.text = joinCaptionParts([previous.text, cue.text]);
-        previous.end = Math.max(previous.end, cue.end);
-        previous.fragments.push(...(cue.fragments || [{ start: cue.start, end: cue.end, text: cue.text }]).map((fragment) => ({ ...fragment, folded: true })));
-      } else {
-        folded.push({ ...cue, fragments: (cue.fragments || [{ start: cue.start, end: cue.end, text: cue.text }]).map((fragment) => ({ ...fragment })) });
-      }
-    }
-
-    return folded;
-  }
-
   function requestCaptionFromPage(url) {
     return new Promise((resolve, reject) => {
       const id = ++pageCaptionRequestId;
@@ -499,32 +339,6 @@
         detail: JSON.stringify({ id, url })
       }));
     });
-  }
-
-  async function requestCaptionPayload(url) {
-    if (captionPayloadCache.has(url)) return captionPayloadCache.get(url);
-
-    const requireCaptionText = (text, origin) => {
-      if (String(text || "").trim()) return text;
-      throw new Error(`YouTube returned an empty ${origin} response.`);
-    };
-    const backgroundRequest = browser.runtime.sendMessage({ type: "fetch-captions", url }).then((response) => {
-      if (!response?.ok) throw new Error(response?.error || "Could not fetch captions.");
-      return requireCaptionText(response.text, "extension-context");
-    });
-    const request = Promise.any([
-      requestCaptionFromPage(url).then((text) => requireCaptionText(text, "page-context")),
-      backgroundRequest
-    ]).catch((error) => {
-      captionPayloadCache.delete(url);
-      const messages = Array.from(error?.errors || []).map((item) => item?.message).filter(Boolean);
-      throw new Error(messages.join(" ") || error.message || "Could not fetch captions.");
-    });
-    captionPayloadCache.set(url, request);
-    if (captionPayloadCache.size > 32) {
-      captionPayloadCache.delete(captionPayloadCache.keys().next().value);
-    }
-    return request;
   }
 
   function requestFullTranscript() {
@@ -623,74 +437,6 @@
         message: "Google live fallback · still watching for precise timed tracks"
       };
     }
-  }
-
-  function parseCaptionPayload(rawText) {
-    const trimmed = rawText.trim();
-    if (!trimmed) return [];
-
-    if (trimmed.startsWith("{")) {
-      const payload = JSON.parse(trimmed);
-      const provisional = [];
-
-      for (const event of payload.events || []) {
-        if (!Number.isFinite(Number(event.tStartMs)) || !Array.isArray(event.segs)) continue;
-        const start = Number(event.tStartMs);
-        const text = joinCaptionParts(event.segs.map((segment) => segment.utf8 || ""))
-          .replace(/\u200b/g, "")
-          .replace(/\s*\n\s*/g, "\n")
-          .trim();
-        if (!text) continue;
-
-        const cue = {
-          start,
-          end: start + Number(event.dDurationMs || 0),
-          text,
-          fragments: [{ start, end: start + Number(event.dDurationMs || 0), text, append: Boolean(event.aAppend) }]
-        };
-
-        // `aAppend` is YouTube's explicit signal that this event extends the
-        // preceding caption rather than starting a new one.
-        if (event.aAppend && provisional.length) {
-          const previous = provisional[provisional.length - 1];
-          previous.text = joinCaptionParts([previous.text, cue.text]);
-          previous.end = Math.max(previous.end, cue.end);
-          previous.fragments.push(...cue.fragments);
-        } else {
-          provisional.push(cue);
-        }
-      }
-
-      const folded = foldLateCaptionFragments(provisional);
-      return folded.map((cue, index) => ({
-        ...cue,
-        end: cue.end > cue.start
-          ? cue.end
-          : (folded[index + 1]?.start || cue.start + 5000)
-      }));
-    }
-
-    const documentNode = new DOMParser().parseFromString(trimmed, "text/xml");
-    const simpleCues = Array.from(documentNode.querySelectorAll("text")).map((node) => {
-      const start = Number(node.getAttribute("start") || 0) * 1000;
-      const duration = Number(node.getAttribute("dur") || 5) * 1000;
-      return { start, end: start + duration, text: node.textContent.trim() };
-    }).filter((cue) => cue.text);
-    if (simpleCues.length) return foldLateCaptionFragments(simpleCues);
-
-    // YouTube's srv3 format, commonly returned for auto-generated captions,
-    // uses <p t="milliseconds" d="milliseconds"><s>…</s></p> rather than
-    // the older <text start="seconds"> shape.
-    const richCues = Array.from(documentNode.querySelectorAll("p")).map((node) => {
-      const start = Number(node.getAttribute("t") || 0);
-      const duration = Number(node.getAttribute("d") || 5000);
-      return {
-        start,
-        end: start + duration,
-        text: node.textContent.replace(/\s+/g, " ").trim()
-      };
-    }).filter((cue) => cue.text);
-    return foldLateCaptionFragments(richCues);
   }
 
   async function loadCaptionCues(track, translatedLanguage, label) {
@@ -972,6 +718,7 @@
   }
 
   function useYouTubeNativeCaptions() {
+    practice.stop();
     sourceTrackState = "unavailable";
     loadGeneration += 1;
     stopNativeCapture(true);
@@ -1010,6 +757,7 @@
     currentVideoProfile = null;
     if (currentVideoId) {
       const profileResponse = await browser.runtime.sendMessage({ type: "get-video-profile", videoId: currentVideoId }).catch(() => null);
+      if (generation !== loadGeneration) return;
       currentVideoProfile = profileResponse?.profile || null;
       applySettings();
     }
@@ -1029,6 +777,25 @@
     sourceTrackState = "available";
     applySettings();
     const nativeTargetTrack = chooseTrack(payload.tracks || [], settings.targetLanguage);
+    const trackKey = (track) => track ? JSON.stringify([track.languageCode, track.kind || "", track.vssId || "", track.name || ""]) : "youtube-auto";
+    videoCacheScope = { videoId: currentVideoId, sourceLanguage: settings.sourceLanguage, targetLanguage: settings.targetLanguage,
+      provider: settings.translationProvider, sourceTrack: trackKey(sourceTrack), targetTrack: trackKey(nativeTargetTrack) };
+    videoCacheCapturedAt = Date.now();
+    restoredVideoSnapshot = false;
+    const cacheResponse = await browser.runtime.sendMessage({ type: "get-video-caption-cache", scope: videoCacheScope }).catch(() => null);
+    if (generation !== loadGeneration) return;
+    const snapshot = videoCacheScope ? cacheResponse?.snapshot : null;
+    if (snapshot?.sourceCues?.length) {
+      stopNativeCapture(true); stopAheadTranslation();
+      sourceCues = snapshot.sourceCues; targetCues = snapshot.targetCues || [];
+      videoCacheCapturedAt = snapshot.capturedAt;
+      restoredVideoSnapshot = true;
+      if (targetCues.length) { refreshCueAlignment(); scheduleVideoWordWarmup(); }
+      else startAheadTranslation(snapshot.translations || []);
+      setStatus("ready", "Restored saved captions for this video.", 1800);
+      requestRender();
+      return;
+    }
     setStatus("loading", "Loading French + English subtitles…");
     try {
       const targetTrack = nativeTargetTrack || sourceTrack;
@@ -1106,40 +873,8 @@
     }
   }
 
-  function cueAt(cues, timeMs) {
-    let low = 0;
-    let high = cues.length - 1;
-    while (low <= high) {
-      const middle = (low + high) >> 1;
-      const cue = cues[middle];
-      if (cue.start <= timeMs) low = middle + 1;
-      else high = middle - 1;
-    }
-
-    // Auto-generated cues often overlap. Prefer the most recently started
-    // active cue rather than whichever overlap a binary search encounters.
-    for (let index = high, inspected = 0; index >= 0 && inspected < 24; index -= 1, inspected += 1) {
-      if (timeMs < cues[index].end) return cues[index];
-    }
-    return null;
-  }
-
-  function cueIndexAt(cues, timeMs) {
-    let low = 0;
-    let high = cues.length - 1;
-    while (low <= high) {
-      const middle = (low + high) >> 1;
-      const cue = cues[middle];
-      if (cue.start <= timeMs) low = middle + 1;
-      else high = middle - 1;
-    }
-    for (let index = high, inspected = 0; index >= 0 && inspected < 24; index -= 1, inspected += 1) {
-      if (timeMs < cues[index].end) return index;
-    }
-    return Math.max(0, Math.min(cues.length - 1, low));
-  }
-
   function refreshCueAlignment() {
+    if (sourceCues.length && targetCues.length) scheduleVideoSnapshot();
     alignedTargetCues = [];
     if (!sourceCues.length || !targetCues.length) return;
 
@@ -1191,22 +926,6 @@
     aheadTranslationRetryTimer = null;
     aheadTranslationSessionId = "";
     if (sessionId) browser.runtime.sendMessage({ type: "cancel-translation-session", sessionId }).catch(() => {});
-  }
-
-  function translationPrefetchOrder(cues, timeMs, leadMs = 60000, backfillMs = 8000) {
-    if (!cues.length) return [];
-    let focusIndex = Math.max(0, cueIndexAt(cues, timeMs));
-    if (timeMs >= cues[focusIndex].end && cues[focusIndex + 1]) focusIndex += 1;
-    const firstIndex = Math.max(0, cueIndexAt(cues, Math.max(0, timeMs - backfillMs)));
-    let lastIndex = focusIndex;
-    while (lastIndex + 1 < cues.length && cues[lastIndex + 1].start <= timeMs + leadMs) {
-      lastIndex += 1;
-    }
-
-    const order = [focusIndex];
-    for (let index = firstIndex; index < focusIndex; index += 1) order.push(index);
-    for (let index = focusIndex + 1; index <= lastIndex; index += 1) order.push(index);
-    return order;
   }
 
   function videoWordWarmupOrder(cues, timeMs, limit = 36) {
@@ -1282,11 +1001,13 @@
           .slice(0, 10)
       };
     }
-    const revision = `${transcriptRevision}:${wordStatesRevision}`;
+    const revision = `${tabSessionId}:${currentVideoId}:${transcriptRevision}:${wordStatesRevision}`;
     return {
       ok: true,
       revision,
       videoId: currentVideoId,
+      practice: practice.snapshot(),
+      session: { encountered: sessionWords.size, saved: sessionSaved.size, words: Array.from(sessionWords).slice(-500) },
       title: currentVideoTitle,
       status: status.message,
       currentCueIndex: currentSourceCueIndex,
@@ -1315,6 +1036,8 @@
   }
 
   function stopVideoWordWarmup() {
+    if (warmupSessionId) browser.runtime.sendMessage({ type: "cancel-translation-session", sessionId: warmupSessionId }).catch(() => {});
+    warmupSessionId = "";
     wordWarmupGeneration += 1;
     clearTimeout(wordWarmupTimer);
     wordWarmupTimer = null;
@@ -1336,13 +1059,14 @@
     const queue = videoWordWarmupOrder(sourceCues, (video?.currentTime || 0) * 1000, limit);
     wordWarmupQueued = queue.length;
     if (!queue.length) return;
+    warmupSessionId = `warmup-${tabSessionId}-${currentVideoId}-${generation}`;
     const response = await browser.runtime.sendMessage({
       type: "translate-batch",
       items: queue.map((word) => ({ text: word, cacheId: `word:${normalizeLookupWord(word)}` })),
       sourceLanguage: settings.sourceLanguage,
       targetLanguage: settings.targetLanguage,
       videoId: currentVideoId,
-      sessionId: `warmup-${currentVideoId}-${generation}`
+      sessionId: warmupSessionId
     }).catch((error) => ({ ok: false, error: error.message }));
     if (generation !== wordWarmupGeneration) return;
     if (!response?.ok) {
@@ -1357,11 +1081,20 @@
     });
   }
 
-  function startAheadTranslation() {
+  function startAheadTranslation(cachedTranslations = []) {
     stopNativeCapture(true);
     stopAheadTranslation();
     usingAheadTranslation = true;
-    aheadTranslationSessionId = `video-${currentVideoId}-${aheadTranslationGeneration}-${Date.now()}`;
+    if (videoCacheScope) videoCacheScope = { ...videoCacheScope, provider: settings.translationProvider };
+    for (const result of cachedTranslations) {
+      if (!sourceCues[result.index] || !result.text) continue;
+      aheadTranslations.set(result.index, result.text);
+      aheadAlignments.set(result.index, result.alignment || []);
+      aheadAlignmentKinds.set(result.index, result.alignmentKind || "none");
+      aheadTranslationProvenance.set(result.index, result.provenance || "Saved translation");
+    }
+    scheduleVideoSnapshot();
+    aheadTranslationSessionId = `video-${tabSessionId}-${currentVideoId}-${aheadTranslationGeneration}`;
     lastAheadPrefetchAt = performance.now();
     const timeMs = (video?.currentTime || 0) * 1000;
     prefetchAheadTranslations(timeMs, Number(settings.translationBufferSeconds || 90) * 1000);
@@ -1449,6 +1182,7 @@
         aheadAlignmentKinds.set(index, result.alignmentKind || (result.provider === "azure" && result.alignment?.length ? "character" : "none"));
         aheadTranslationProvenance.set(index, result.provenance || result.provider || "translated");
       });
+      scheduleVideoSnapshot();
       if (aheadTranslations.has(aheadTranslationFocusIndex) && status.state !== "ready") {
         setStatus("ready", `English ready here · ${translationBufferAheadSeconds()}s buffered ahead.`, 2200);
         status = { state: "ready", message: "French + English active · buffering ahead" };
@@ -1596,6 +1330,7 @@
   }
 
   function renderCueText(sourceText, targetText, sourceCue = null, targetCue = null, sourceIndex = -1) {
+    if (video && !video.paused) learningTokens(sourceText).forEach((word) => sessionWords.add(word));
     if (!sourceLine || !targetLine) return;
     if (sourceText !== currentSourceText) {
       renderTokenizedText(sourceLine, sourceText, settings.sourceLanguage);
@@ -1619,6 +1354,7 @@
   }
 
   function renderLoop() {
+    practice.tick();
     if (loopCueRange && video && video.currentTime * 1000 >= loopCueRange.end - 45) {
       video.currentTime = Math.max(0, loopCueRange.start / 1000 - 0.08);
       video.play().catch(() => {});
@@ -1638,7 +1374,7 @@
       const timeMs = video.currentTime * 1000 + effectiveCaptionOffsetMs();
       let sourceIndex = cueIndexAt(sourceCues, timeMs);
       if (
-        settings.skipCaptionGaps &&
+        !practice.active && settings.skipCaptionGaps &&
         !video.paused &&
         sourceCues[sourceIndex]?.start - timeMs > 1500 &&
         lastSkippedGapIndex !== sourceIndex
@@ -1659,7 +1395,7 @@
       const sourceCueVisibleUntil = Math.min(nextSourceCue?.start ?? Number.POSITIVE_INFINITY, sourceCue.end + Math.max(0, Number(settings.captionHoldMs || 0)));
       const sourceCueIsActive = sourceCue && timeMs >= sourceCue.start && timeMs < sourceCueVisibleUntil;
       if (
-        (settings.autoPause || effectiveStudyMode() === "shadow") &&
+        !practice.active && (settings.autoPause || effectiveStudyMode() === "shadow") &&
         (effectiveStudyMode() === "shadow" || !settings.smartPauseUnknownOnly || cueContainsLearningWord(sourceCue)) &&
         sourceCueIsActive &&
         lastPlaybackCueIndex >= 0 &&
@@ -1823,6 +1559,7 @@
     lookupTranslationMetadata.set(cacheKey, {
       provider: metadata.provider || settings.translationProvider,
       provenance: metadata.provenance || "",
+      lookupText: metadata.lookupText || "",
       cacheHit: Boolean(metadata.cacheHit)
     });
     if (lookupTranslationCache.size > 1200) {
@@ -1856,7 +1593,7 @@
     } else {
       label.textContent = `Source: ${response?.provenance || `${providerLabel} engine lookup`}`;
     }
-    const href = translationProviderLink(provider, sourceText);
+    const href = translationProviderLink(provider, response?.lookupText || sourceText);
     link.hidden = !href;
     if (href) {
       link.href = href;
@@ -1865,8 +1602,8 @@
     node.hidden = false;
   }
 
-  function lookupTranslationKey(value) {
-    return `${settings.translationProvider}|${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(value)}`;
+  function lookupTranslationKey(value, readingKey = "") {
+    return `${settings.translationProvider}|${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(value)}${readingKey ? `|reading:${readingKey}` : ""}`;
   }
 
   function stemEnglishWord(value) {
@@ -1984,10 +1721,13 @@
       try {
         const wordText = lookupTextForWord(word);
         const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText, currentSourceText);
+        const reading = globalThis.DualSubFrench?.lookupReading(wordText, currentSourceText, conjugation);
         const evidenceTexts = [wordText, conjugation?.pronominalLemma || conjugation?.lemma]
           .filter((text, index, values) => text && values.indexOf(text) === index);
         const results = await Promise.allSettled(evidenceTexts.map((text) => browser.runtime.sendMessage({
           type: "translate-selection", text,
+          lookupText: text === wordText ? reading?.text || text : text,
+          readingKey: text === wordText ? reading?.key || "" : "",
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
           cacheMode: "word",
@@ -1998,7 +1738,7 @@
           .map((result) => result.value.translatedText);
         const surfaceResponse = results[0]?.status === "fulfilled" ? results[0].value : null;
         if (surfaceResponse?.ok) {
-          const cacheKey = lookupTranslationKey(wordText);
+          const cacheKey = lookupTranslationKey(wordText, reading?.key);
           rememberLookupTranslation(cacheKey, surfaceResponse.translatedText, surfaceResponse);
         }
         if (translations.length && word.isConnected && word.classList.contains("is-hovered")) {
@@ -2125,7 +1865,10 @@
           ? tagFrenchWord(hoveredWord)
           : globalThis.DualSubFrench?.classifyWord(cleanText, currentSourceText, conjugation))
       : null;
+    const reading = kind === "word" ? globalThis.DualSubFrench?.lookupReading(cleanText, sentence, conjugation) : null;
     lookupContext = {
+      readingKey: reading?.key || "",
+      lemma: conjugation?.partOfSpeech === "verb" ? (conjugation.pronominalLemma || conjugation.lemma || "") : "",
       kind,
       sourceText: cleanText,
       translatedText: "",
@@ -2146,10 +1889,9 @@
     translationNode.dataset.group = wordGroup?.group || "unknown";
     groupNode.hidden = !wordGroup;
     groupNode.dataset.group = wordGroup?.group || "unknown";
-    groupNode.textContent = wordGroup
-      ? [WORD_GROUP_LABELS[wordGroup.group] || "Word", ...(wordGroup.alternatives || []).map((group) => `also ${WORD_GROUP_LABELS[group]?.toLocaleLowerCase() || group}`)].join(" · ")
-      : "";
-    const lookupCacheKey = lookupTranslationKey(cleanText);
+    groupNode.textContent = wordGroup ? WORD_GROUP_LABELS[wordGroup.group] || "Word" : "";
+    groupNode.title = (wordGroup?.alternatives || []).map((group) => WORD_GROUP_LABELS[group] || group).join(", ");
+    const lookupCacheKey = lookupTranslationKey(cleanText, reading?.key);
     const cachedLookup = kind === "word" ? lookupTranslationCache.get(lookupCacheKey) : null;
     const cachedMetadata = lookupTranslationMetadata.get(lookupCacheKey) || {};
     provenanceNode.hidden = true;
@@ -2183,7 +1925,7 @@
     loopButton.classList.toggle("is-active", Boolean(loopCueRange));
     pinButton.textContent = lookupPinned ? "Pinned" : "Pin";
     pinButton.classList.toggle("is-active", lookupPinned);
-    linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(cleanText)}&op=translate`;
+    linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(reading?.text || cleanText)}&op=translate`;
     const dictionaryWord = conjugation?.pronominalLemma || conjugation?.lemma || cleanText;
     wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
     selectionCard.classList.add("is-visible");
@@ -2205,6 +1947,8 @@
     }) : browser.runtime.sendMessage({
         type: "translate-selection",
         text: cleanText,
+        lookupText: reading?.text || cleanText,
+        readingKey: reading?.key || "",
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
         cacheMode: kind === "word" ? "word" : "phrase",
@@ -2375,7 +2119,7 @@
       lookupContext.translatedText = corrected;
       selectionCard.querySelector(".dualsub-card-result").textContent = corrected;
       const correctionMetadata = { provider: "correction", provenance: "Your correction", cacheHit: true };
-      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText), corrected, correctionMetadata);
+      rememberLookupTranslation(lookupTranslationKey(lookupContext.sourceText, lookupContext.readingKey), corrected, correctionMetadata);
       showLookupProvenance(correctionMetadata, lookupContext.sourceText);
       form.hidden = true;
       const correctionButton = selectionCard.querySelector('[data-action="correct"]');
@@ -2409,6 +2153,7 @@
     }
 
     if (action === "loop" && video && Number.isFinite(lookupContext.cueEndMs)) {
+      practice.stop();
       if (loopCueRange) {
         loopCueRange = null;
         button.textContent = "Loop line";
@@ -2446,10 +2191,12 @@
 
     if (action === "save") {
       button.disabled = true;
+      const savedVideo = currentVideoId;
       const response = await browser.runtime.sendMessage({
         type: "add-vocabulary",
         entry: {
           sourceText: lookupContext.sourceText,
+          lemma: lookupContext.lemma,
           translatedText: lookupContext.translatedText,
           sentence: lookupContext.sentence,
           sentenceTranslation: lookupContext.sentenceTranslation,
@@ -2460,8 +2207,9 @@
           timeMs: lookupContext.timeMs
         }
       }).catch((error) => ({ ok: false, error: error.message }));
+      if (response?.ok && currentVideoId === savedVideo) sessionSaved.add(response.entry?.id || response.entry?.sourceText);
       button.textContent = response?.ok ? "Saved ✓" : "Could not save";
-      if (!response?.ok) button.disabled = false;
+      if (!response?.ok) { button.disabled = false; setStatus("error", response?.error || "Could not save vocabulary.", 6000); }
     }
   }
 
@@ -2494,6 +2242,7 @@
   }
 
   function handleNavigation() {
+    clearTimeout(videoCacheSaveTimer); videoCacheSaveTimer = null; videoCacheScope = null; restoredVideoSnapshot = false;
     hideOcrPopup();
     stopNativeCapture(false);
     window.dispatchEvent(new CustomEvent("dualsub:reset-native-caption-state"));
@@ -2521,6 +2270,13 @@
   }
 
   function handleNavigationStart() {
+    ocrCapturePending = false;
+    stopOcrSelection();
+    hideOcrPopup();
+    saveVideoSnapshot(); videoCacheScope = null; restoredVideoSnapshot = false;
+    loadGeneration += 1;
+    stopAheadTranslation(); stopVideoWordWarmup();
+    practice.stop(); sessionWords.clear(); sessionSaved.clear();
     // Restore the user's original YouTube caption choice while the old player
     // is still active. The finish handler then forgets that per-video snapshot.
     if (usingNativeTranslation || usingNativeSource) stopNativeCapture(true);
@@ -2528,7 +2284,9 @@
 
   function attachToPlayer() {
     if (!createOverlay()) return;
-    video = document.querySelector(".html5-video-player video");
+    const nextVideo = document.querySelector(".html5-video-player video");
+    if (video && video !== nextVideo) practice.stop();
+    video = nextVideo;
     if (video && !observedVideos.has(video)) {
       observedVideos.add(video);
       ["play", "pause", "seeking", "seeked", "ratechange", "loadedmetadata"].forEach((eventName) => {
@@ -2649,12 +2407,14 @@
     session.overlay.remove();
     window.removeEventListener("keydown", session.onKeyDown, true);
     window.removeEventListener("resize", session.onResize, true);
+    updateOcrCaptionVisibility();
     if (resume && session.wasPlaying) session.video.play().catch(() => {});
   }
 
   function hideOcrPopup() {
     ocrPopup?.remove();
     ocrPopup = null;
+    updateOcrCaptionVisibility();
   }
 
   function showOcrPopup() {
@@ -2673,11 +2433,16 @@
     });
     (document.fullscreenElement || document.documentElement).appendChild(modal);
     ocrPopup = modal;
+    updateOcrCaptionVisibility();
     return { ok: true };
   }
 
   function startOcrSelection() {
+    practice.stop();
+    hideOcrPopup();
+    ocrCapturePending = false;
     stopOcrSelection({ resume: true });
+    updateOcrCaptionVisibility();
     const activeVideo = video?.isConnected ? video : document.querySelector("video");
     if (!activeVideo) return { ok: false, error: "No video is visible on this page." };
     const videoRect = activeVideo.getBoundingClientRect();
@@ -2719,6 +2484,7 @@
       onResize: () => stopOcrSelection({ resume: true })
     };
     ocrSelectionSession = session;
+    updateOcrCaptionVisibility();
     const point = (event) => ({
       x: Math.max(bounds.left, Math.min(bounds.right, event.clientX)),
       y: Math.max(bounds.top, Math.min(bounds.bottom, event.clientY))
@@ -2747,11 +2513,17 @@
         return;
       }
       session.completing = true;
+      const captureGeneration = loadGeneration;
       const crop = session.selection;
+      ocrCapturePending = true;
       stopOcrSelection();
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (captureGeneration !== loadGeneration) return;
       const response = await browser.runtime.sendMessage({ type: "complete-video-ocr-selection", crop })
         .catch((error) => ({ ok: false, error: error.message }));
+      if (captureGeneration !== loadGeneration) return;
+      ocrCapturePending = false;
+      updateOcrCaptionVisibility();
       if (!response?.ok) {
         if (wasPlaying) activeVideo.play().catch(() => {});
         setStatus("error", response?.error || "The selected video text could not be captured.", 4000);
@@ -2786,6 +2558,7 @@
     return { ok: true };
   }
 
+  window.addEventListener("pagehide", saveVideoSnapshot);
   document.addEventListener("yt-navigate-start", handleNavigationStart);
   document.addEventListener("yt-navigate-finish", handleNavigation);
   document.addEventListener("fullscreenchange", () => setTimeout(() => {
@@ -2809,6 +2582,23 @@
   });
 
   browser.runtime.onMessage.addListener((message) => {
+    if (message?.type === "start-practice") {
+      if (!settings.enabled || usingNativeSource) return Promise.resolve({ ok: false, error: "Enable DualSub and wait for timed French captions before practicing." });
+      loopCueRange = null;
+      return practice.start(message.mode, message.first, message.last, message.pauseSeconds)
+        .then(() => ({ ok: true })).catch((error) => ({ ok: false, error: error.message }));
+    }
+    if (message?.type === "replay-practice") return practice.replay().then(() => ({ ok: true })).catch((error) => ({ ok: false, error: error.message }));
+    if (message?.type === "stop-practice") { practice.stop(); return Promise.resolve({ ok: true }); }
+    if (message?.type === "reveal-dictation") {
+      try { return Promise.resolve({ ok: true, answer: practice.reveal() }); }
+      catch (error) { return Promise.resolve({ ok: false, error: error.message }); }
+    }
+    if (message?.type === "invalidate-video-caption-cache") {
+      clearTimeout(videoCacheSaveTimer); videoCacheSaveTimer = null;
+      videoCacheScope = null; restoredVideoSnapshot = false;
+      return Promise.resolve({ ok: true });
+    }
     if (message?.type === "get-status") return Promise.resolve(status);
     if (message?.type === "start-video-ocr-selection") return Promise.resolve(startOcrSelection());
     if (message?.type === "show-video-ocr-popup") return Promise.resolve(showOcrPopup());
@@ -2885,6 +2675,7 @@
           videoId: currentVideoId,
           mode,
           status: status.message,
+          restoredVideoSnapshot,
           sourceCueCount: sourceCues.length,
           targetCueCount: targetCues.length,
           rawSourceFragmentCount: sourceCues.reduce((total, cue) => total + (cue.fragments?.length || 1), 0),
@@ -2941,6 +2732,7 @@
     const previousSource = settings.sourceLanguage;
     const previousTarget = settings.targetLanguage;
     const previousWholeLiveLines = settings.wholeLiveLines;
+    saveVideoSnapshot();
     const previousTranslationProvider = settings.translationProvider;
     const previousPreloadVideoWords = settings.preloadVideoWords;
     settings = mergeSettings(changes.settings.newValue);

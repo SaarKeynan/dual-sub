@@ -391,8 +391,11 @@
   }
 
   function contextRank(analysis, context) {
-    if (!context.person || !analysis.person) return 1;
-    return analysis.person === context.person && analysis.number === context.number ? 0 : 2;
+    const personRank = !context.person || !analysis.person ? 1
+      : analysis.person === context.person && analysis.number === context.number ? 0 : 2;
+    // Prefer the ordinary finite reading when the engine also emits an
+    // imperative slot for the same surface (notably as -> avoir).
+    return personRank * 10 + (analysis.mood === "imperative" ? 3 : 0);
   }
 
   function addVerbContext(analysis, parts, context) {
@@ -515,7 +518,7 @@
   });
 
   function lexicalGroups(rawWord) {
-    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const word = splitElidedClitic(rawWord).base;
     for (const [group, words] of closedWordGroups) {
       if (words.has(word)) return [group];
     }
@@ -523,7 +526,7 @@
   }
 
   function likelyNominalLemma(rawWord) {
-    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const word = splitElidedClitic(rawWord).base;
     const candidates = [];
     if (word.endsWith("ées")) candidates.push(word.slice(0, -2));
     else if (word.endsWith("ée")) candidates.push(word.slice(0, -1));
@@ -533,7 +536,13 @@
   }
 
   function hasNominalDeterminer(rawWord, sentence) {
-    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const parts = splitElidedClitic(rawWord);
+    const word = parts.base;
+    // An isolated l'as defaults to avoir; an explicit subject also establishes
+    // that l' is an object clitic (including tu ne l'as pas).
+    const sentenceParts = splitElidedClitic(sentence);
+    if (sentenceParts.prefix === "l" && sentenceParts.base === word) return false;
+    if (inferVerbContext(parts, sentence).person) return false;
     const words = normalize(sentence).match(/[\p{L}]+/gu) || [];
     return words.some((candidate, index) => {
       if (candidate !== word) return false;
@@ -597,12 +606,35 @@
     };
   }
 
+  function lookupReading(rawWord, sentence = "", suppliedAnalysis = null) {
+    const analysis = suppliedAnalysis || analyzeWord(rawWord, sentence);
+    const group = classifyWord(rawWord, sentence, analysis).group;
+    const parts = splitElidedClitic(rawWord);
+    const ambiguous = lexicalGroups(parts.base).some((value) => value === "noun" || value === "adjective") || parts.prefix === "l";
+    let text = rawWord;
+    if (analysis?.partOfSpeech === "verb" && ambiguous && ["indicative", "conditional", "subjunctive"].includes(analysis.mood)) {
+      const pronouns = { "1st:singular": "je", "2nd:singular": "tu", "3rd:singular": "il", "1st:plural": "nous", "2nd:plural": "vous", "3rd:plural": "ils" };
+      const subject = pronouns[`${analysis.person}:${analysis.number}`];
+      if (subject) {
+        const surface = parts.canonical;
+        text = subject === "je" && /^[aeiouyàâäéèêëîïôöùûühœ]/iu.test(surface) ? `j'${surface}` : `${subject} ${surface}`;
+        if (analysis.mood === "subjunctive") text = /^[aeiouy]/iu.test(text) ? `qu'${text}` : `que ${text}`;
+      }
+    } else if (group === "noun" && !parts.attached) {
+      const compound = (normalize(sentence).match(/[\p{L}]+(?:['’][\p{L}]+)*/gu) || [])
+        .find((word) => splitElidedClitic(word).prefix === "l" && splitElidedClitic(word).base === parts.base);
+      if (compound) text = compound;
+    }
+    return { text, group, key: ambiguous ? `${group}:${analysis?.lemma || ""}:${text}` : "" };
+  }
+
   const ready = initializeResources();
   globalThis.DualSubFrench = Object.freeze({
     analyzeWord,
     analyzeElisionParticle,
     classifyWord,
     lexicalInfo,
+    lookupReading,
     ready,
     get engineState() { return morphologyState; },
     get wordGroupState() { return wordGroupState; },

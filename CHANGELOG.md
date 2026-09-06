@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.9.1 — video snapshots and consistent word meanings
+
+- Persist complete timed caption tracks and generated English translations per
+  video, language pair, track identity, and provider. Refresh restores available
+  text and alignment before scheduling missing translations.
+- Retain up to 30 snapshots for 30 days in IndexedDB, with a bounded local-storage
+  fallback. Clear subtitle caches removes video snapshots too.
+- Keep lookup translations consistent with the selected grammatical reading.
+  `Tu l’as` prefers avoir and translates the verb construction; `l’as de pique`
+  retains the noun reading. Reading-specific caches prevent noun/verb contamination.
+- Added persistence, expiration, isolation, refresh, and lookup-card regressions.
+- Reject sentence-sized MyMemory answers for individual words, including the
+  incorrect `avez` → `her name is Anna` entry, and use the concise Google fallback.
+  Word preloading now applies the same validation, and old word caches are bypassed.
+- Hide DualSub and native YouTube subtitles throughout OCR selection, capture,
+  and results; restore visibility on close, cancellation, or capture failure.
+
+## 0.9.0 — reliable learning data and listening practice
+
+- Serialized vocabulary, word-state, correction, and video-profile mutations;
+  repeated saves preserve notes and capacity errors never silently evict words.
+- Fixed cached lookups during provider backoff and stale transcript responses
+  when switching tabs. Navigation cancels translation sessions immediately.
+- Added multi-example vocabulary, optional verb-form grouping, full learning-data
+  backup/restore, and duplicate-submit protection for vocabulary review.
+- Added sidebar dictation with word differences, range shadowing with speaking
+  pauses, and a per-video session recap with a short vocabulary review.
+- Shared settings defaults and study-mode transitions across extension contexts.
+  Extracted caption parsing/acquisition, scheduler prioritization, lookup markup,
+  and playback-practice helpers from the content script.
+- Added behavioral storage/cancellation/navigation tests and DOM interaction
+  tests. The DOM dependency is development-only.
+
+
 ## 0.8.9 — active recall without Focus mode
 
 - Removed Focus from the learning-mode menus because `Alt+Shift+L` now provides

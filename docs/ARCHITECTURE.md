@@ -1,7 +1,7 @@
 # DualSub architecture and behavior
 
 This document explains how the extension is divided, how its parts communicate,
-and how the main user-visible features work. It describes version 0.8.9.
+and how the main user-visible features work. It describes version 0.9.1.
 
 ## Runtime architecture
 
@@ -42,10 +42,17 @@ YouTube page context                   Firefox extension context
 | --- | --- |
 | `manifest.json` | Firefox permissions, scripts, pages, commands, CSP, and version |
 | `content.js` | Caption acquisition and rendering, timing, lookup cards, study behavior, and the in-video OCR selector |
+| `content/captions.js` | Pure JSON/XML caption parsing, roll-up folding, and cue lookup |
+| `content/caption-loader.js` | Cached race between page and background caption requests |
+| `content/translation-scheduler.js` | Playback-centered translation priority ordering |
+| `content/lookup-view.js` | Static lookup/overlay template returned as DOM nodes |
+| `shared/settings.js` | Shared defaults, settings merge/migration, and study-mode transitions |
+| `shared/practice.js` | Range playback controller and local dictation word comparison |
 | `content.css` | Subtitle overlay, lookup card, status badge, and OCR selector styles |
 | `page-bridge.js` | Reads and controls YouTube player internals from the page context |
 | `background.js` | Settings defaults, extension messages, vocabulary, corrections, video profiles, caption proxy, commands, and OCR capture |
 | `translation-engine.js` | Translation providers, batching, cache, retry/backoff, cancellation, and health metrics |
+| `video-cache.js` | Persistent per-video caption/translation snapshots, expiry, merging, and cache clearing |
 | `language/french.js` | French morphology, infinitives, elisions, lexical information, and word-group classification |
 | `popup/*` | Home workspace launcher plus searchable General, Appearance, and Tools settings |
 | `sidebar/*` | Live bilingual transcript, seeking, buffer health, and known/unknown-word tools |
@@ -178,6 +185,23 @@ correction, or a live provider request.
 
 ### Rolling translation scheduler
 
+Before downloading timed tracks, the content script requests a video snapshot.
+`video-cache.js` stores up to 30 snapshots in IndexedDB database
+`dualsub-video-cache`, capped at 2 MB per snapshot and 30 days from acquisition.
+If IndexedDB cannot open, `storage.local.videoCaptionCacheV1` provides a 3 MB
+fallback. Snapshot keys include video, language pair, stable caption-track
+identities, selected provider, and the custom LibreTranslate endpoint when used.
+Signed YouTube request URLs are not part of these keys or saved snapshots.
+
+Snapshots retain complete source/target cues, fragment timing, generated line
+translations, alignment spans, and provenance. Source-only snapshots seed all
+saved translations before the rolling scheduler requests missing lines. Writes
+are debounced and flushed on navigation/pagehide; concurrent snapshots merge
+translated portions only when their source cues agree. Live-only captions are
+not persisted as complete tracks. Cache failures fall back to normal loading.
+The clear-cache action invalidates pending snapshot writes in open tabs before
+clearing persistent stores.
+
 When YouTube provides French timing but not English text, `content.js` builds a
 priority queue. It translates the active cue first, then recent context, then
 upcoming cues inside the configured buffer. Batch size is capped for each
@@ -219,6 +243,12 @@ when available. Otherwise DualSub only highlights target words when surface,
 infinitive, stem, or edit-distance evidence is strong enough; uncertainty is
 preferable to a misleading match.
 
+For ambiguous finite verbs, `lookupReading()` constructs a short French query
+consistent with the local grammatical analysis, such as `tu l’as` for avoir.
+Explicit noun context remains nominal. The card displays one primary word group;
+other lexical groups remain in its tooltip. Session and persistent lookup caches
+include the reading identity, so a noun lookup cannot supply a verb-card result.
+
 Pronunciation uses Firefox's Web Speech API and the selected installed French
 voice. DualSub does not download or install OS voices itself.
 
@@ -232,6 +262,10 @@ Study modes are setting bundles rather than separate renderers:
 
 Active recall is independent of study mode: `Alt+Shift+L` toggles whether the
 English line stays visible or appears only while the French line is hovered.
+
+Transcript revisions include the content-instance and video identities. Sidebar
+refreshes reset their state when the active tab changes and ignore responses from
+superseded requests.
 
 The sidebar polls the active YouTube tab for `get-transcript-state`. To reduce
 message size, the content script can omit unchanged cue data when the sidebar
@@ -247,13 +281,45 @@ validation and limits. An entry contains the French text, English meaning,
 sentence pair, video ID/title/time, notes, creation time, and review state.
 Saving an edited meaning also stores an exact translation correction.
 
-The review workspace uses four ratings. `background.js` updates the interval,
+The review workspace uses three ratings. `background.js` updates the interval,
 ease, due date, repetitions, lapses, and last-review time. The vocabulary page
 also supports search, video filters, editing, removal, JSON import, CSV export,
 Anki-compatible export, and pronunciation.
 
+Storage mutations run through per-key queues. The 2,000-entry vocabulary limit
+rejects new saves/imports rather than discarding older entries. An import validates
+and prepares its complete result before writing. Full learning-data restore locks
+all learning keys in a fixed order and writes them together after validation.
+
+Entries retain up to 20 distinct `contexts` (sentence pairs, video IDs/titles, and
+timestamps), plus optional `lemma` metadata. Re-saving preserves unspecified
+fields such as personal notes. The vocabulary page can analyze older French
+entries locally for optional infinitive grouping; each surface form retains its
+own review state.
+
 Known/learning/ignored word states are separate from vocabulary entries. They
 drive sidebar coverage and unknown-word filtering.
+
+## Listening practice and session recap
+
+The sidebar starts dictation or shadowing through `start-practice`, with zero-based
+first/last cue indices and a speaking-pause duration. `shared/practice.js` validates
+the range (up to 20 captions and 2,000 characters), converts caption timestamps
+using the current synchronization offset, and owns replay/pause timers. Active
+practice suppresses normal automatic pauses and gap skipping. Navigation, player
+replacement, and disabling DualSub stop the controller and restore visibility.
+
+Dictation hides both overlay languages, the lookup card, native captions, and the
+sidebar transcript until the answer is revealed. Typed answers stay in the sidebar;
+word-level edit-distance comparison marks correct, missing, extra, and substituted
+words, preserving accent differences. Shadowing repeats a selected range after a
+0–15 second speaking pause. `replay-practice`, `reveal-dictation`, and `stop-practice`
+control the current exercise.
+
+The content script records distinct words encountered during playback and words
+saved during the current video session. Transcript state includes a recap; the
+sidebar can open a review of up to ten matching saved entries. These session
+counters are in memory and reset on navigation.
 
 ## OCR and manual translation
 
@@ -316,6 +382,10 @@ profiles.
 
 Provider secrets deliberately use local storage, not sync storage. OCR captures
 are short-lived. Vocabulary export happens only after an explicit user action.
+
+Full learning backups use version 2 and contain `entries`, `wordStates`,
+`corrections`, and `profiles`. Provider secrets and translation caches are excluded.
+Version 1 vocabulary-only backups and bare entry arrays remain importable.
 
 ## Communication contracts
 
@@ -411,3 +481,9 @@ violate WebExtension manifest or CSP rules.
 The settings action can copy diagnostics containing version, video ID, current
 mode, status, cue counts, time, languages, provider, and caption offset. That
 snapshot is the best starting point for timing and loading reports.
+
+The verification suite also runs `tests/regression.test.js` with cloned storage
+mocks and `tests/ui.test.js` with jsdom. Coverage includes concurrent writes,
+capacity failures, backup round trips, cancellation, tab-switch races, dictation,
+range-stop behavior, real sidebar/vocabulary HTML, and simulated caption loading.
+These tests do not replace a live Firefox/YouTube acceptance pass.

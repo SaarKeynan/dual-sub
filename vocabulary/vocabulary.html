@@ -22,7 +22,8 @@
           <div class="export-menu-panel">
             <button id="exportCsv" type="button">Export CSV</button>
             <button id="exportAnki" type="button">Export Anki TSV</button>
-            <button id="exportJson" type="button">Backup JSON</button>
+            <button id="exportJson" type="button">Backup vocabulary JSON</button>
+            <button id="exportLearning" type="button">Backup all learning data</button>
             <button id="importJson" type="button">Restore backup</button>
           </div>
         </details>
@@ -52,6 +53,7 @@
         <select id="videoFilter" aria-label="Filter by source video">
           <option value="all">All videos</option>
         </select>
+        <label><input id="groupLemmas" type="checkbox"> Group verb forms</label>
         <select id="sort" aria-label="Sort vocabulary">
           <option value="newest">Newest first</option>
           <option value="alphabetical">A–Z</option>
@@ -98,6 +100,8 @@
       </div>
     </div>
 
+    <script src="../vendor/ablaut/ablaut.js"></script>
+    <script src="../language/french.js"></script>
     <script src="vocabulary.js"></script>
   </body>
 </html>

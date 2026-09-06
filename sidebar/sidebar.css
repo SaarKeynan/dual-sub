@@ -41,3 +41,12 @@ header p { max-width: 220px; overflow: hidden; color: #91a2ba; font-size: 10px; 
 .muted, .empty { color: #71839d; font-size: 10px; } .empty { padding: 22px 14px; text-align: center; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+.practice-panel { padding: 12px; border-top: 1px solid #334155; }
+.practice-panel label { display: block; margin: 8px 0; }
+.practice-panel input { width: 65px; }
+.practice-panel textarea { display: block; width: 100%; }
+.practice-panel button { margin: 3px 0; }
+.answer-correct { color: #4ade80; }
+.answer-missing, .answer-replace { color: #fbbf24; text-decoration: underline; }
+.answer-extra { color: #f87171; text-decoration: line-through; }

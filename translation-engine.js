@@ -10,6 +10,10 @@
   const SECRET_KEY = "translationProviderSecretsV1";
   const circuitState = new Map();
   const activeSessions = new Map();
+  const cancelledSessions = new Set();
+  function assertSessionActive(sessionId) {
+    if (cancelledSessions.has(sessionId)) throw providerError("Translation request cancelled.", "TRANSLATION_CANCELLED");
+  }
   const metrics = {
     requests: 0,
     batches: 0,
@@ -131,12 +135,14 @@
   }
 
   async function fetchControlled(url, init, provider, sessionId, attempt = 0) {
+    assertSessionActive(sessionId);
     assertCircuitAvailable(provider);
     const controller = new AbortController();
     const session = activeSessions.get(sessionId) || new Set();
     session.add(controller);
     activeSessions.set(sessionId, session);
-    const timeout = setTimeout(() => controller.abort("timeout"), 20_000);
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 20_000);
     const started = performance.now();
     try {
       metrics.requests += 1;
@@ -153,7 +159,7 @@
       }
       return response;
     } catch (error) {
-      if (error?.name === "AbortError") throw providerError("Translation request cancelled.", "TRANSLATION_CANCELLED");
+      if (error?.name === "AbortError") throw providerError(timedOut ? "Translation request timed out." : "Translation request cancelled.", timedOut ? "PROVIDER_TEMPORARY_FAILURE" : "TRANSLATION_CANCELLED");
       throw error;
     } finally {
       clearTimeout(timeout);
@@ -319,9 +325,21 @@
       }
       const translatedText = cleanText(payload?.responseData?.translatedText);
       if (!translatedText) throw providerError(payload?.responseDetails || "MyMemory returned no translation.", "PROVIDER_EMPTY_RESPONSE");
+      if (suspiciousMyMemoryWordResult(text, translatedText)) {
+        throw providerError("MyMemory returned an unrelated sentence for a word lookup.", "MYMEMORY_UNRELIABLE_RESULT");
+      }
       results.push({ sourceText: text, translatedText, provider: "mymemory", alignment: [], provenance: "MyMemory" });
     }
     return results;
+  }
+
+  function suspiciousMyMemoryWordResult(source, translation) {
+    const words = (value) => String(value || "").match(/[\p{L}\p{N}]+(?:['’][\p{L}]+)*/gu) || [];
+    // TM match/quality scores describe stored segments, not semantic correctness.
+    // The public avez -> "her name is Anna" entry even carries quality=100.
+    // Use this conservative check to trigger an independent concise lookup;
+    // legitimate longer glosses can still be returned by that fallback.
+    return words(source).length === 1 && words(translation).length > 3;
   }
 
   function openDatabase() {
@@ -447,11 +465,11 @@
       providerVersion: cleanText(rawOptions.providerVersion, 40),
       sessionId: cleanText(rawOptions.sessionId, 120) || `lookup-${Date.now()}`
     };
-    assertCircuitAvailable(options.provider);
     metrics.batches += 1;
     metrics.lastProvider = options.provider;
     const keys = items.map((item) => cacheKeyFor(item, options));
     const cached = await cachedResults(keys);
+    assertSessionActive(options.sessionId);
     const results = new Array(items.length);
     const missing = [];
     items.forEach((item, index) => {
@@ -463,6 +481,7 @@
       }
     });
     if (missing.length) {
+      assertCircuitAvailable(options.provider);
       const texts = missing.map(({ item }) => item.text);
       const secrets = await providerSecrets();
       const translators = {
@@ -475,6 +494,7 @@
       try {
         metrics.characters += texts.reduce((total, text) => total + text.length, 0);
         const translated = await translators[options.provider](texts, options, options.provider === "mymemory" ? settings : secrets, options.sessionId);
+        assertSessionActive(options.sessionId);
         const savedAt = Date.now();
         const cacheEntries = [];
         missing.forEach(({ item, index, key }, translatedIndex) => {
@@ -485,9 +505,10 @@
         await cacheResults(cacheEntries);
         recordProviderSuccess(options.provider);
       } catch (error) {
+        if (error.code === "TRANSLATION_CANCELLED") throw error;
         metrics.failures += 1;
         metrics.lastError = error.message;
-        recordProviderFailure(options.provider, error);
+        if (error.code !== "MYMEMORY_UNRELIABLE_RESULT") recordProviderFailure(options.provider, error);
         throw error;
       }
     }
@@ -495,8 +516,10 @@
   }
 
   function cancelSession(sessionId) {
+    cancelledSessions.add(sessionId);
+    if (cancelledSessions.size > 1000) cancelledSessions.delete(cancelledSessions.values().next().value);
     const session = activeSessions.get(sessionId);
-    session?.forEach((controller) => controller.abort("session-cancelled"));
+    session?.forEach((controller) => controller.abort());
     activeSessions.delete(sessionId);
   }
 
@@ -518,6 +541,7 @@
     clearCache,
     parseAzureAlignment,
     cacheKeyFor,
-    normalizeProvider
+    normalizeProvider,
+    suspiciousMyMemoryWordResult
   });
 })(globalThis);

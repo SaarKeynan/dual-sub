@@ -2,6 +2,7 @@ let entries = [];
 let reviewQueue = [];
 let reviewIndex = 0;
 let answerVisible = false;
+let ratingPending = false;
 let reviewReturnFocus = null;
 
 const element = (id) => document.getElementById(id);
@@ -64,6 +65,20 @@ function createWordCard(entry) {
     link.textContent = entry.videoTitle ? `Open “${entry.videoTitle}”` : "Open video";
     meta.appendChild(link);
   }
+  if (entry.contexts?.length > 1) {
+    const history = document.createElement("details");
+    history.appendChild(createTextElement("summary", "", "Saved examples (" + entry.contexts.length + ")"));
+    for (const example of entry.contexts) {
+      const row = createTextElement("p", "sentence", example.sentence);
+      if (example.sentenceTranslation) row.appendChild(createTextElement("span", "sentence-translation", example.sentenceTranslation));
+      if (videoUrl(example)) {
+        const link = createTextElement("a", "", " Play example");
+        link.href = videoUrl(example); link.target = "_blank"; link.rel = "noopener noreferrer"; row.appendChild(link);
+      }
+      history.appendChild(row);
+    }
+    context.appendChild(history);
+  }
   context.appendChild(meta);
   card.appendChild(context);
 
@@ -92,10 +107,10 @@ function filteredEntries() {
   const filter = element("filter").value;
   const videoFilter = element("videoFilter").value;
   const result = entries.filter((entry) => {
-    const searchable = [entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation, entry.videoTitle, entry.notes]
+    const searchable = [entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation, entry.videoTitle, entry.notes, entry.lemma, ...(entry.contexts || []).flatMap((item) => [item.sentence, item.sentenceTranslation, item.videoTitle])]
       .join(" ").toLocaleLowerCase();
     if (query && !searchable.includes(query)) return false;
-    if (videoFilter !== "all" && entry.videoId !== videoFilter) return false;
+    if (videoFilter !== "all" && entry.videoId !== videoFilter && !(entry.contexts || []).some((item) => item.videoId === videoFilter)) return false;
     if (filter === "due") return isDue(entry);
     if (filter === "learning") return (Number(entry.stage) || 0) < 5;
     if (filter === "mastered") return (Number(entry.stage) || 0) >= 5;
@@ -114,7 +129,19 @@ function filteredEntries() {
 function render() {
   const list = element("wordList");
   const visible = filteredEntries();
-  list.replaceChildren(...visible.map(createWordCard));
+  if (element("groupLemmas").checked) {
+    const groups = new Map();
+    for (const entry of visible) {
+      const key = [entry.sourceLanguage, entry.targetLanguage, entry.lemma || entry.sourceText].join("|");
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(entry);
+    }
+    list.replaceChildren(...Array.from(groups.values(), (group) => {
+      const section = document.createElement("section");
+      section.appendChild(createTextElement("h2", "", group[0].lemma || group[0].sourceText));
+      section.append(...group.map(createWordCard)); return section;
+    }));
+  } else list.replaceChildren(...visible.map(createWordCard));
   element("emptyState").hidden = Boolean(visible.length);
   const due = entries.filter(isDue).length;
   element("totalCount").textContent = entries.length;
@@ -137,7 +164,7 @@ function updateVideoFilter() {
   const select = element("videoFilter");
   const selected = select.value;
   const videos = new Map();
-  for (const entry of entries) {
+  for (const entry of entries.flatMap((item) => [item, ...(item.contexts || [])])) {
     if (entry.videoId && !videos.has(entry.videoId)) videos.set(entry.videoId, entry.videoTitle || entry.videoId);
   }
   const options = [new Option("All videos", "all")];
@@ -211,6 +238,9 @@ function renderReviewCard() {
 function revealAnswer() {
   answerVisible = true;
   const entry = reviewQueue[reviewIndex];
+  const mode = element("reviewMode").value;
+  element("reviewTranslation").textContent = mode === "forward" ? entry.translatedText : entry.sourceText;
+  element("reviewAnswerLabel").textContent = mode === "forward" ? "English" : "French";
   const typed = element("typedAnswer").value.trim();
   if (typed && entry) {
     const normalize = (value) => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
@@ -238,11 +268,16 @@ function revealAnswer() {
 
 async function rateCurrent(rating) {
   const entry = reviewQueue[reviewIndex];
-  if (!entry) return;
-  await browser.runtime.sendMessage({ type: "review-vocabulary", id: entry.id, rating });
-  reviewIndex += 1;
-  renderReviewCard();
-  requestAnimationFrame(() => element("typedAnswer").focus());
+  if (!entry || !answerVisible || ratingPending) return;
+  ratingPending = true;
+  try {
+    const response = await browser.runtime.sendMessage({ type: "review-vocabulary", id: entry.id, rating });
+    if (!response?.ok) throw new Error(response?.error || "Could not save review.");
+    if (reviewQueue[reviewIndex] !== entry) return;
+    reviewIndex += 1; renderReviewCard();
+    requestAnimationFrame(() => { if (!element("reviewModal").hidden) element("typedAnswer").focus(); });
+  } catch (error) { alert(error.message); }
+  finally { ratingPending = false; }
 }
 
 function closeReview() {
@@ -294,6 +329,17 @@ function exportAnki() {
 element("search").addEventListener("input", render);
 element("filter").addEventListener("change", render);
 element("videoFilter").addEventListener("change", render);
+element("groupLemmas").addEventListener("change", async () => {
+  if (element("groupLemmas").checked && globalThis.DualSubFrench) {
+    await DualSubFrench.ready;
+    for (const entry of entries) {
+      if (entry.lemma || entry.sourceLanguage !== "fr") continue;
+      const analysis = DualSubFrench.analyzeWord(entry.sourceText, entry.sentence);
+      if (analysis?.partOfSpeech === "verb") entry.lemma = analysis.pronominalLemma || analysis.lemma || "";
+    }
+  }
+  render();
+});
 element("sort").addEventListener("change", render);
 element("reviewButton").addEventListener("click", () => {
   const due = entries.filter(isDue);
@@ -304,6 +350,13 @@ element("exportAnki").addEventListener("click", exportAnki);
 element("reviewMode").addEventListener("change", () => { if (reviewQueue.length) renderReviewCard(); });
 element("exportJson").addEventListener("click", () => {
   downloadFile("dualsub-vocabulary-backup.json", "application/json", JSON.stringify({ version: 1, exportedAt: Date.now(), entries }, null, 2));
+});
+element("exportLearning").addEventListener("click", async () => {
+  try {
+    const response = await browser.runtime.sendMessage({ type: "export-learning-backup" });
+    if (!response?.ok) throw new Error(response?.error || "Backup failed.");
+    downloadFile("dualsub-learning-backup.json", "application/json", JSON.stringify(response.backup, null, 2));
+  } catch (error) { alert(error.message); }
 });
 element("importJson").addEventListener("click", () => element("importFile").click());
 document.querySelector(".export-menu-panel").addEventListener("click", (event) => {
@@ -317,14 +370,13 @@ element("importFile").addEventListener("change", async () => {
   const file = element("importFile").files?.[0];
   element("importFile").value = "";
   if (!file) return;
-  if (file.size > 2_000_000) {
-    alert("That backup is larger than the 2 MB import limit.");
-    return;
-  }
   try {
     const payload = JSON.parse(await file.text());
+    if (payload.version !== undefined && ![1, 2].includes(payload.version)) throw new Error("Unsupported backup version.");
     const importedEntries = Array.isArray(payload) ? payload : payload.entries;
-    const response = await browser.runtime.sendMessage({ type: "import-vocabulary", entries: importedEntries });
+    const response = await browser.runtime.sendMessage(payload.version === 2
+      ? { type: "restore-learning-backup", backup: payload }
+      : { type: "import-vocabulary", entries: importedEntries });
     if (!response?.ok) throw new Error(response?.error || "Import failed.");
     await loadEntries();
     alert(`Vocabulary restored: ${response.imported} added, ${response.updated} updated.`);
@@ -394,7 +446,10 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-loadEntries().catch((error) => {
+loadEntries().then(() => {
+  const ids = new URLSearchParams(location.search).get("review");
+  if (ids) showReview(ids.split(",").slice(0, 10));
+}).catch((error) => {
   element("emptyState").hidden = false;
   element("emptyState").querySelector("h2").textContent = "Could not load vocabulary";
   element("emptyState").querySelector("p").textContent = error.message;

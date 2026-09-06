@@ -120,7 +120,7 @@
             </label>
           </div>
           <div class="service-actions"><button id="saveProvider" type="button">Save provider access</button><button id="clearProvider" type="button">Forget saved keys</button><span id="providerStatus" class="inline-status" role="status"></span></div>
-          <div class="service-actions"><button id="clearTranslationCache" type="button">Clear translation cache</button><span id="cacheStatus" class="inline-status"></span></div>
+          <div class="service-actions"><button id="clearTranslationCache" type="button" title="Clear saved video captions and individual translations">Clear subtitle caches</button><span id="cacheStatus" class="inline-status"></span></div>
           <p class="privacy">Fallback text is sent to the selected provider. Morphology and vocabulary stay local.</p>
             </div>
           </details>
@@ -261,6 +261,7 @@
     </main>
 
     <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="home-footer">Choose a settings page above to customize DualSub</span><span class="settings-footer">Shortcuts and diagnostics are in Tools</span></footer>
+    <script src="../shared/settings.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

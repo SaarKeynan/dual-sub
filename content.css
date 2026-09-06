@@ -620,3 +620,8 @@ html.dualsub-native-fallback .ytp-caption-window-container {
     border-radius: 11px;
   }
 }
+
+html.dualsub-dictation .dualsub-source, html.dualsub-dictation .dualsub-target, html.dualsub-dictation .dualsub-selection-card, html.dualsub-dictation .ytp-caption-window-container { visibility: hidden !important; }
+
+html.dualsub-ocr-active .dualsub-root,
+html.dualsub-ocr-active .ytp-caption-window-container { visibility: hidden !important; }

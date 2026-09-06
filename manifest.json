@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DualSub for YouTube",
-  "version": "0.8.9",
+  "version": "0.9.1",
   "description": "Learn French on YouTube with synchronized bilingual subtitles, instant lookup, vocabulary, and review.",
   "permissions": [
     "activeTab",
@@ -19,6 +19,8 @@
   ],
   "background": {
     "scripts": [
+      "shared/settings.js",
+      "video-cache.js",
       "translation-engine.js",
       "background.js"
     ]
@@ -82,11 +84,15 @@
       "description": "Select and translate text from the current video"
     },
     "previous-caption": {
-      "suggested_key": { "default": "Alt+Shift+Left" },
+      "suggested_key": {
+        "default": "Alt+Shift+Left"
+      },
       "description": "Go to the previous French caption"
     },
     "next-caption": {
-      "suggested_key": { "default": "Alt+Shift+Right" },
+      "suggested_key": {
+        "default": "Alt+Shift+Right"
+      },
       "description": "Go to the next French caption"
     },
     "caption-50ms-earlier": {
@@ -102,6 +108,12 @@
         "*://www.youtube.com/*"
       ],
       "js": [
+        "shared/settings.js",
+        "shared/practice.js",
+        "content/captions.js",
+        "content/caption-loader.js",
+        "content/translation-scheduler.js",
+        "content/lookup-view.js",
         "vendor/ablaut/ablaut.js",
         "language/french.js",
         "content.js"

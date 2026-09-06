@@ -11,6 +11,29 @@ French analysis, and French-to-English word matching are detailed in
 
 ## Features
 
+- Video snapshots restore timed French captions and available English translations
+  on refresh, skipping repeated YouTube caption downloads. Up to 30 videos are
+  retained for 30 days; generated translations accumulate as you watch. Use
+  **General → Clear subtitle caches** to discard saved captions and translations.
+- Ambiguous word lookup uses its selected grammatical reading: `Tu l’as` favors
+  the verb avoir, while `l’as de pique` keeps the noun meaning. Each reading has a
+  separate translation-cache identity.
+- Listening dictation in the transcript sidebar hides captions while a selected
+  range plays, then compares typed French word by word. Choose up to 20 short
+  captions; use **Listen again**, **Check answer**, or **Stop practice**.
+- Range shadowing repeats selected caption lines with a configurable 0–15 second
+  speaking pause. A session recap counts encountered and saved words and opens
+  a short review of matching vocabulary. Session counts reset on video navigation.
+- Vocabulary keeps the latest 20 distinct example sentences and source timestamps
+  for each word. **Group verb forms** groups locally analyzed French verbs by
+  infinitive while preserving each form and its review history.
+- **Backup all learning data** exports vocabulary, word states, corrections, and
+  video profiles. Restore merges a validated backup without changing provider
+  credentials. Vocabulary-only JSON backups remain supported.
+- Vocabulary writes are serialized. The 2,000-word capacity reports an error
+  instead of deleting existing words; oversized imports leave vocabulary intact.
+  Cached translations remain available while a provider is rate-limited.
+
 - A resilient translation scheduler prioritizes the current caption, batches a
   configurable lookahead window, cancels work when the video changes, backs off
   after rate limits, and keeps French visible while English catches up.

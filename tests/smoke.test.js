@@ -14,7 +14,7 @@ function extract(source, startMarker, endMarker) {
 }
 
 async function testCaptionProcessing() {
-  const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8") + fs.readFileSync(path.join(projectRoot, "content/lookup-view.js"), "utf8");
   const readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf8");
   const architecture = fs.readFileSync(path.join(projectRoot, "docs", "ARCHITECTURE.md"), "utf8");
   const translationGuide = fs.readFileSync(path.join(projectRoot, "docs", "TRANSLATION_AND_ALIGNMENT.md"), "utf8");
@@ -27,14 +27,14 @@ async function testCaptionProcessing() {
   const translatorHtml = fs.readFileSync(path.join(projectRoot, "tools", "translator.html"), "utf8");
   const translatorSource = fs.readFileSync(path.join(projectRoot, "tools", "translator.js"), "utf8");
   const bridgeSource = fs.readFileSync(path.join(projectRoot, "page-bridge.js"), "utf8");
-  const helpers = extract(source, "  function joinCaptionParts", "  function requestCaptionFromPage");
-  const parser = extract(source, "  function parseCaptionPayload", "  async function loadCaptionCues");
-  const cueTools = extract(source, "  function cueAt", "  function startAheadTranslation");
+  const helpers = fs.readFileSync(path.join(projectRoot, "content/captions.js"), "utf8") + "\nObject.assign(globalThis, DualSubCaptions);";
+  const parser = fs.readFileSync(path.join(projectRoot, "content/translation-scheduler.js"), "utf8") + "\nObject.assign(globalThis, DualSubScheduler);";
+  const cueTools = extract(source, "  function refreshCueAlignment", "  function startAheadTranslation");
   const wordMatching = extract(source, "  function normalizeLookupWord", "  function handleWordPointerOver");
   const elisionTools = extract(source, "  function splitFrenchElision", "  function tagFrenchWord");
   const nativeMessageFilter = extract(source, "  function isNativeCaptionSystemMessage", "  function readNativeCaptionText");
   const captureCrop = extract(translatorSource, "function captureCropPixels", "function loadImage");
-  const context = { console };
+  const context = { console, scheduleVideoSnapshot() {} };
   vm.createContext(context);
   vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${elisionTools}\n${nativeMessageFilter}\nconst clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));\n${captureCrop}`, context);
 
@@ -348,7 +348,7 @@ async function testAblautMorphology() {
     ok: true,
     async json() {
       return String(url).includes("french-word-groups")
-        ? { maison: "n", belle: "j", rapidement: "r", psyché: "n", psychée: "v", fait: "nv" }
+        ? { maison: "n", belle: "j", rapidement: "r", psyché: "n", psychée: "v", fait: "nv", as: "nv" }
         : Array.from(attested);
     }
   });
@@ -367,6 +367,16 @@ async function testAblautMorphology() {
   assert.strictEqual(context.DualSubFrench.analyzeWord("psychée", "une psychée").lemma, "psyché");
   assert.strictEqual(context.DualSubFrench.analyzeWord("fait", "le fait est clair").partOfSpeech, "nominal");
   assert.strictEqual(context.DualSubFrench.analyzeWord("fait", "il la fait souvent").partOfSpeech, "verb");
+  for (const sentence of ["l'as", "Tu l'as", "Tu ne l’as pas"]) {
+    const reading = context.DualSubFrench.lookupReading("l'as", sentence);
+    assert.strictEqual(reading.group, "verb");
+    assert.strictEqual(reading.text, "tu l'as", JSON.stringify(context.DualSubFrench.analyzeWord("l'as", sentence)));
+    assert(reading.key.startsWith("verb:avoir:"));
+  }
+  const ace = context.DualSubFrench.lookupReading("l'as", "l'as de pique");
+  assert.strictEqual(ace.group, "noun", "Clear card-playing context keeps the noun reading");
+  assert.strictEqual(ace.text, "l'as");
+  assert.notStrictEqual(ace.key, context.DualSubFrench.lookupReading("l'as", "Tu l'as").key);
   const fullTaime = context.DualSubFrench.analyzeWord("t’aime", "je t’aime");
   assert.strictEqual(fullTaime.lemma, "aimer");
   assert.strictEqual(fullTaime.person, "1st");
@@ -393,7 +403,7 @@ async function testWordGroupResource() {
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
-  assert.strictEqual(manifest.version, "0.8.9");
+  assert.strictEqual(manifest.version, JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8")).version);
   assert.strictEqual(manifest.commands["toggle-translation-reveal"].suggested_key.default, "Alt+Shift+L");
   assert(manifest.web_accessible_resources[0].resources.includes("tools/translator.html"), "The in-page OCR frame must be web-accessible");
   assert.strictEqual(manifest.commands["open-video-ocr"].suggested_key.default, "Alt+Shift+O");
@@ -516,6 +526,7 @@ async function testVocabularyStorage() {
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "translation-engine.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "shared/settings.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "background.js"), "utf8"), context);
   assert(messageListener, "Background message listener was not registered");
   assert.strictEqual(context.suspiciousWordTranslation("créées", "created"), false);
@@ -535,7 +546,7 @@ async function testVocabularyStorage() {
   assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
   assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
   assert.strictEqual(defaultSettings.settings.skipCaptionGaps, false);
-  assert.strictEqual(context.mergeSettings({ studyMode: "focus" }).studyMode, "watch", "Legacy Focus settings should migrate to Watch");
+  assert.strictEqual(context.DualSubSettings.merge({ studyMode: "focus" }).studyMode, "watch", "Legacy Focus settings should migrate to Watch");
   const migratedProfile = await messageListener({ type: "save-video-profile", videoId: "legacy-focus", profile: { studyMode: "focus" } });
   assert(migratedProfile.ok && migratedProfile.profile.studyMode === "watch", "Legacy per-video Focus profiles should migrate to Watch");
   assert(commandListener, "Background command listener was not registered");
