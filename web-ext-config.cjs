@@ -7,6 +7,7 @@ module.exports = {
     ".agents/**",
     ".codex/**",
     "docs/**",
+    "CLAUDE.md",
     ".web-ext-artifacts/**",
     "web-ext-artifacts",
     "web-ext-artifacts/**",
