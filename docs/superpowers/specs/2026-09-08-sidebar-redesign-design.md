@@ -159,11 +159,19 @@ in place of the button. The row still expands, so its context, "I know this",
 "Ignore" and "Go to line" all remain available; only the add is withdrawn. The
 Words tab badge counts addable rows only.
 
-**Why this is not automatic.** The two stores are independent. Saving from the
-in-video card writes a vocabulary entry and does *not* touch `wordStatesV1`, so
-such a word keeps the state `unknown` and would otherwise reappear in the list
-offering `Save` a second time. Relying on word state to hide saved words would
-therefore miss exactly the words saved by the extension's older path.
+**Why word state is not enough.** Saving a *new* word does set its state to
+`learning` — the last line of `addVocabularyEntryUnlocked` — so in the common
+case a saved word drops out of the list on its own. Two paths break that:
+
+- `importVocabularyEntriesUnlocked` writes entries and sets **no** word states,
+  so every word from a JSON, CSV or Anki import keeps reading `unknown` and
+  would be offered for saving again.
+- Re-saving an existing word takes the early-return branch, which never touches
+  word state, so a word whose state was cleared stays cleared.
+
+The list therefore asks the vocabulary itself rather than inferring from word
+state, which makes the rule explicit instead of a side effect of a write on the
+far side of the extension.
 
 **Where the match happens.** In `background.js`, not the sidebar. The two sides
 normalise differently — `learningTokens` emits `NFC` plus
@@ -182,10 +190,10 @@ on the local `vocabulary` key and re-runs the peek. Polling `get-vocabulary`
 every 900ms alongside the transcript refresh is rejected: it reads the whole
 vocabulary, up to 2,000 entries, for a value that changes a few times an hour.
 
-**Deliberately unchanged.** Saving does not write a `learning` word state.
-Coverage keeps its present meaning — the share of occurrences you have marked
-known or learning — so this redesign does not silently move every existing
-user's percentage. `addVocabularyEntryUnlocked` also keeps its merge behaviour
+**Deliberately unchanged.** The existing `learning` write inside
+`addVocabularyEntryUnlocked` stays exactly as it is, and import is not changed
+to start writing word states. Coverage therefore keeps its present meaning and
+its present numbers. `addVocabularyEntryUnlocked` also keeps its merge behaviour
 for entries arriving from elsewhere: this is a guard in the list's interface,
 not a new rejection in storage, so the in-video card can still re-save a word to
 attach a fresh context.
@@ -331,9 +339,8 @@ storage changes:
 3. A save rejected for a full vocabulary surfaces the error and does not mark
    the row saved.
 4. A word already in the vocabulary renders with no Save control, and the Words
-   badge does not count it. Covered for a word saved from the in-video card,
-   whose `wordStatesV1` state is still `unknown` — the case word state alone
-   would miss.
+   badge does not count it. Covered for an *imported* word, whose `wordStatesV1`
+   state is still `unknown` — the case word state alone would miss.
 5. The guard matches across the two normalisations: a transcript token and a
    stored `normalized` value that differ only by `NFC` versus `NFKC` are treated
    as the same word.

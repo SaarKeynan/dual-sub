@@ -249,64 +249,176 @@
     return results;
   }
 
+  // The keyless endpoint translates exactly one q parameter and silently drops
+  // any others, so repeating q does not batch. Several lines joined by newlines
+  // do come back as one chunk per line, and each chunk repeats its own source
+  // text, so the mapping back to lines is verified rather than assumed. Anything
+  // unexpected falls back to one request per line.
+  let googleJoinSupported = true;
+  const GOOGLE_MAX_JOINED_LINES = 24;
+  const GOOGLE_MAX_JOINED_CHARACTERS = 1800;
+
+  function googleChunks(payload) {
+    const parts = Array.isArray(payload?.[0]) ? payload[0] : null;
+    if (!parts?.length || !parts.every((part) => Array.isArray(part) && typeof part[0] === "string")) return null;
+    return parts;
+  }
+
+  function googleSingleResult(payload) {
+    const parts = googleChunks(payload);
+    if (!parts) return null;
+    const text = parts.map((part) => part[0]).join("").trim();
+    return text ? { parts, text } : null;
+  }
+
+  // Accept the joined answer only when every chunk's own source text matches
+  // the line it is supposed to translate, in order. Google is free to merge or
+  // split sentences, and a silent misalignment would put the wrong English
+  // under the wrong French caption.
+  function googleJoinedResults(payload, texts) {
+    const parts = googleChunks(payload);
+    if (!parts || parts.length !== texts.length) return null;
+    const normalize = (value) => String(value || "").replace(/\s+/gu, " ").trim();
+    const results = [];
+    for (let index = 0; index < texts.length; index += 1) {
+      const chunk = parts[index];
+      if (normalize(chunk[1]) !== normalize(texts[index])) return null;
+      const text = String(chunk[0] || "").trim();
+      if (!text) return null;
+      results.push({ parts: [chunk], text });
+    }
+    return results;
+  }
+
+  function googleJoinGroups(texts) {
+    const groups = [];
+    let current = [];
+    let characters = 0;
+    texts.forEach((text, index) => {
+      // A line that already contains a newline cannot be split back out
+      // reliably, so it travels on its own.
+      const joinable = !/\n/u.test(text);
+      const cost = text.length + 1;
+      if (!joinable) {
+        if (current.length) groups.push(current);
+        groups.push([index]);
+        current = [];
+        characters = 0;
+        return;
+      }
+      if (current.length && (current.length >= GOOGLE_MAX_JOINED_LINES || characters + cost > GOOGLE_MAX_JOINED_CHARACTERS)) {
+        groups.push(current);
+        current = [];
+        characters = 0;
+      }
+      current.push(index);
+      characters += cost;
+    });
+    if (current.length) groups.push(current);
+    return groups;
+  }
+
+  function googleResult(sourceText, parsed) {
+    const { parts, text: translatedText } = parsed;
+    const segmented = [];
+    let sourceCursor = 0;
+    let targetCursor = 0;
+    for (const part of parts) {
+      const targetPart = String(part?.[0] || "");
+      const sourcePart = String(part?.[1] || "");
+      const sourceStart = sourcePart ? sourceText.indexOf(sourcePart, sourceCursor) : -1;
+      const targetStart = targetPart ? translatedText.indexOf(targetPart.trim(), targetCursor) : -1;
+      if (sourceStart >= 0 && targetStart >= 0 && sourcePart.trim() && targetPart.trim()) {
+        segmented.push({
+          sourceStart,
+          sourceEnd: sourceStart + sourcePart.length - 1,
+          targetStart,
+          targetEnd: targetStart + targetPart.trim().length - 1
+        });
+        sourceCursor = sourceStart + sourcePart.length;
+        targetCursor = targetStart + targetPart.trim().length;
+      }
+    }
+    const informativeAlignment = segmented.length > 1 ? segmented : [];
+    return {
+      sourceText,
+      translatedText,
+      provider: "google",
+      alignment: informativeAlignment,
+      alignmentKind: informativeAlignment.length ? "segment" : "none",
+      provenance: informativeAlignment.length ? "Google segmented" : "Google web"
+    };
+  }
+
   async function translateGoogle(texts, options, _secrets, sessionId) {
     const results = new Array(texts.length);
+    const request = async (query) => {
+      const url = new URL("https://translate.googleapis.com/translate_a/single");
+      url.searchParams.set("client", "gtx");
+      url.searchParams.set("sl", options.sourceLanguage);
+      url.searchParams.set("tl", options.targetLanguage);
+      url.searchParams.set("dt", "t");
+      url.searchParams.set("q", query);
+      const response = await fetchControlled(url.toString(), {}, "google", sessionId);
+      return response.json();
+    };
+    const translateOne = async (index) => {
+      const parsed = googleSingleResult(await request(texts[index]));
+      if (!parsed) throw providerError("Google returned no translation.", "PROVIDER_EMPTY_RESPONSE");
+      results[index] = googleResult(texts[index], parsed);
+    };
+    const groups = googleJoinSupported && texts.length > 1
+      ? googleJoinGroups(texts)
+      : texts.map((_text, index) => [index]);
     let cursor = 0;
     const worker = async () => {
-      while (cursor < texts.length) {
-        const index = cursor;
+      while (cursor < groups.length) {
+        const group = groups[cursor];
         cursor += 1;
-        const text = texts[index];
-        const url = new URL("https://translate.googleapis.com/translate_a/single");
-        url.searchParams.set("client", "gtx");
-        url.searchParams.set("sl", options.sourceLanguage);
-        url.searchParams.set("tl", options.targetLanguage);
-        url.searchParams.set("dt", "t");
-        url.searchParams.set("q", text);
-        const response = await fetchControlled(url.toString(), {}, "google", sessionId);
-        const payload = await response.json();
-        const parts = Array.isArray(payload?.[0]) ? payload[0] : [];
-        const translatedText = parts.map((part) => part?.[0] || "").join("").trim();
-        if (!translatedText) throw providerError("Google returned no translation.", "PROVIDER_EMPTY_RESPONSE");
-        const segmented = [];
-        let sourceCursor = 0;
-        let targetCursor = 0;
-        for (const part of parts) {
-          const targetPart = String(part?.[0] || "");
-          const sourcePart = String(part?.[1] || "");
-          const sourceStart = sourcePart ? text.indexOf(sourcePart, sourceCursor) : -1;
-          const targetStart = targetPart ? translatedText.indexOf(targetPart.trim(), targetCursor) : -1;
-          if (sourceStart >= 0 && targetStart >= 0 && sourcePart.trim() && targetPart.trim()) {
-            segmented.push({
-              sourceStart,
-              sourceEnd: sourceStart + sourcePart.length - 1,
-              targetStart,
-              targetEnd: targetStart + targetPart.trim().length - 1
-            });
-            sourceCursor = sourceStart + sourcePart.length;
-            targetCursor = targetStart + targetPart.trim().length;
-          }
+        if (group.length === 1) {
+          await translateOne(group[0]);
+          continue;
         }
-        const informativeAlignment = segmented.length > 1 ? segmented : [];
-        results[index] = {
-          sourceText: text,
-          translatedText,
-          provider: "google",
-          alignment: informativeAlignment,
-          alignmentKind: informativeAlignment.length ? "segment" : "none",
-          provenance: informativeAlignment.length ? "Google segmented" : "Google web"
-        };
+        const lines = group.map((index) => texts[index]);
+        const parsed = googleJoinedResults(await request(lines.join("\n")), lines);
+        if (parsed) {
+          group.forEach((index, position) => { results[index] = googleResult(texts[index], parsed[position]); });
+          continue;
+        }
+        // Stop joining for the rest of this background session and finish the
+        // group one line at a time so the batch still produces correct text.
+        googleJoinSupported = false;
+        for (const index of group) await translateOne(index);
       }
     };
-    await Promise.all(Array.from({ length: Math.min(4, texts.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(2, groups.length) }, worker));
     return results;
+  }
+
+  function truncateToBytes(value, maximumBytes) {
+    const text = String(value || "");
+    const encoder = new TextEncoder();
+    if (encoder.encode(text).length <= maximumBytes) return text;
+    let result = "";
+    let bytes = 0;
+    // Iterate by code point so a surrogate pair is never split in half.
+    for (const character of text) {
+      const size = encoder.encode(character).length;
+      if (bytes + size > maximumBytes) break;
+      result += character;
+      bytes += size;
+    }
+    return result;
   }
 
   async function translateMyMemory(texts, options, settings, sessionId) {
     const results = [];
     for (const text of texts) {
       const url = new URL("https://api.mymemory.translated.net/get");
-      url.searchParams.set("q", text.slice(0, 490));
+      // MyMemory's limit is 500 bytes, not 500 characters. Accented French is
+      // two bytes per accent in UTF-8, so slicing by character could still
+      // exceed it and come back as QUERY LENGTH LIMIT EXCEEDED.
+      url.searchParams.set("q", truncateToBytes(text, 490));
       url.searchParams.set("langpair", `${options.sourceLanguage}|${options.targetLanguage}`);
       if (settings.mymemoryEmail?.trim()) url.searchParams.set("de", settings.mymemoryEmail.trim());
       let response;
@@ -541,6 +653,10 @@
     clearCache,
     parseAzureAlignment,
     cacheKeyFor,
+    // The word list fills itself from the cache before it is allowed to spend a
+    // request. Reading the store is the whole point, so it is exported rather
+    // than reached through translateBatch, which would fetch on a miss.
+    cachedResults,
     normalizeProvider,
     suspiciousMyMemoryWordResult
   });

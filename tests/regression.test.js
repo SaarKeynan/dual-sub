@@ -11,7 +11,8 @@ function background(initial = {}) {
   const data = clone(initial);
   const area = {
     async get(keys) { return clone(Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map((key) => [key, data[key]]))); },
-    async set(values) { Object.assign(data, clone(values)); }
+    async set(values) { Object.assign(data, clone(values)); },
+    async remove(keys) { for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key]; }
   };
   const context = vm.createContext({ console, URL, URLSearchParams, AbortController, setTimeout, clearTimeout, performance, TextEncoder,
     crypto: require("node:crypto").webcrypto,
@@ -57,6 +58,258 @@ async function storageTests() {
   const before = clone(restored.data);
   await assert.rejects(restored.context.restoreLearningBackup({ ...backup, profiles: { video: { studyMode: "invalid" } } }), /Invalid/);
   assert.deepEqual(restored.data, before, "Invalid restore is atomic");
+}
+
+async function backupMergeTests() {
+  const { data, context: c } = background();
+  await c.addVocabularyEntry({ sourceText: "chat", translatedText: "cat", sentence: "Un chat noir", videoId: "recent" });
+  const entry = data.vocabulary[0];
+  await c.updateVocabularyEntry(entry.id, { notes: "Sounds like shah" });
+  await c.reviewVocabularyEntry(entry.id, "good");
+  const studied = clone(data.vocabulary[0]);
+  assert.equal(studied.reviews, 1, "The word has been studied once locally");
+
+  // Restoring last week's backup must not undo this week's studying.
+  await c.restoreLearningBackup({
+    version: 2,
+    entries: [{
+      id: entry.id, sourceText: "chat", translatedText: "cat", sourceLanguage: "fr", targetLanguage: "en",
+      sentence: "Le chat dort", videoId: "older", notes: "", stage: 0, reviews: 0,
+      reviewIntervalDays: 0, easeFactor: 2.5, dueAt: 0, lastReviewedAt: 0, updatedAt: 1
+    }],
+    wordStates: {}, corrections: {}, profiles: {}
+  });
+  const merged = data.vocabulary[0];
+  assert.equal(merged.notes, "Sounds like shah", "An empty backup note must not erase a local note");
+  assert.equal(merged.reviews, studied.reviews, "An older backup must not reset the review count");
+  assert.equal(merged.stage, studied.stage, "An older backup must not reset the review stage");
+  assert.equal(merged.dueAt, studied.dueAt, "An older backup must not bring the due date forward");
+  assert.equal(merged.contexts.length, 2, "Both example sentences survive the merge");
+
+  // A backup from a device that studied more recently should win instead.
+  await c.restoreLearningBackup({
+    version: 2,
+    entries: [{
+      id: entry.id, sourceText: "chat", translatedText: "cat", sourceLanguage: "fr", targetLanguage: "en",
+      notes: "Studied elsewhere", stage: 4, reviews: 9, reviewIntervalDays: 21, easeFactor: 2.6,
+      dueAt: Date.now() + 86400000, lastReviewedAt: Date.now() + 1000, updatedAt: Date.now() + 1000
+    }],
+    wordStates: {}, corrections: {}, profiles: {}
+  });
+  assert.equal(data.vocabulary[0].reviews, 9, "A newer backup carries its review progress forward");
+  assert.equal(data.vocabulary[0].notes, "Studied elsewhere");
+}
+
+async function palettePaletteTests() {
+  const { merge, defaults } = background().context.DualSubSettings;
+  const colors = defaults.wordGroupColors;
+  // Simulated, the old noun and verb hues were 4 apart on a 441-point scale,
+  // so the two groups a learner cares about most looked identical to a
+  // deuteranope. Roles a learner does not distinguish now share a colour.
+  assert.notEqual(colors.noun, colors.verb, "Noun and verb must not share a colour");
+  assert.equal(colors.adjective, colors.adverb, "Modifiers read as one role");
+  assert.equal(colors.determiner, colors.pronoun, "Function words read as one role");
+  assert.equal(colors.preposition, colors.conjunction);
+  assert.notEqual(colors.unknown, colors.determiner, "An unclassified word is not a function word");
+  assert.equal(new Set(Object.values(colors)).size, 5, "Ten hues collapse to five roles");
+
+  const legacy = {
+    unknown: "#ffffff", noun: "#60a5fa", verb: "#a78bfa", adjective: "#fb7185", adverb: "#facc15",
+    pronoun: "#22d3ee", determiner: "#4ade80", preposition: "#fb923c", conjunction: "#f472b6", interjection: "#94a3b8"
+  };
+  const untouched = merge({ wordGroupPaletteVersion: 2, wordGroupColors: { ...legacy } });
+  assert.equal(untouched.wordGroupColors.verb, colors.verb, "A palette the reader never edited is migrated");
+  assert.equal(untouched.wordGroupPaletteVersion, 3);
+
+  const customised = merge({ wordGroupPaletteVersion: 2, wordGroupColors: { ...legacy, noun: "#ff0000" } });
+  assert.equal(customised.wordGroupColors.noun, "#ff0000", "A chosen colour survives the migration");
+  assert.equal(customised.wordGroupColors.verb, "#a78bfa", "and the rest of that palette is left alone");
+
+  // The oldest palette swapped verb and adjective; it should end up on v3 too.
+  const ancient = merge({ wordGroupColors: { ...legacy, verb: "#fb7185", adjective: "#c084fc" } });
+  assert.equal(ancient.wordGroupColors.verb, colors.verb);
+  assert.equal(ancient.wordGroupPaletteVersion, 3);
+}
+
+async function learningDataModelTests() {
+  const { data, context: c } = background();
+  const saved = await c.addVocabularyEntry({ sourceText: "chien", translatedText: "dog" });
+  assert.equal(data.wordStatesV1.chien.state, "learning", "Saving a word marks it as being learned");
+  // The two models drifted: removal cleared the entry but left the state, so a
+  // deleted word still counted toward coverage and still drove smart pausing.
+  await c.removeVocabularyEntry(saved.entry.id);
+  assert.equal(data.wordStatesV1.chien, undefined, "Removing the entry clears the state it created");
+
+  // A state the reader set deliberately is theirs, not ours to undo.
+  const second = await c.addVocabularyEntry({ sourceText: "chat", translatedText: "cat" });
+  await c.setWordState("chat", "known");
+  await c.removeVocabularyEntry(second.entry.id);
+  assert.equal(data.wordStatesV1.chat.state, "known", "A deliberate word state survives removal");
+}
+
+async function storageMigrationTests() {
+  const { data, context: c } = background({
+    lineTranslationCacheV1: { stale: { savedAt: 1, result: {} } },
+    vocabulary: [{ id: "1", sourceText: "chat", translatedText: "cat", normalized: "chat" }]
+  });
+  // Keys carry version numbers but nothing ever removed the superseded ones,
+  // so an upgraded profile kept the dead cache in local storage forever.
+  await c.migrateStoredData();
+  assert.equal(data.lineTranslationCacheV1, undefined, "A superseded cache key is removed on upgrade");
+  assert.equal(data.vocabulary.length, 1, "Live data is untouched");
+  assert(Number(data.storageSchemaV1?.version) >= 1, "The applied schema version is recorded");
+}
+
+async function cacheEpochTests() {
+  const { data, context: c } = background();
+  await c.clearTranslationCaches();
+  assert.equal(data.videoCacheEpochV1, 1, "Clearing records an epoch outside the event page");
+  await c.clearTranslationCaches();
+  assert.equal(data.videoCacheEpochV1, 2);
+
+  // The background is an event page the browser may terminate when idle. A
+  // module-level counter would restart at zero, so a snapshot write still in
+  // flight from a tab could pass the guard and restore the cache just cleared.
+  const restarted = background({ videoCacheEpochV1: 2 });
+  await restarted.context.clearTranslationCaches();
+  assert.equal(restarted.data.videoCacheEpochV1, 3, "A restarted background continues from the stored epoch");
+}
+
+async function ocrCaptureTests() {
+  const { data, context: c } = background();
+  c.browser.tabs.captureVisibleTab = async () => "data:image/jpeg;base64,AAAA";
+  const tab = { id: 1, windowId: 2, url: "https://www.youtube.com/watch?v=abc" };
+  const crop = { left: 10, top: 10, width: 120, height: 40, viewportWidth: 1280, viewportHeight: 720 };
+  await c.captureVideoSelectionForOcr(tab, crop);
+  assert(data.ocrCaptureV1.dataUrl, "The translator reads the capture from storage");
+  assert.equal(data.ocrCaptureV1.sourceUrl, undefined, "The watched page URL is not kept beside the screenshot");
+  // The capture is a screenshot of the whole visible tab, so it must not
+  // outlive the OCR window when the reader dismisses it without loading.
+  await c.discardOcrCapture();
+  assert.equal(data.ocrCaptureV1, undefined, "Closing the OCR window discards the screenshot");
+}
+
+async function wordBatchTests() {
+  const c = background().context;
+  let requests = 0;
+  const answer = (query) => query === "avez"
+    // MyMemory-style sentence answers also reach Google; the batch must not
+    // lose every other word because one lookup is unusable.
+    ? "her name is Anna and she lives in Paris with her whole family"
+    : `${query}-en`;
+  c.fetch = async (url) => {
+    requests += 1;
+    const lines = new URL(url).searchParams.getAll("q")[0].split("\n");
+    return { ok: true, json: async () => [lines.map((line, index) => {
+      const tail = index < lines.length - 1 ? "\n" : "";
+      return [`${answer(line)}${tail}`, `${line}${tail}`];
+    })] };
+  };
+  const batch = await c.translateBatchMessage({ items: [
+    { text: "bonjour", cacheId: "word:bonjour" },
+    { text: "avez", cacheId: "word:avez" },
+    { text: "merci", cacheId: "word:merci" }
+  ] });
+  assert.equal(batch.results.length, 3);
+  assert.equal(batch.results[0].translatedText, "bonjour-en");
+  assert.equal(batch.results[2].translatedText, "merci-en", "One unusable word must not discard the rest of the batch");
+  assert.equal(batch.results[1], null, "The unusable word is reported as missing, not as a wrong meaning");
+  assert.equal(requests, 1, "Preloading a video's words costs one provider request, not one per word");
+
+  // A saved correction still wins without contacting the provider.
+  const corrected = background().context;
+  let correctedRequests = 0;
+  corrected.fetch = async (url) => {
+    correctedRequests += 1;
+    const queries = new URL(url).searchParams.getAll("q");
+    return { ok: true, json: async () => queries.length === 1
+      ? [[[`${queries[0]}-en`, queries[0]]]]
+      : queries.map((query) => [[[`${query}-en`, query]]]) };
+  };
+  await corrected.saveTranslationCorrection("chien", "hound");
+  const withCorrection = await corrected.translateBatchMessage({ items: [
+    { text: "chien", cacheId: "word:chien" },
+    { text: "chat", cacheId: "word:chat" }
+  ] });
+  assert.equal(withCorrection.results[0].translatedText, "hound");
+  assert.equal(withCorrection.results[0].provider, "correction");
+  assert.equal(withCorrection.results[1].translatedText, "chat-en");
+  assert.equal(correctedRequests, 1, "Only the uncorrected word reaches the provider");
+}
+
+// Google's keyless endpoint is rate limited per request, so a caption batch
+// that spends one request per line is what makes English lag behind French.
+async function googleBatchTests() {
+  const c = background().context;
+  let requests = 0;
+  const queriesPerRequest = [];
+  // The live endpoint translates one q and silently ignores any others, so this
+  // mock answers only the first, and returns one chunk per newline-separated
+  // line, each repeating its own source text.
+  const googleFetch = (onRequest) => async (url) => {
+    onRequest(url);
+    const query = new URL(url).searchParams.getAll("q")[0];
+    const lines = query.split("\n");
+    return { ok: true, json: async () => [lines.map((line, index) => [
+      `${line} [en]${index < lines.length - 1 ? "\n" : ""}`,
+      `${line}${index < lines.length - 1 ? "\n" : ""}`
+    ])] };
+  };
+  c.fetch = googleFetch((url) => { requests += 1; queriesPerRequest.push(new URL(url).searchParams.getAll("q").length); });
+  const lines = ["un", "deux", "trois", "quatre", "cinq"];
+  const { results } = await c.DualSubTranslation.translateBatch(
+    lines.map((text, index) => ({ text, cacheId: `line:${index}` })),
+    { provider: "google", videoId: "batched" }
+  );
+  assert.equal(requests, 1, "A batch of caption lines costs one Google request");
+  assert.equal(queriesPerRequest[0], 1, "and sends a single q, because extra q parameters are ignored");
+  assert.equal(results.map((result) => result.translatedText).join("|"), lines.map((line) => `${line} [en]`).join("|"));
+
+  // Google may merge or split sentences. A chunk whose own source text does not
+  // match the line it should translate must not be trusted: pairing the wrong
+  // English with a French caption is worse than spending more requests.
+  const drifting = background().context;
+  let driftingRequests = 0;
+  drifting.fetch = async (url) => {
+    driftingRequests += 1;
+    const query = new URL(url).searchParams.getAll("q")[0];
+    if (query.includes("\n")) return { ok: true, json: async () => [[["Everything at once", query]]] };
+    return { ok: true, json: async () => [[[`${query} [en]`, query]]] };
+  };
+  const recovered = await drifting.DualSubTranslation.translateBatch(
+    ["alpha", "beta", "gamma"].map((text, index) => ({ text, cacheId: `drift:${index}` })),
+    { provider: "google", videoId: "drift" }
+  );
+  assert.equal(recovered.results.map((result) => result.translatedText).join("|"), "alpha [en]|beta [en]|gamma [en]",
+    "A misaligned answer is discarded and the lines are translated individually");
+  assert.equal(driftingRequests, 4, "One rejected join, then one request per line");
+
+  const single = background().context;
+  single.fetch = async (url) => {
+    const query = new URL(url).searchParams.get("q");
+    return { ok: true, json: async () => [[[`${query} [en]`, query], ["!", "!"]]] };
+  };
+  const one = await single.DualSubTranslation.translateBatch([{ text: "seul", cacheId: "one" }], { provider: "google" });
+  assert.equal(one.results[0].translatedText, "seul [en]!", "Multi-part single answers are still joined");
+}
+
+async function correctionKeyTests() {
+  const c = background().context;
+  // Correction keys truncate the source text, so two long passages that share
+  // an opening longer than the truncation limit collided.
+  const shared = "Le chat noir dort paisiblement sur le canapé du salon pendant que la pluie tombe doucement sur les toits de la ville endormie et que personne ne pense à fermer la fenêtre du couloir";
+  assert(shared.length > 160, "The shared opening must exceed the correction key length");
+  const first = `${shared} et il rêve de poissons.`;
+  const second = `${shared} et il rêve de souris.`;
+  await c.saveTranslationCorrection(first, "A cat dreaming of fish");
+  c.fetch = async (url) => {
+    const query = new URL(url).searchParams.get("q");
+    return { ok: true, json: async () => [[["a fresh provider translation", query]]] };
+  };
+  const exact = await c.translateSelectionWithEngine({ text: first, cacheMode: "phrase" });
+  assert.equal(exact.translatedText, "A cat dreaming of fish", "An exact correction still wins");
+  const other = await c.translateSelectionWithEngine({ text: second, cacheMode: "phrase" });
+  assert.equal(other.translatedText, "a fresh provider translation", "A different passage must not inherit the correction");
 }
 
 async function translationTests() {
@@ -123,6 +376,56 @@ async function translationTests() {
   assert.equal(next.DualSubTranslation.health().failures, 0, "Navigation cancellation never opens the provider circuit");
 }
 
+// The word list fills itself from the cache before it is allowed to spend a
+// request, and refuses to add a word the vocabulary already holds.
+async function wordPeekTests() {
+  const { data, context: c } = background();
+  let calls = 0;
+  c.fetch = async () => { calls++; return { ok: true, json: async () => [[["yet", "pourtant"]]] }; };
+  const words = [{ text: "pourtant", lookupText: "pourtant", readingKey: "", context: "Pourtant, tout allait bien." }];
+  const peek = () => c.peekWordMeanings({ words, sourceLanguage: "fr", targetLanguage: "en" });
+
+  const cold = await peek();
+  assert.equal(cold.meanings.length, 1, "A peek answers for every word it was given");
+  assert.equal(cold.meanings[0].translatedText, "", "A cache miss is an empty meaning, never a missing entry");
+  assert.equal(cold.meanings[0].saved, false);
+  assert.equal(calls, 0, "A peek never contacts a provider");
+
+  await c.translateSelectionWithEngine({ text: "pourtant", lookupText: "pourtant", cacheMode: "word", context: "Pourtant, tout allait bien." });
+  assert.equal(calls, 1);
+  const warm = await peek();
+  assert.equal(warm.meanings[0].translatedText, "yet", "A peek reads what the lookup card cached");
+  assert.equal(calls, 1, "A warm peek spends no request");
+
+  await c.addVocabularyEntry({ sourceText: "Pourtant", translatedText: "yet" });
+  const saved = await peek();
+  assert.equal(saved.meanings[0].saved, true, "A word already in the vocabulary cannot be added again");
+  assert.equal(data.wordStatesV1.pourtant.state, "learning", "Saving a new word marks it learning");
+
+  // Importing does not mark word states, so imported words keep reading
+  // "unknown" and would be offered for saving again. Word state cannot hide
+  // them; only the vocabulary itself knows.
+  await c.importVocabularyEntries([{ sourceText: "aussitôt", translatedText: "immediately" }]);
+  assert.equal(data.wordStatesV1["aussitôt"], undefined, "Import leaves word state alone");
+  const imported = await c.peekWordMeanings({
+    words: [{ text: "aussitôt", lookupText: "aussitôt", readingKey: "", context: "" }],
+    sourceLanguage: "fr", targetLanguage: "en"
+  });
+  assert.equal(imported.meanings[0].saved, true, "An imported word is already saved");
+
+  // The stored key is NFKC and locale-less; a transcript token is NFC and
+  // French-lowercased. A raw comparison would treat these as different words.
+  const composed = "élan".normalize("NFC");
+  await c.addVocabularyEntry({ sourceText: "élan".normalize("NFD"), translatedText: "momentum" });
+  const accented = await c.peekWordMeanings({ words: [{ text: composed, lookupText: composed, readingKey: "", context: "" }], sourceLanguage: "fr", targetLanguage: "en" });
+  assert.equal(accented.meanings[0].saved, true, "Normalisation differences must not defeat the guard");
+
+  const blocked = background().context;
+  blocked.fetch = async () => { throw new Error("A peek must not reach the network"); };
+  const offline = await blocked.peekWordMeanings({ words, sourceLanguage: "fr", targetLanguage: "en" });
+  assert.equal(offline.meanings[0].translatedText, "", "A peek degrades to empty rather than failing");
+}
+
 async function sidebarTests() {
   let tabId = 1, delayed;
   const text = source("sidebar/sidebar.js");
@@ -163,6 +466,9 @@ async function practiceTests() {
 }
 
 (async () => {
-  await storageTests(); await translationTests(); await sidebarTests(); await practiceTests();
+  await storageTests(); await backupMergeTests(); await palettePaletteTests();
+  await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
+  await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
+  await translationTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

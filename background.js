@@ -96,6 +96,24 @@ function vocabularyKey(value) {
   return cleanVocabularyText(value, 160).normalize("NFKC").toLocaleLowerCase();
 }
 
+// A correction is keyed by its source text, but vocabularyKey truncates at 160
+// characters, so two long passages sharing an opening resolved to one key and
+// the translator handed back the wrong saved meaning. Short sources, which is
+// every word and phrase lookup, keep their existing key unchanged.
+function correctionKey(sourceText, sourceLanguage = "fr", targetLanguage = "en") {
+  const normalized = cleanVocabularyText(sourceText, 5000).normalize("NFKC").toLocaleLowerCase();
+  let identity = vocabularyKey(sourceText);
+  if (normalized.length > 160) {
+    let hash = 2166136261;
+    for (const character of normalized) {
+      hash ^= character.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    identity += `#${normalized.length}.${(hash >>> 0).toString(36)}`;
+  }
+  return `${sourceLanguage}|${targetLanguage}|${identity}`;
+}
+
 async function getWordStates() {
   const stored = await browser.storage.local.get(WORD_STATE_KEY);
   return stored[WORD_STATE_KEY] && typeof stored[WORD_STATE_KEY] === "object" ? stored[WORD_STATE_KEY] : {};
@@ -126,7 +144,7 @@ async function saveTranslationCorrectionUnlocked(sourceText, translatedText, sou
   const translation = cleanVocabularyText(translatedText, 300);
   if (!source || !translation) throw new Error("A source word and correction are required.");
   const corrections = await getTranslationCorrections();
-  const key = `${sourceLanguage}|${targetLanguage}|${source}`;
+  const key = correctionKey(sourceText, sourceLanguage, targetLanguage);
   corrections[key] = { translatedText: translation, updatedAt: Date.now() };
   await browser.storage.local.set({ [CORRECTIONS_KEY]: corrections });
   return corrections[key];
@@ -219,8 +237,20 @@ async function addVocabularyEntryUnlocked(rawEntry = {}) {
 
 async function removeVocabularyEntryUnlocked(id) {
   const vocabulary = await getVocabulary();
+  const removedEntry = vocabulary.find((item) => item.id === id);
   const filtered = vocabulary.filter((item) => item.id !== id);
   await browser.storage.local.set({ [VOCABULARY_KEY]: filtered });
+  // Saving a word marks it "learning" on the reader's behalf, so removing it
+  // should retract that. A state the reader chose themselves is theirs to keep,
+  // and it still drives coverage and smart pausing either way.
+  if (removedEntry) {
+    const states = await getWordStates();
+    const key = vocabularyKey(removedEntry.sourceText);
+    if (states[key]?.state === "learning") {
+      delete states[key];
+      await browser.storage.local.set({ [WORD_STATE_KEY]: states });
+    }
+  }
   return { removed: filtered.length !== vocabulary.length };
 }
 
@@ -324,7 +354,31 @@ async function importVocabularyEntriesUnlocked(rawEntries, commit = true) {
     };
     const existing = byKey.get(key);
     if (existing) {
-      Object.assign(existing, sanitized, { id: existing.id, createdAt: existing.createdAt || sanitized.createdAt });
+      // Restoring an older backup must never undo studying done since it was
+      // taken. Review counters only grow, so the side that has been reviewed
+      // more (and most recently) owns the whole scheduling state.
+      const reviewRank = (item) => [Number(item.reviews) || 0, Number(item.lastReviewedAt) || 0];
+      const [existingReviews, existingReviewedAt] = reviewRank(existing);
+      const [incomingReviews, incomingReviewedAt] = reviewRank(sanitized);
+      const review = incomingReviews > existingReviews ||
+        (incomingReviews === existingReviews && incomingReviewedAt > existingReviewedAt)
+        ? sanitized
+        : existing;
+      Object.assign(existing, sanitized, {
+        id: existing.id,
+        createdAt: existing.createdAt || sanitized.createdAt,
+        // A backup without notes is missing them, not clearing them.
+        notes: sanitized.notes || existing.notes,
+        contexts: vocabularyContexts([...(existing.contexts || []), ...(sanitized.contexts || [])]),
+        encounters: Math.max(Number(existing.encounters) || 1, Number(sanitized.encounters) || 1),
+        stage: review.stage,
+        reviews: review.reviews,
+        reviewIntervalDays: review.reviewIntervalDays,
+        easeFactor: review.easeFactor,
+        reviewLapses: Math.max(Number(existing.reviewLapses) || 0, Number(sanitized.reviewLapses) || 0),
+        dueAt: review.dueAt,
+        lastReviewedAt: Math.max(existingReviewedAt, incomingReviewedAt)
+      });
       updated += 1;
     } else {
       vocabulary.push(sanitized);
@@ -372,24 +426,98 @@ async function fetchCaptions(url) {
   return response.text();
 }
 
-async function translateBatchMessage(message) {
-  const settings = await getSettings();
-  if (Array.isArray(message.items) && message.items.length && message.items.every((item) => String(item.cacheId || "").startsWith("word:"))) {
-    const items = message.items.slice(0, 1000);
-    const results = new Array(items.length);
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < items.length) {
-        const index = cursor++;
+async function translateWordsIndividually(items, message) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  let cancelled = null;
+  const worker = async () => {
+    while (cursor < items.length && !cancelled) {
+      const index = cursor++;
+      try {
         results[index] = await translateSelectionWithEngine({
           text: items[index].text, cacheMode: "word", provider: message.provider,
           sourceLanguage: message.sourceLanguage, targetLanguage: message.targetLanguage,
           context: message.context, sessionId: message.sessionId
         });
+      } catch (error) {
+        // Navigation cancellation ends the whole batch; a single unusable or
+        // low-quality word must not discard the words that did translate.
+        if (error.code === "TRANSLATION_CANCELLED") cancelled = error;
+        else results[index] = null;
       }
-    };
-    await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker));
-    return { results, health: DualSubTranslation.health() };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker));
+  if (cancelled) throw cancelled;
+  return { results, health: DualSubTranslation.health() };
+}
+
+// Preloading a video's frequent words used to translate them one at a time,
+// which cost one provider request per word even on engines that accept a
+// hundred texts at once. Translate them together, then apply exactly the same
+// quality checks a hover lookup applies so a preloaded meaning can never be one
+// the lookup card would have rejected.
+async function translateWordBatch(items, message, settings) {
+  const sourceLanguage = message.sourceLanguage || settings.sourceLanguage;
+  const targetLanguage = message.targetLanguage || settings.targetLanguage;
+  // A word with no usable meaning stays null so the caller can tell it apart
+  // from one that translated.
+  const results = new Array(items.length).fill(null);
+  const corrections = await getTranslationCorrections();
+  const pending = [];
+  items.forEach((item, index) => {
+    const text = String(item.text || "").trim();
+    if (!text) return;
+    const saved = corrections[correctionKey(text, sourceLanguage, targetLanguage)]?.translatedText;
+    if (saved) {
+      results[index] = {
+        sourceText: text, translatedText: saved, provider: "correction",
+        provenance: "Your correction", alignment: [], cacheHit: true
+      };
+      return;
+    }
+    pending.push({ index, text });
+  });
+  if (!pending.length) return { results, health: DualSubTranslation.health() };
+  const batch = await DualSubTranslation.translateBatch(
+    pending.map(({ text }) => ({ text, cacheId: `word:${text.normalize("NFC").toLocaleLowerCase()}` })),
+    {
+      provider: settings.translationProvider,
+      sourceLanguage,
+      targetLanguage,
+      context: message.context,
+      sessionId: message.sessionId || `word-batch-${Date.now()}`
+    },
+    settings
+  );
+  await Promise.all(pending.map(async ({ index, text }, position) => {
+    const result = batch.results[position];
+    if (!result?.translatedText) return;
+    if (!suspiciousWordTranslation(text, result.translatedText)) {
+      results[index] = { ...result, sourceText: text, lookupText: text };
+      return;
+    }
+    // Google produced the suspect answer, so asking it again would not help.
+    if (settings.translationProvider === "google") return;
+    try {
+      const fallback = await translateConciseWordFallback(message, settings, text);
+      results[index] = { ...fallback, sourceText: text, lookupText: text };
+    } catch (error) {
+      if (error.code === "TRANSLATION_CANCELLED") throw error;
+    }
+  }));
+  return { results, health: DualSubTranslation.health() };
+}
+
+async function translateBatchMessage(message) {
+  const settings = await getSettings();
+  if (Array.isArray(message.items) && message.items.length && message.items.every((item) => String(item.cacheId || "").startsWith("word:"))) {
+    const items = message.items.slice(0, 1000);
+    // MyMemory sends one request per text and rejects the whole call when a
+    // single answer looks unreliable, so batching it would only waste requests.
+    return settings.translationProvider === "mymemory"
+      ? translateWordsIndividually(items, message)
+      : translateWordBatch(items, message, settings);
   }
   return DualSubTranslation.translateBatch(message.items, {
     provider: message.provider || settings.translationProvider,
@@ -450,11 +578,65 @@ async function translateConciseWordFallback(message, settings, normalizedText) {
   return { ...result, provenance: "Google concise fallback", qualityFallback: true };
 }
 
-async function translateSelectionWithEngine(message) {
-  const settings = await getSettings();
+// The batch item and its options decide the cache key, and both the interactive
+// lookup and the word list's cache-only peek have to derive them the same way.
+// Built in one place so a peek cannot miss an entry the lookup would have hit.
+function lookupBatchItem(message, settings) {
   const normalizedText = String(message.text || "").trim();
   const lookupText = cleanVocabularyText(message.lookupText, 1000) || normalizedText;
   const readingKey = cleanVocabularyText(message.readingKey, 1000);
+  return {
+    normalizedText,
+    lookupText,
+    readingKey,
+    item: {
+      text: lookupText,
+      cacheId: message.cacheMode === "word"
+        ? `word:${normalizedText.normalize("NFC").toLocaleLowerCase()}${readingKey ? `|reading:${readingKey}` : ""}`
+        : ""
+    },
+    options: {
+      provider: settings.translationProvider,
+      sourceLanguage: message.sourceLanguage || settings.sourceLanguage,
+      targetLanguage: message.targetLanguage || settings.targetLanguage,
+      context: message.context,
+      providerVersion: settings.translationProvider === "mymemory" && message.cacheMode === "word" ? "mymemory-word-v2" : ""
+    }
+  };
+}
+
+// Answers the sidebar word list without contacting a provider: corrections
+// first, then the translation cache, in the order the interactive lookup uses.
+// A word already in the vocabulary is reported so the list can withdraw its
+// add button; word state cannot carry that, because saving from the in-video
+// card writes a vocabulary entry and leaves wordStatesV1 untouched.
+async function peekWordMeanings(message) {
+  const settings = await getSettings();
+  const words = Array.isArray(message.words) ? message.words.slice(0, 200) : [];
+  const [corrections, vocabulary] = await Promise.all([getTranslationCorrections(), getVocabulary()]);
+  const saved = new Set(vocabulary.map((entry) => entry.normalized || vocabularyKey(entry.sourceText)));
+  const prepared = words.map((word) => lookupBatchItem({ ...word, cacheMode: "word" }, settings));
+  const keys = prepared.map(({ item, options }) => DualSubTranslation.cacheKeyFor(item, options));
+  // A cache read that throws must not cost the list its saved flags.
+  const cached = await DualSubTranslation.cachedResults(keys).catch(() => keys.map(() => null));
+  return {
+    meanings: prepared.map(({ normalizedText }, index) => {
+      const correction = corrections[correctionKey(
+        normalizedText,
+        message.sourceLanguage || settings.sourceLanguage,
+        message.targetLanguage || settings.targetLanguage
+      )];
+      const result = correction?.translatedText
+        ? { translatedText: correction.translatedText, provenance: "Your correction" }
+        : { translatedText: cached[index]?.translatedText || "", provenance: cached[index]?.provenance || "" };
+      return { ...result, saved: saved.has(vocabularyKey(normalizedText)) };
+    })
+  };
+}
+
+async function translateSelectionWithEngine(message) {
+  const settings = await getSettings();
+  const { normalizedText, lookupText, readingKey, item, options } = lookupBatchItem(message, settings);
   const pendingKey = [
     settings.translationProvider,
     readingKey,
@@ -465,11 +647,15 @@ async function translateSelectionWithEngine(message) {
   ].join("|");
   if (["word", "phrase"].includes(message.cacheMode)) {
     const corrections = await getTranslationCorrections();
-    const correctionKey = `${message.sourceLanguage || settings.sourceLanguage}|${message.targetLanguage || settings.targetLanguage}|${vocabularyKey(normalizedText)}`;
-    if (corrections[correctionKey]?.translatedText) {
+    const lookupCorrectionKey = correctionKey(
+      normalizedText,
+      message.sourceLanguage || settings.sourceLanguage,
+      message.targetLanguage || settings.targetLanguage
+    );
+    if (corrections[lookupCorrectionKey]?.translatedText) {
       return {
         sourceText: normalizedText,
-        translatedText: corrections[correctionKey].translatedText,
+        translatedText: corrections[lookupCorrectionKey].translatedText,
         provider: "correction",
         provenance: "Your correction",
         alignment: [],
@@ -481,15 +667,10 @@ async function translateSelectionWithEngine(message) {
   const request = (async () => {
     let batch;
     try {
-      batch = await DualSubTranslation.translateBatch([{
-        text: lookupText,
-        cacheId: message.cacheMode === "word" ? `word:${normalizedText.normalize("NFC").toLocaleLowerCase()}${readingKey ? `|reading:${readingKey}` : ""}` : ""
-      }], {
-        provider: settings.translationProvider,
-        sourceLanguage: message.sourceLanguage || settings.sourceLanguage,
-        targetLanguage: message.targetLanguage || settings.targetLanguage,
-        context: message.context,
-        providerVersion: settings.translationProvider === "mymemory" && message.cacheMode === "word" ? "mymemory-word-v2" : "",
+      // sessionId is added here rather than in lookupBatchItem: it controls
+      // cancellation, and cacheKeyFor ignores it, so peek and fetch still agree.
+      batch = await DualSubTranslation.translateBatch([item], {
+        ...options,
         sessionId: message.sessionId || `lookup-${Date.now()}`
       }, settings);
     } catch (error) {
@@ -526,6 +707,7 @@ async function translateSelectionWithEngine(message) {
 }
 
 browser.runtime.onInstalled.addListener(async () => {
+  await migrateStoredData().catch(() => {});
   const stored = await browser.storage.sync.get("settings");
   if (!stored.settings) await saveSettings(DEFAULT_SETTINGS);
   const settings = mergeSettings(stored.settings);
@@ -583,11 +765,24 @@ async function captureVideoSelectionForOcr(tab, rawCrop) {
     throw new Error("The selected text area was invalid.");
   }
   const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 94 });
+  // captureVisibleTab photographs the whole visible tab, not just the selected
+  // rectangle, so nothing beyond the image and the crop box is worth keeping.
   await browser.storage.local.set({
-    ocrCaptureV1: { dataUrl, crop, autoRun: true, capturedAt: Date.now(), sourceUrl: tab.url }
+    ocrCaptureV1: { dataUrl, crop, autoRun: true, capturedAt: Date.now() }
   });
   const response = await browser.tabs.sendMessage(tab.id, { type: "show-video-ocr-popup" });
-  if (!response?.ok) throw new Error("The OCR popup could not be shown on YouTube.");
+  if (!response?.ok) {
+    await discardOcrCapture();
+    throw new Error("The OCR popup could not be shown on YouTube.");
+  }
+  return { ok: true };
+}
+
+// The translator removes the capture once it loads, but the reader can dismiss
+// the modal first. Without this the screenshot stayed in extension storage
+// until the translator next opened.
+async function discardOcrCapture() {
+  await browser.storage.local.remove("ocrCaptureV1");
   return { ok: true };
 }
 
@@ -619,12 +814,37 @@ browser.commands.onCommand.addListener(async (command) => {
   }
 });
 
-let videoCacheEpoch = 0;
+// The background is an event page the browser may terminate when idle, so this
+// counter cannot live in module scope: a restart would reset it to zero and a
+// snapshot write still in flight from a tab could restore a cache just cleared.
+const VIDEO_CACHE_EPOCH_KEY = "videoCacheEpochV1";
+
+async function videoCacheEpoch() {
+  const stored = await browser.storage.local.get(VIDEO_CACHE_EPOCH_KEY);
+  return Number(stored[VIDEO_CACHE_EPOCH_KEY]) || 0;
+}
+
 async function clearTranslationCaches() {
-  videoCacheEpoch += 1;
+  await browser.storage.local.set({ [VIDEO_CACHE_EPOCH_KEY]: (await videoCacheEpoch()) + 1 });
   const tabs = await browser.tabs.query({ url: "*://www.youtube.com/*" }).catch(() => []);
   await Promise.all(tabs.map((tab) => browser.tabs.sendMessage(tab.id, { type: "invalidate-video-caption-cache" }).catch(() => {})));
   await Promise.all([DualSubTranslation.clearCache(), DualSubVideoCache.clear()]);
+}
+
+// Storage keys carry version numbers, but nothing ever removed the superseded
+// ones, so an upgraded profile kept dead caches in local storage indefinitely.
+const STORAGE_SCHEMA_KEY = "storageSchemaV1";
+const STORAGE_SCHEMA_VERSION = 1;
+const RETIRED_STORAGE_KEYS = ["lineTranslationCache", "lineTranslationCacheV1", "videoCaptionCache", "ocrCapture"];
+
+async function migrateStoredData() {
+  const stored = await browser.storage.local.get(STORAGE_SCHEMA_KEY);
+  if (Number(stored[STORAGE_SCHEMA_KEY]?.version) >= STORAGE_SCHEMA_VERSION) return { migrated: false };
+  await browser.storage.local.remove(RETIRED_STORAGE_KEYS);
+  await browser.storage.local.set({
+    [STORAGE_SCHEMA_KEY]: { version: STORAGE_SCHEMA_VERSION, updatedAt: Date.now() }
+  });
+  return { migrated: true };
 }
 
 async function videoCacheScope(scope = {}) {
@@ -639,9 +859,13 @@ browser.runtime.onMessage.addListener((message, sender) => {
     .then((scope) => DualSubVideoCache.get(scope)).then((snapshot) => ({ ok: true, snapshot }))
     .catch(() => ({ ok: true, snapshot: null }));
   if (message?.type === "save-video-caption-cache") {
-    const epoch = videoCacheEpoch;
-    return videoCacheScope(message.scope)
-      .then((scope) => epoch === videoCacheEpoch ? DualSubVideoCache.save(scope, message.snapshot) : false)
+    // Read the epoch before and after resolving the scope, so a clear that
+    // lands in that gap still discards the write.
+    return videoCacheEpoch()
+      .then((epoch) => videoCacheScope(message.scope)
+        .then((scope) => videoCacheEpoch().then((current) => current === epoch
+          ? DualSubVideoCache.save(scope, message.snapshot)
+          : false)))
       .then((saved) => ({ ok: true, saved })).catch(() => ({ ok: false }));
   }
   if (message?.type === "open-translator-popup") {
@@ -658,13 +882,19 @@ browser.runtime.onMessage.addListener((message, sender) => {
       .catch((error) => ({ ok: false, error: error.message }));
   }
   if (message?.type === "close-embedded-translator") {
-    if (!sender.tab?.id) return Promise.resolve({ ok: false, error: "The YouTube tab is no longer available." });
-    return browser.tabs.sendMessage(sender.tab.id, { type: "hide-video-ocr-popup" })
+    if (!sender.tab?.id) return discardOcrCapture().then(() => ({ ok: false, error: "The YouTube tab is no longer available." }));
+    return discardOcrCapture()
+      .then(() => browser.tabs.sendMessage(sender.tab.id, { type: "hide-video-ocr-popup" }))
       .then(() => ({ ok: true }))
       .catch((error) => ({ ok: false, error: error.message }));
   }
+  if (message?.type === "discard-ocr-capture") {
+    return discardOcrCapture().catch((error) => ({ ok: false, error: error.message }));
+  }
   if (message?.type === "fetch-captions") {
-    return fetchCaptions(message.url).then((text) => ({ ok: true, text }));
+    return fetchCaptions(message.url)
+      .then((text) => ({ ok: true, text }))
+      .catch((error) => ({ ok: false, error: error.message, errorCode: "CAPTION_FETCH_FAILED" }));
   }
   if (message?.type === "translate-selection") {
     return translateSelectionWithEngine(message)
@@ -674,6 +904,11 @@ browser.runtime.onMessage.addListener((message, sender) => {
         error: error.message,
         errorCode: error.code || "TRANSLATION_FAILED"
       }));
+  }
+  if (message?.type === "peek-word-meanings") {
+    return peekWordMeanings(message)
+      .then((result) => ({ ok: true, ...result }))
+      .catch((error) => ({ ok: false, error: error.message }));
   }
   if (message?.type === "translate-batch") {
     return translateBatchMessage(message)
