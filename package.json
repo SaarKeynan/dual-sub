@@ -4,19 +4,21 @@
   "version": "0.9.1",
   "description": "Synchronized French and English YouTube subtitles with language-learning tools for Firefox.",
   "scripts": {
-    "check": "node --check translation-engine.js && node --check background.js && node --check content.js && node --check page-bridge.js && node --check language/french.js && node --check popup/popup.js && node --check sidebar/sidebar.js && node --check vocabulary/vocabulary.js && node --check tools/translator.js && node --check shared/settings.js && node --check shared/practice.js && node --check content/captions.js && node --check content/translation-scheduler.js && node --check content/lookup-view.js && node --check content/caption-loader.js && node --check video-cache.js",
+    "check": "node --check translation-engine.js && node --check background.js && node --check content.js && node --check page-bridge.js && node --check language/french.js && node --check popup/popup.js && node --check sidebar/sidebar.js && node --check sidebar/word-list.js && node --check vocabulary/vocabulary.js && node --check tools/translator.js && node --check shared/settings.js && node --check shared/practice.js && node --check shared/pronunciation.js && node --check content/captions.js && node --check content/translation-scheduler.js && node --check content/lookup-view.js && node --check content/caption-loader.js && node --check video-cache.js",
     "test": "node tests/smoke.test.js && node tests/regression.test.js && node tests/ui.test.js && node tests/video-cache.test.js",
     "vendor:ocr": "node scripts/vendor-ocr.cjs",
     "lint": "web-ext lint --config web-ext-config.cjs --warnings-as-errors",
     "build": "web-ext build --config web-ext-config.cjs --overwrite-dest",
-    "verify": "npm run check && npm test && npm run lint"
+    "verify": "npm run check && npm test && npm run lint",
+    "screenshots": "node scripts/screenshots.cjs"
   },
   "devDependencies": {
     "@tesseract.js-data/fra": "^1.0.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0",
     "tesseract.js": "^7.0.0",
-    "web-ext": "10.6.0"
+    "web-ext": "10.6.0",
+    "puppeteer-core": "^23.11.1"
   },
   "engines": {
     "node": ">=22"

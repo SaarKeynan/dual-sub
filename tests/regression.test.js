@@ -429,14 +429,17 @@ async function wordPeekTests() {
 async function sidebarTests() {
   let tabId = 1, delayed;
   const text = source("sidebar/sidebar.js");
-  const c = vm.createContext({ console, render() {}, browser: { tabs: {
-    query: async () => [{ id: tabId, url: `https://www.youtube.com/watch?v=${tabId}` }],
-    sendMessage: async (id, message) => {
-      if (id === 3) return new Promise((resolve) => { delayed = resolve; });
-      return { ok: true, videoId: String(id), revision: "1:1", cues: message.lastRevision === "1:1" ? null : [{ text: `tab ${id}` }] };
-    }
-  } } });
-  vm.runInContext(text.slice(0, text.indexOf("function unknownWordsInCue")) + text.slice(text.indexOf("async function refresh()"), text.indexOf('element("transcript").addEventListener')), c);
+  const c = vm.createContext({ console, render() {},
+    // refresh() skips hidden pages and resets the view when the tab changes.
+    document: { hidden: false, querySelectorAll: () => [] },
+    browser: { tabs: {
+      query: async () => [{ id: tabId, url: `https://www.youtube.com/watch?v=${tabId}` }],
+      sendMessage: async (id, message) => {
+        if (id === 3) return new Promise((resolve) => { delayed = resolve; });
+        return { ok: true, videoId: String(id), revision: "1:1", cues: message.lastRevision === "1:1" ? null : [{ text: `tab ${id}` }] };
+      }
+    } } });
+  vm.runInContext(text.slice(0, text.indexOf("function renderTabs")) + text.slice(text.indexOf("async function refresh()"), text.indexOf("async function startPractice")), c);
   await c.refresh(); tabId = 2; await c.refresh();
   assert.equal(vm.runInContext("state.cues[0].text", c), "tab 2");
   tabId = 3; const stale = c.refresh(); await new Promise((resolve) => setImmediate(resolve));

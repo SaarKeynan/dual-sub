@@ -4,61 +4,110 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DualSub transcript</title>
+    <link rel="stylesheet" href="../shared/tokens.css">
     <link rel="stylesheet" href="sidebar.css">
   </head>
   <body>
     <header>
-      <div><h1>DualSub</h1><p id="videoTitle">Open a French YouTube video</p></div>
-      <div class="header-actions"><button id="vocabulary" type="button" title="Open vocabulary" aria-label="Open vocabulary"><span aria-hidden="true">Aa</span></button><button id="settings" type="button" title="Open settings" aria-label="Open settings"><span aria-hidden="true">⚙</span></button></div>
+      <div class="brand">
+        <h1>DualSub</h1>
+        <p id="videoTitle">Open a French YouTube video</p>
+      </div>
+      <div class="header-actions">
+        <button id="openTab" type="button" title="Open in a tab" aria-label="Open in a tab"><span aria-hidden="true">&#8689;</span></button>
+        <button id="vocabulary" type="button" title="Open vocabulary" aria-label="Open vocabulary"><span aria-hidden="true">Aa</span></button>
+        <button id="settings" type="button" title="Open settings" aria-label="Open settings"><span aria-hidden="true">&#9881;</span></button>
+      </div>
     </header>
-    <section class="status-panel">
-      <label>Mode
+
+    <div id="reconnect" class="notice" hidden>
+      <p>The video tab is gone.</p>
+      <button id="rebind" type="button">Follow a YouTube tab</button>
+    </div>
+    <div id="empty" class="empty">DualSub will stay out of the way on videos without French captions.</div>
+
+    <section class="status-strip">
+      <label class="field">
+        <span>Mode</span>
         <select id="studyMode">
           <option value="watch">Watch</option><option value="study">Study</option><option value="shadow">Shadow</option>
         </select>
       </label>
-      <div><span>English buffer</span><strong id="buffer">0s</strong></div>
-      <div class="coverage-stat"><span>Known coverage</span><strong id="coverage">0%</strong><span class="coverage-track" aria-hidden="true"><span id="coverageBar"></span></span></div>
+      <div class="coverage">
+        <span>Known</span>
+        <span class="coverage-track" aria-hidden="true"><span id="coverageBar"></span></span>
+        <strong id="coverage">0%</strong>
+      </div>
+      <span id="provider" class="provider-badge"></span>
     </section>
-    <nav class="playback" aria-label="Caption navigation">
-      <button id="previous" type="button">← Previous</button>
-      <button id="replay" type="button">Replay</button>
-      <button id="next" type="button">Next →</button>
+
+    <nav class="tabs" role="tablist" aria-label="Sidebar views">
+      <button id="tabTranscript" type="button" role="tab" data-view="transcript" aria-selected="true" aria-controls="paneTranscript">Transcript</button>
+      <button id="tabWords" type="button" role="tab" data-view="words" aria-selected="false" aria-controls="paneWords">Words <span id="wordCount" class="badge" hidden></span></button>
+      <button id="tabPractice" type="button" role="tab" data-view="practice" aria-selected="false" aria-controls="panePractice">Practice</button>
     </nav>
-    <details class="practice-panel">
-      <summary>Listening practice and session recap</summary>
-      <p id="sessionSummary">Start watching to collect a session recap.</p>
-      <button id="reviewSession" type="button">Review words from this session</button>
-      <label>First line <input id="practiceFirst" type="number" min="1" value="1"></label>
-      <label>Last line <input id="practiceLast" type="number" min="1" value="1"></label>
-      <button id="useCurrent" type="button">Use current line</button>
-      <label>Speaking pause (seconds) <input id="practicePause" type="number" min="0" max="15" step="0.5" value="2"></label>
-      <div><button id="startShadow" type="button">Loop range</button> <button id="startDictation" type="button">Dictation</button> <button id="stopPractice" type="button">Stop practice</button></div>
-      <div id="dictationPanel" hidden>
-        <label>Type the French you hear <textarea id="dictationAnswer" rows="3" maxlength="4000"></textarea></label>
-        <button id="replayDictation" type="button">Listen again</button>
-        <button id="checkDictation" type="button">Check answer</button>
-        <p id="dictationFeedback" aria-live="polite"></p>
-      </div>
-      <p id="practiceStatus" role="status"></p>
-    </details>
-    <section class="unknown-panel">
-      <div class="section-heading"><h2>Useful unknown words</h2><span id="provider" class="provider-badge"></span></div>
-      <div id="unknownWords" class="chips"><span class="muted">Waiting for captions…</span></div>
-      <div class="section-heading phrase-heading"><h2>Repeated phrases</h2></div>
-      <div id="phrases" class="chips"></div>
-    </section>
-    <section class="transcript-panel">
-      <div class="transcript-controls" aria-label="Transcript display options">
-        <input id="search" type="search" placeholder="Search transcript…" aria-label="Search transcript">
-        <label><input id="showEnglish" type="checkbox" checked> English</label>
-        <label><input id="unknownOnly" type="checkbox"> Unknown lines</label>
-      </div>
-      <div id="transcript" class="transcript" aria-live="polite"></div>
-    </section>
-    <div id="empty" class="empty">DualSub will stay out of the way on videos without French captions.</div>
+
+    <div class="panes">
+      <section id="paneTranscript" class="pane" role="tabpanel" aria-labelledby="tabTranscript" data-pane="transcript" data-active="true">
+        <div class="pane-controls" aria-label="Transcript display options">
+          <input id="search" type="search" placeholder="Search transcript…" aria-label="Search transcript">
+          <label><input id="showEnglish" type="checkbox" checked> English</label>
+          <label><input id="unknownOnly" type="checkbox"> Unknown lines</label>
+        </div>
+        <nav class="playback" aria-label="Caption navigation">
+          <button id="previous" type="button">← Previous</button>
+          <button id="replay" type="button">Replay</button>
+          <button id="next" type="button">Next →</button>
+        </nav>
+        <p id="transcriptCount" class="pane-count" role="status"></p>
+        <div id="transcript" class="transcript scroll"></div>
+        <div id="noMatches" class="empty" hidden>No caption matches the current search or filter.</div>
+      </section>
+
+      <section id="paneWords" class="pane" role="tabpanel" aria-labelledby="tabWords" data-pane="words">
+        <div id="wordList" class="word-list scroll"></div>
+      </section>
+
+      <section id="panePractice" class="pane" role="tabpanel" aria-labelledby="tabPractice" data-pane="practice">
+        <div class="scroll practice">
+          <div class="card">
+            <h2>Repeat a range</h2>
+            <div class="range">
+              <label>First line <input id="practiceFirst" type="number" min="1" value="1"></label>
+              <label>Last line <input id="practiceLast" type="number" min="1" value="1"></label>
+              <button id="useCurrent" type="button">Use current line</button>
+            </div>
+            <label>Speaking pause (seconds) <input id="practicePause" type="number" min="0" max="15" step="0.5" value="2"></label>
+            <div class="actions">
+              <button id="startShadow" type="button">Loop range</button>
+              <button id="startDictation" type="button">Dictation</button>
+              <button id="stopPractice" type="button">Stop practice</button>
+            </div>
+            <p id="practiceStatus" role="status"></p>
+          </div>
+
+          <div id="dictationPanel" class="card" hidden>
+            <h2>Dictation</h2>
+            <label>Type the French you hear <textarea id="dictationAnswer" rows="3" maxlength="4000"></textarea></label>
+            <div class="actions">
+              <button id="replayDictation" type="button">Listen again</button>
+              <button id="checkDictation" type="button">Check answer</button>
+            </div>
+            <p id="dictationFeedback" aria-live="polite"></p>
+          </div>
+
+          <div class="card">
+            <h2>This session</h2>
+            <p id="sessionSummary">Start watching to collect a session recap.</p>
+            <button id="reviewSession" type="button">Review words from this session</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <script src="../shared/settings.js"></script>
     <script src="../shared/practice.js"></script>
+    <script src="word-list.js"></script>
     <script src="sidebar.js"></script>
   </body>
 </html>
