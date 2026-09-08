@@ -8,15 +8,15 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-root {
   --dualsub-bottom: 72px;
   --dualsub-width: 88%;
-  --dualsub-group-unknown: #ffffff;
+  --dualsub-group-unknown: #e5e7eb;
   --dualsub-group-noun: #60a5fa;
-  --dualsub-group-verb: #a78bfa;
-  --dualsub-group-adjective: #fb7185;
-  --dualsub-group-adverb: #facc15;
-  --dualsub-group-pronoun: #22d3ee;
-  --dualsub-group-determiner: #4ade80;
-  --dualsub-group-preposition: #fb923c;
-  --dualsub-group-conjunction: #f472b6;
+  --dualsub-group-verb: #facc15;
+  --dualsub-group-adjective: #4ade80;
+  --dualsub-group-adverb: #4ade80;
+  --dualsub-group-pronoun: #94a3b8;
+  --dualsub-group-determiner: #94a3b8;
+  --dualsub-group-preposition: #94a3b8;
+  --dualsub-group-conjunction: #94a3b8;
   --dualsub-group-interjection: #94a3b8;
   position: absolute;
   inset: 0;
@@ -30,8 +30,12 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-stack {
   position: absolute;
   left: 50%;
-  bottom: var(--dualsub-bottom);
-  width: var(--dualsub-width);
+  bottom: calc(var(--dualsub-bottom) * var(--dualsub-scale, 1));
+  /* Both rows share one measure, set here in French-caption characters, so a
+     fullscreen line does not run the full screen width. Capping each row
+     separately gave them different widths, because the English row is smaller
+     and a ch is therefore narrower there. */
+  width: min(var(--dualsub-width), 62ch);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -56,22 +60,22 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   display: inline;
   padding: 0.13em 0.34em 0.17em;
   border-radius: 0.19em;
-  border: 1px solid rgba(255, 255, 255, 0.09);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  /* Proportional, so the lift survives the largest sizes. A 1px border here
+     was invisible against the plate and left a seam between wrapped lines. */
+  text-shadow: 0 0.03em 0.1em rgba(0, 0, 0, 0.95);
   pointer-events: auto;
   user-select: text;
   -moz-user-select: text;
   cursor: text;
 }
 
-.dualsub-target .dualsub-line-text {
-  border-color: rgba(253, 230, 138, 0.13);
-}
 
 .dualsub-word {
-  --dualsub-group-color: var(--dualsub-group-unknown, #ffffff);
+  /* .dualsub-root above always declares every group colour, so these lookups
+     need no inline fallback; a second copy of the palette would only drift. */
+  --dualsub-group-color: var(--dualsub-group-unknown);
   border-radius: 0.16em;
   transition: color 90ms ease, background-color 90ms ease, box-shadow 90ms ease;
 }
@@ -84,16 +88,16 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   border-radius: 0 0.16em 0.16em 0;
 }
 
-.dualsub-word[data-word-group="unknown"], .dualsub-card-translation[data-group="unknown"] { --dualsub-group-color: var(--dualsub-group-unknown, #ffffff); }
-.dualsub-word[data-word-group="noun"], .dualsub-card-translation[data-group="noun"] { --dualsub-group-color: var(--dualsub-group-noun, #60a5fa); }
-.dualsub-word[data-word-group="verb"], .dualsub-card-translation[data-group="verb"] { --dualsub-group-color: var(--dualsub-group-verb, #a78bfa); }
-.dualsub-word[data-word-group="adjective"], .dualsub-card-translation[data-group="adjective"] { --dualsub-group-color: var(--dualsub-group-adjective, #fb7185); }
-.dualsub-word[data-word-group="adverb"], .dualsub-card-translation[data-group="adverb"] { --dualsub-group-color: var(--dualsub-group-adverb, #facc15); }
-.dualsub-word[data-word-group="pronoun"], .dualsub-card-translation[data-group="pronoun"] { --dualsub-group-color: var(--dualsub-group-pronoun, #22d3ee); }
-.dualsub-word[data-word-group="determiner"], .dualsub-card-translation[data-group="determiner"] { --dualsub-group-color: var(--dualsub-group-determiner, #4ade80); }
-.dualsub-word[data-word-group="preposition"], .dualsub-card-translation[data-group="preposition"] { --dualsub-group-color: var(--dualsub-group-preposition, #fb923c); }
-.dualsub-word[data-word-group="conjunction"], .dualsub-card-translation[data-group="conjunction"] { --dualsub-group-color: var(--dualsub-group-conjunction, #f472b6); }
-.dualsub-word[data-word-group="interjection"], .dualsub-card-translation[data-group="interjection"] { --dualsub-group-color: var(--dualsub-group-interjection, #94a3b8); }
+.dualsub-word[data-word-group="unknown"], .dualsub-card-translation[data-group="unknown"] { --dualsub-group-color: var(--dualsub-group-unknown); }
+.dualsub-word[data-word-group="noun"], .dualsub-card-translation[data-group="noun"] { --dualsub-group-color: var(--dualsub-group-noun); }
+.dualsub-word[data-word-group="verb"], .dualsub-card-translation[data-group="verb"] { --dualsub-group-color: var(--dualsub-group-verb); }
+.dualsub-word[data-word-group="adjective"], .dualsub-card-translation[data-group="adjective"] { --dualsub-group-color: var(--dualsub-group-adjective); }
+.dualsub-word[data-word-group="adverb"], .dualsub-card-translation[data-group="adverb"] { --dualsub-group-color: var(--dualsub-group-adverb); }
+.dualsub-word[data-word-group="pronoun"], .dualsub-card-translation[data-group="pronoun"] { --dualsub-group-color: var(--dualsub-group-pronoun); }
+.dualsub-word[data-word-group="determiner"], .dualsub-card-translation[data-group="determiner"] { --dualsub-group-color: var(--dualsub-group-determiner); }
+.dualsub-word[data-word-group="preposition"], .dualsub-card-translation[data-group="preposition"] { --dualsub-group-color: var(--dualsub-group-preposition); }
+.dualsub-word[data-word-group="conjunction"], .dualsub-card-translation[data-group="conjunction"] { --dualsub-group-color: var(--dualsub-group-conjunction); }
+.dualsub-word[data-word-group="interjection"], .dualsub-card-translation[data-group="interjection"] { --dualsub-group-color: var(--dualsub-group-interjection); }
 
 .dualsub-source .dualsub-word {
   cursor: help;
@@ -121,10 +125,13 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   outline-offset: 0.08em;
 }
 
+/* The matched English word takes the colour of the French word it answers, so
+   the pair reads as one object for every group. A fixed blue only happened to
+   line up when the source word was a noun. */
 .dualsub-target .dualsub-word.is-aligned {
   color: #0f172a;
-  background: #93c5fd;
-  box-shadow: 0 0 0 0.1em rgba(147, 197, 253, 0.8);
+  background: var(--dualsub-group-color);
+  box-shadow: 0 0 0 0.1em var(--dualsub-group-color);
 }
 
 .dualsub-root.dualsub-recall-mode .dualsub-target {
@@ -146,16 +153,41 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-status {
   display: none;
   align-items: center;
-  gap: 7px;
+  gap: 0.58em;
   max-width: min(560px, 86%);
-  padding: 5px 10px;
-  border: 1px solid rgba(147, 197, 253, 0.28);
+  padding: 0.42em 0.84em;
+  border: 1px solid var(--dualsub-status-edge, rgba(147, 197, 253, 0.28));
   border-radius: 999px;
   color: #f8fafc;
-  background: rgba(15, 23, 42, 0.88);
-  font: 600 12px/1.3 system-ui, sans-serif;
+  background: var(--dualsub-status-fill, rgba(15, 23, 42, 0.88));
+  /* Chrome, not content, so it grows more gently than the captions do; at
+     fullscreen a fixed 12px pill sat under 45px captions and read as a bug. */
+  font: 600 calc(12px * clamp(1, var(--dualsub-scale, 1), 1.6))/1.3 system-ui, sans-serif;
   text-align: center;
   pointer-events: auto;
+}
+
+/* Ready and failed used to render as the same blue pill, so a translation
+   failure over the video was indistinguishable from success at a glance. */
+.dualsub-status[data-state="ready"] {
+  --dualsub-status-edge: rgba(74, 222, 128, 0.5);
+  --dualsub-status-fill: rgba(11, 61, 34, 0.88);
+}
+
+.dualsub-status[data-state="error"] {
+  --dualsub-status-edge: rgba(251, 113, 133, 0.55);
+  --dualsub-status-fill: rgba(102, 16, 43, 0.9);
+}
+
+/* A leading dot so the state reads before the words do. Loading already draws
+   its own spinner in this slot. */
+.dualsub-status:not([data-state="loading"])::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 0.58em;
+  height: 0.58em;
+  border-radius: 50%;
+  background: var(--dualsub-status-edge, rgba(147, 197, 253, 0.28));
 }
 
 .dualsub-status.is-visible {
@@ -169,11 +201,11 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   position: relative;
   z-index: 3;
   box-sizing: border-box;
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  min-height: 22px;
-  flex: 0 0 22px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  flex: 0 0 24px;
   padding: 0;
   border: 1px solid #60a5fa;
   border-radius: 50%;
@@ -294,7 +326,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-selection-card.is-particle-card .dualsub-card-source {
   margin: 0 0 5px;
   font-size: 15px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .dualsub-selection-card.is-particle-card .dualsub-card-translation {
@@ -367,12 +399,12 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   margin-bottom: 9px;
   color: #f8fafc;
   font-size: 20px;
-  font-weight: 720;
+  font-weight: 700;
   letter-spacing: -.01em;
 }
 
 .dualsub-card-translation {
-  --dualsub-group-color: var(--dualsub-group-unknown, #ffffff);
+  --dualsub-group-color: var(--dualsub-group-unknown);
   margin: -2px 0 8px;
   padding: 9px 11px;
   border: 1px solid var(--dualsub-group-color);
@@ -396,7 +428,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
 .dualsub-card-result {
   color: var(--dualsub-group-color);
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .dualsub-card-infinitive {
@@ -549,7 +581,7 @@ html.dualsub-native-fallback .ytp-caption-window-container {
   cursor: crosshair;
   user-select: none;
   touch-action: none;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
 .dualsub-ocr-video-frame {

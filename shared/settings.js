@@ -12,17 +12,22 @@ const DEFAULT_SETTINGS = {
   hoverLookup: true,
   wordAlignment: true,
   colorFrenchWordGroups: false,
-  wordGroupPaletteVersion: 2,
+  wordGroupPaletteVersion: 3,
+  // Five roles, not ten hues. Simulated, the previous noun and verb colours
+  // were 4 apart on a 441-point scale, so they were the same colour to a
+  // deuteranope. These are separated by at least 105 under both deuteranopia
+  // and protanopia, and roles a learner does not act on differently share one
+  // colour rather than competing for recall against an invisible legend.
   wordGroupColors: {
-    unknown: "#ffffff",
+    unknown: "#e5e7eb",
     noun: "#60a5fa",
-    verb: "#a78bfa",
-    adjective: "#fb7185",
-    adverb: "#facc15",
-    pronoun: "#22d3ee",
-    determiner: "#4ade80",
-    preposition: "#fb923c",
-    conjunction: "#f472b6",
+    verb: "#facc15",
+    adjective: "#4ade80",
+    adverb: "#4ade80",
+    pronoun: "#94a3b8",
+    determiner: "#94a3b8",
+    preposition: "#94a3b8",
+    conjunction: "#94a3b8",
     interjection: "#94a3b8"
   },
   pauseOnLookup: false,
@@ -62,17 +67,37 @@ const DEFAULT_SETTINGS = {
     italic: false
   }
 };
+// The ten-hue palette shipped through version 2. Migration only replaces a
+// palette that still matches it exactly, so a reader who picked their own
+// colours keeps every one of them.
+const WORD_GROUP_PALETTE_V2 = Object.freeze({
+  unknown: "#ffffff",
+  noun: "#60a5fa",
+  verb: "#a78bfa",
+  adjective: "#fb7185",
+  adverb: "#facc15",
+  pronoun: "#22d3ee",
+  determiner: "#4ade80",
+  preposition: "#fb923c",
+  conjunction: "#f472b6",
+  interjection: "#94a3b8"
+});
+
 function mergeSettings(value = {}) {
-  const wordGroupColors = { ...DEFAULT_SETTINGS.wordGroupColors, ...(value.wordGroupColors || {}) };
-  if (!value.wordGroupPaletteVersion && wordGroupColors.verb === "#fb7185" && wordGroupColors.adjective === "#c084fc") {
-    wordGroupColors.verb = DEFAULT_SETTINGS.wordGroupColors.verb;
-    wordGroupColors.adjective = DEFAULT_SETTINGS.wordGroupColors.adjective;
+  const storedColors = value.wordGroupColors || {};
+  const wordGroupColors = { ...DEFAULT_SETTINGS.wordGroupColors, ...storedColors };
+  const paletteVersion = Number(value.wordGroupPaletteVersion) || 0;
+  if (paletteVersion < 2 && storedColors.verb === "#fb7185" && storedColors.adjective === "#c084fc") {
+    Object.assign(wordGroupColors, WORD_GROUP_PALETTE_V2);
+  }
+  if (paletteVersion < 3 && Object.entries(WORD_GROUP_PALETTE_V2).every(([group, color]) => wordGroupColors[group] === color)) {
+    Object.assign(wordGroupColors, DEFAULT_SETTINGS.wordGroupColors);
   }
   return {
     ...DEFAULT_SETTINGS,
     ...value,
     studyMode: ["watch", "study", "shadow"].includes(value.studyMode) ? value.studyMode : "watch",
-    wordGroupPaletteVersion: 2,
+    wordGroupPaletteVersion: 3,
     wordGroupColors,
     sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
     targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }

@@ -10,7 +10,7 @@
           <div class="dualsub-line dualsub-source"><span class="dualsub-line-text"></span></div>
           <div class="dualsub-line dualsub-target"><span class="dualsub-line-text"></span></div>
         </div>
-        <div class="dualsub-selection-card" role="dialog" aria-live="polite" aria-label="Subtitle lookup">
+        <div class="dualsub-selection-card" role="dialog" aria-label="Subtitle lookup">
           <div class="dualsub-card-heading">
             <div class="dualsub-card-label">French lookup</div>
             <div class="dualsub-card-heading-actions">
@@ -24,7 +24,7 @@
           </div>
           <div class="dualsub-card-translation" data-group="unknown">
             <div class="dualsub-card-group" hidden></div>
-            <div class="dualsub-card-result"></div>
+            <div class="dualsub-card-result" aria-live="polite"></div>
             <div class="dualsub-card-infinitive" hidden></div>
           </div>
           <div class="dualsub-card-provenance" hidden><span></span><a target="_blank" rel="noopener noreferrer">Open engine lookup &nearr;</a></div>
