@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DualSub Vocabulary</title>
+    <link rel="stylesheet" href="../shared/tokens.css">
     <link rel="stylesheet" href="vocabulary.css">
   </head>
   <body>
@@ -54,6 +55,12 @@
           <option value="all">All videos</option>
         </select>
         <label><input id="groupLemmas" type="checkbox"> Group verb forms</label>
+        <select id="reviewMode" aria-label="Review exercise">
+          <option value="forward">French → English</option>
+          <option value="reverse">English → French</option>
+          <option value="cloze">French sentence cloze</option>
+          <option value="listen">Listen → French</option>
+        </select>
         <select id="sort" aria-label="Sort vocabulary">
           <option value="newest">Newest first</option>
           <option value="alphabetical">A–Z</option>
@@ -67,7 +74,7 @@
         <h2>No matching words</h2>
         <p>Hover a French subtitle in YouTube, then choose <strong>+ Vocabulary</strong>.</p>
       </div>
-      <section id="wordList" class="word-list" aria-live="polite"></section>
+      <section id="wordList" class="word-list"></section>
     </main>
 
     <div id="reviewModal" class="modal" hidden>
@@ -77,9 +84,6 @@
           <button id="closeReview" class="icon-button" type="button" aria-label="Close review">×</button>
         </div>
         <div class="review-progress-track" aria-hidden="true"><span id="reviewProgressBar"></span></div>
-        <label class="review-mode">Exercise
-          <select id="reviewMode"><option value="forward">French → English</option><option value="reverse">English → French</option><option value="cloze">French sentence cloze</option><option value="listen">Listen → French</option></select>
-        </label>
         <p id="reviewPromptLabel" class="eyebrow">French</p>
         <h2 id="reviewTitle"></h2>
         <p id="reviewSentence" class="review-sentence"></p>
@@ -102,6 +106,7 @@
 
     <script src="../vendor/ablaut/ablaut.js"></script>
     <script src="../language/french.js"></script>
+    <script src="../shared/pronunciation.js"></script>
     <script src="vocabulary.js"></script>
   </body>
 </html>

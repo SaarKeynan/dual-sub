@@ -110,6 +110,7 @@
       "js": [
         "shared/settings.js",
         "shared/practice.js",
+        "shared/pronunciation.js",
         "content/captions.js",
         "content/caption-loader.js",
         "content/translation-scheduler.js",

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DualSub</title>
+    <link rel="stylesheet" href="../shared/tokens.css">
     <link rel="stylesheet" href="popup.css">
   </head>
   <body data-active-panel="home">
@@ -13,7 +14,7 @@
         <div><h1>DualSub</h1><p>French + English, together</p></div>
       </div>
       <label class="switch" title="Turn DualSub on or off">
-        <input id="enabled" type="checkbox"><span></span>
+        <input id="enabled" type="checkbox" aria-label="Enable DualSub"><span></span>
       </label>
     </header>
 
@@ -233,6 +234,7 @@
               <label class="check-row"><input id="recallMode" type="checkbox"> Hide English until French is hovered</label>
               <p class="privacy">Toggle this while watching with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>.</p>
               <label class="check-row"><input id="autoPause" type="checkbox"> Pause at each new subtitle line</label>
+              <label class="check-row"><input id="smartPauseUnknownOnly" type="checkbox"> Only pause on lines with words you are still learning</label>
               <label class="check-row"><input id="skipCaptionGaps" type="checkbox"> Skip silent gaps longer than 1.5 seconds</label>
             </div>
           </details>
@@ -262,6 +264,7 @@
 
     <footer><span id="saveStatus" role="status">Changes save automatically</span><span class="home-footer">Choose a settings page above to customize DualSub</span><span class="settings-footer">Shortcuts and diagnostics are in Tools</span></footer>
     <script src="../shared/settings.js"></script>
+    <script src="../shared/pronunciation.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
