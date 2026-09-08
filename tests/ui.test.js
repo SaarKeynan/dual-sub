@@ -9,8 +9,8 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 const virtualConsole = new VirtualConsole();
 virtualConsole.on("jsdomError", (error) => { throw error; });
 
-function page(file) {
-  const dom = new JSDOM(read(file), { url: "https://extension.test/" + file, runScripts: "outside-only", pretendToBeVisual: true, virtualConsole });
+function page(file, search = "") {
+  const dom = new JSDOM(read(file), { url: "https://extension.test/" + file + search, runScripts: "outside-only", pretendToBeVisual: true, virtualConsole });
   dom.window.HTMLElement.prototype.scrollIntoView = function () {};
   dom.window.alert = (message) => { throw new Error(message); };
   dom.window.eval(read("shared/settings.js"));
@@ -192,6 +192,50 @@ async function wordListSaveFailure() {
     assert.equal(row.querySelector(".word-saved"), null, "A refused save must not report success");
     assert.equal(row.querySelector(".word-save").textContent, "Save");
     assert.match(row.querySelector(".word-meaning").textContent, /full/, "and must say why it failed");
+  } finally { w.close(); }
+}
+
+// In a tab, "the active tab in this window" is this page, so asking that
+// question would leave it permanently empty. It follows an explicit id.
+async function sidebarTabMode() {
+  const dom = page("sidebar/sidebar.html", "?followTab=7"), w = dom.window;
+  let queried = 0;
+  let living = true;
+  const addressed = [];
+  w.browser = {
+    runtime: { getURL: (value) => "https://extension.test/" + value, async sendMessage() { return { ok: true, meanings: [] }; } },
+    storage: { onChanged: event, sync: { async get() { return {}; }, async set() {} } },
+    tabs: {
+      onActivated: event, onUpdated: event,
+      async query() { queried += 1; return [{ id: 1, url: "https://www.youtube.com/watch?v=other" }]; },
+      async get(id) {
+        if (!living) throw new Error("No tab with id " + id);
+        return { id, url: "https://www.youtube.com/watch?v=followed" };
+      },
+      async sendMessage(id, message) {
+        addressed.push(id);
+        if (message.type !== "get-transcript-state") return { ok: true };
+        return { ok: true, videoId: "followed", title: "Followed video", revision: "f:1", currentCueIndex: 0, studyWords: [],
+          cues: [{ index: 0, text: "Bonjour", translation: "Hello", start: 0 }] };
+      },
+      async create() {}
+    }
+  };
+  try {
+    w.eval(read("shared/practice.js")); w.eval(read("sidebar/word-list.js")); w.eval(read("sidebar/sidebar.js"));
+    await settle(); await settle();
+    assert.equal(w.document.body.dataset.mode, "tab", "Tab mode lays itself out differently");
+    assert.equal(queried, 0, "Tab mode must never ask which tab is in front");
+    assert(addressed.every((id) => id === 7), "Tab mode talks only to the tab it was given");
+    assert.equal(w.document.getElementById("videoTitle").textContent, "Followed video");
+    assert.equal(w.document.getElementById("reconnect").hidden, true);
+
+    // When the followed tab goes, say so rather than silently following another.
+    living = false;
+    await w.refresh();
+    await settle();
+    assert.equal(w.document.getElementById("reconnect").hidden, false, "A lost video tab is reported");
+    assert.equal(queried, 0, "and is never replaced behind the user's back");
   } finally { w.close(); }
 }
 
@@ -612,7 +656,7 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
 }
 
 (async () => {
-  await sidebar(); await wordList(); await wordListSaveFailure(); await popup(); await vocabulary(); await loader();
+  await sidebar(); await wordList(); await wordListSaveFailure(); await sidebarTabMode(); await popup(); await vocabulary(); await loader();
   const snapshot = await content();
   await content(snapshot);
   await content({ ...snapshot, targetCues: [], translations: [{ index: 0, text: "I am well" }] });

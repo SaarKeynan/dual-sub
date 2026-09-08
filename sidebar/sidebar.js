@@ -14,16 +14,26 @@ function formatTime(milliseconds) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+// A tab-mode page is itself the active tab, so "whichever tab is in front"
+// would resolve to this page and leave it permanently empty. It is told which
+// tab to follow instead, and keeps following that one.
+const followTabId = (() => {
+  const value = Number(new URLSearchParams(globalThis.location?.search || "").get("followTab"));
+  return Number.isInteger(value) && value > 0 ? value : null;
+})();
+let lostFollowedTab = false;
+
 async function activeTab() {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
 
-// The one place that decides which tab the sidebar is reading. In a panel that
-// is whichever tab is in front; a tab-mode page cannot ask that question,
-// because the answer would be itself.
+// The one place that decides which tab the sidebar is reading.
 async function resolveTab() {
-  return activeTab();
+  if (followTabId === null) return activeTab();
+  const tab = await browser.tabs.get(followTabId).catch(() => null);
+  lostFollowedTab = !tab;
+  return tab;
 }
 
 async function send(message) {
@@ -123,7 +133,7 @@ function renderTranscript() {
   // Distinguish a video with no French captions from a search or filter that
   // simply matched nothing; both used to show the "no captions" notice.
   const hasCaptions = Boolean(state?.cues?.length);
-  element("empty").hidden = hasCaptions || !state;
+  element("empty").hidden = hasCaptions || lostFollowedTab;
   document.querySelector(".status-strip").hidden = !hasCaptions;
   document.querySelector(".tabs").hidden = !hasCaptions;
   document.querySelector(".panes").hidden = !hasCaptions;
@@ -152,6 +162,7 @@ function render() {
   element("coverageBar").style.width = `${Math.min(100, Math.max(0, state?.coveragePercent || 0))}%`;
   element("provider").textContent = state?.provider || "";
   element("studyMode").value = ["study", "shadow"].includes(state?.studyMode) ? state.studyMode : "watch";
+  element("reconnect").hidden = !lostFollowedTab;
   renderTranscript();
   renderWordList();
   renderTabs();
@@ -169,7 +180,11 @@ async function refresh() {
     lastActiveIndex = -1;
     setView("transcript");
   }
-  if (!tab || (tab.url && !WATCH_URL.test(tab.url))) {
+  const leftTheVideo = Boolean(tab?.url) && !WATCH_URL.test(tab.url);
+  // Following a specific tab means saying so when it is gone, rather than
+  // quietly attaching to whatever video happens to be open instead.
+  if (followTabId !== null && leftTheVideo) lostFollowedTab = true;
+  if (!tab || leftTheVideo) {
     state = null; render(); return;
   }
   const response = await browser.tabs.sendMessage(tab.id, { type: "get-transcript-state", lastRevision: state?.revision || "" }).catch(() => null);
@@ -210,6 +225,21 @@ function bindEvents() {
   });
   element("settings").addEventListener("click", () => browser.runtime.openOptionsPage());
   element("vocabulary").addEventListener("click", () => browser.tabs.create({ url: browser.runtime.getURL("vocabulary/vocabulary.html") }));
+  element("openTab").addEventListener("click", async () => {
+    const id = currentTabId || (await resolveTab())?.id;
+    if (!id) return;
+    browser.tabs.create({ url: browser.runtime.getURL("sidebar/sidebar.html") + "?followTab=" + id });
+  });
+  element("rebind").addEventListener("click", async () => {
+    // Enumerating tabs by URL may be refused without the "tabs" permission,
+    // which this extension does not request. Say what to do instead of failing.
+    const [tab] = await browser.tabs.query({ url: "*://www.youtube.com/watch*" }).catch(() => []);
+    if (!tab?.id) {
+      element("reconnect").querySelector("p").textContent = "Open a French YouTube video, then press the tab button in the sidebar.";
+      return;
+    }
+    globalThis.location.search = "?followTab=" + tab.id;
+  });
 
   element("useCurrent").addEventListener("click", () => {
     element("practiceFirst").value = element("practiceLast").value = Math.max(1, (state?.currentCueIndex ?? 0) + 1);
@@ -254,6 +284,10 @@ function bindEvents() {
 }
 
 if (typeof document !== "undefined" && document.getElementById("transcript")) {
+  if (followTabId !== null) {
+    document.body.dataset.mode = "tab";
+    element("openTab").hidden = true;
+  }
   bindEvents();
   refresh();
   setInterval(refresh, 900);

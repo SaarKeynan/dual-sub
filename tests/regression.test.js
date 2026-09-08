@@ -429,7 +429,9 @@ async function wordPeekTests() {
 async function sidebarTests() {
   let tabId = 1, delayed;
   const text = source("sidebar/sidebar.js");
-  const c = vm.createContext({ console, render() {},
+  const c = vm.createContext({ console, render() {}, URLSearchParams,
+    // A panel has no followTab parameter, so it resolves the tab in front.
+    location: { search: "" },
     // refresh() skips hidden pages and resets the view when the tab changes.
     document: { hidden: false, querySelectorAll: () => [] },
     browser: { tabs: {
