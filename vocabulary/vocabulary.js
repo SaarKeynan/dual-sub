@@ -4,9 +4,14 @@ let reviewIndex = 0;
 let answerVisible = false;
 let ratingPending = false;
 let reviewReturnFocus = null;
+// Pronunciation settings are chosen in the popup and shared with the subtitle
+// lookup card; review used to ignore them and always ask for a generic voice.
+let reviewSettings = { pronunciationVoiceURI: "", pronunciationRate: 0.88 };
 
 const element = (id) => document.getElementById(id);
 const dayMs = 86400000;
+const LAPSE_WARNING_THRESHOLD = 4;
+let loaded = false;
 
 function isDue(entry) {
   return (Number(entry.dueAt) || 0) <= Date.now();
@@ -56,6 +61,14 @@ function createWordCard(entry) {
   meta.appendChild(level);
   meta.appendChild(createTextElement("span", "", `${entry.encounters || 1} encounter${entry.encounters === 1 ? "" : "s"}`));
   meta.appendChild(createTextElement("span", "", isDue(entry) ? "Due now" : `Due ${formatDate(entry.dueAt)}`));
+  // Repeated failures are the strongest signal a review system has, and they
+  // were recorded on every entry without ever being shown.
+  const lapses = Number(entry.reviewLapses) || 0;
+  if (lapses >= LAPSE_WARNING_THRESHOLD) {
+    const flag = createTextElement("span", "word-lapses", `Forgotten ${lapses} times`);
+    flag.title = "Try rewriting the meaning or adding a note to make this word stick";
+    meta.appendChild(flag);
+  }
   const url = videoUrl(entry);
   if (url) {
     const link = document.createElement("a");
@@ -142,7 +155,17 @@ function render() {
       section.append(...group.map(createWordCard)); return section;
     }));
   } else list.replaceChildren(...visible.map(createWordCard));
-  element("emptyState").hidden = Boolean(visible.length);
+  // A first run and a search that matched nothing are different situations and
+  // used to share one message.
+  const emptyState = element("emptyState");
+  emptyState.hidden = Boolean(visible.length) || !loaded;
+  if (!emptyState.hidden) {
+    const neverSaved = !entries.length;
+    emptyState.querySelector("h2").textContent = neverSaved ? "No words saved yet" : "No matching words";
+    emptyState.querySelector("p").textContent = neverSaved
+      ? "Hover a French subtitle in YouTube, then choose + Vocabulary."
+      : "Try a different search, filter, or video.";
+  }
   const due = entries.filter(isDue).length;
   element("totalCount").textContent = entries.length;
   element("dueCount").textContent = due;
@@ -153,9 +176,17 @@ function render() {
 }
 
 async function loadEntries() {
+  // Four zeros are indistinguishable from having saved nothing, so hold the
+  // counters until the real numbers arrive.
+  if (!loaded) {
+    for (const id of ["totalCount", "dueCount", "learningCount", "masteredCount", "sourceCount"]) {
+      element(id).textContent = "—";
+    }
+  }
   const response = await browser.runtime.sendMessage({ type: "get-vocabulary" });
   if (!response?.ok) throw new Error(response?.error || "Could not load vocabulary.");
   entries = response.entries;
+  loaded = true;
   updateVideoFilter();
   render();
 }
@@ -264,6 +295,9 @@ function revealAnswer() {
   element("reviewAnswer").hidden = false;
   element("revealAnswer").hidden = true;
   element("ratingButtons").hidden = false;
+  // Hiding the pressed button and disabling the textarea both drop focus to the
+  // body, which puts it outside the dialog and defeats the Tab trap.
+  element("ratingButtons").querySelector("[data-rating]")?.focus();
 }
 
 async function rateCurrent(rating) {
@@ -274,6 +308,10 @@ async function rateCurrent(rating) {
     const response = await browser.runtime.sendMessage({ type: "review-vocabulary", id: entry.id, rating });
     if (!response?.ok) throw new Error(response?.error || "Could not save review.");
     if (reviewQueue[reviewIndex] !== entry) return;
+    // A word rated "again" is due in ten minutes, long after this session ends,
+    // so requeue it here. Without this the corrective repetition never happens
+    // and "again" is indistinguishable from skipping the card.
+    if (rating === "again" && !reviewQueue.slice(reviewIndex + 1).includes(entry)) reviewQueue.push(entry);
     reviewIndex += 1; renderReviewCard();
     requestAnimationFrame(() => { if (!element("reviewModal").hidden) element("typedAnswer").focus(); });
   } catch (error) { alert(error.message); }
@@ -311,7 +349,10 @@ function exportCsv() {
     entry.sourceText, entry.translatedText, entry.sentence, entry.sentenceTranslation, entry.notes,
     entry.videoTitle, Math.floor((entry.timeMs || 0) / 1000), entry.encounters || 1, entry.stage || 0
   ]);
-  downloadFile("dualsub-vocabulary.csv", "text/csv;charset=utf-8", [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n"));
+  // Excel on Windows opens a BOM-less UTF-8 file as ANSI, which turns "été"
+  // into "Ã©tÃ©" for a French vocabulary list.
+  const body = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  downloadFile("dualsub-vocabulary.csv", "text/csv;charset=utf-8", `﻿${body}`);
 }
 
 function exportAnki() {
@@ -320,7 +361,7 @@ function exportAnki() {
   const headers = ["#separator:Tab", "#html:true", "#columns:French\tEnglish\tFrench sentence\tEnglish sentence\tNotes\tSource\tTimestamp\tTags"];
   const rows = entries.map((entry) => [
     html(entry.sourceText), html(entry.translatedText), html(entry.sentence), html(entry.sentenceTranslation), html(entry.notes),
-    videoUrl(entry) ? `<a href="${html(videoUrl(entry))}">${html(entry.videoTitle || "YouTube")}</a>` : entry.videoTitle,
+    videoUrl(entry) ? `<a href="${html(videoUrl(entry))}">${html(entry.videoTitle || "YouTube")}</a>` : html(entry.videoTitle),
     Math.max(0, Math.floor(Number(entry.timeMs) / 1000) || 0), "dualsub french youtube"
   ].map(cell).join("\t"));
   downloadFile("dualsub-anki.tsv", "text/tab-separated-values;charset=utf-8", [...headers, ...rows].join("\r\n"));
@@ -421,8 +462,12 @@ function speakCurrentReview() {
   if (!entry || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(entry.sourceText);
-  utterance.lang = entry.sourceLanguage === "fr" ? "fr-FR" : (entry.sourceLanguage || "fr");
-  utterance.rate = 0.88;
+  // Use the voice and speed chosen in settings, like the subtitle lookup card,
+  // instead of asking for a generic fr-FR voice at a fixed rate.
+  const voice = DualSubPronunciation.chooseFrenchVoice(window.speechSynthesis.getVoices?.(), reviewSettings.pronunciationVoiceURI);
+  if (voice) utterance.voice = voice;
+  utterance.lang = voice?.lang || (entry.sourceLanguage === "fr" ? "fr-FR" : (entry.sourceLanguage || "fr"));
+  utterance.rate = DualSubPronunciation.speechRate(reviewSettings.pronunciationRate);
   window.speechSynthesis.speak(utterance);
 }
 element("speakReview").addEventListener("click", speakCurrentReview);
@@ -437,7 +482,10 @@ document.addEventListener("keydown", (event) => {
       .filter((node) => !node.closest("[hidden]"));
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    // Falling back to the first node keeps the trap working even if focus has
+    // escaped the dialog, which used to leave Tab walking the page behind it.
+    if (!element("reviewModal").contains(document.activeElement)) { event.preventDefault(); first?.focus(); }
+    else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   } else if (event.key === "Escape") closeReview();
   else if ((event.code === "Space" && event.target !== element("typedAnswer") || event.key === "Enter") && !answerVisible) { event.preventDefault(); revealAnswer(); }
@@ -445,6 +493,14 @@ document.addEventListener("keydown", (event) => {
     rateCurrent({ "1": "again", "2": "hard", "3": "good" }[event.key]);
   }
 });
+
+Promise.resolve(browser.storage?.sync?.get("settings")).then((stored) => {
+  const saved = stored?.settings || {};
+  reviewSettings = {
+    pronunciationVoiceURI: String(saved.pronunciationVoiceURI || ""),
+    pronunciationRate: Number(saved.pronunciationRate) || 0.88
+  };
+}).catch(() => {});
 
 loadEntries().then(() => {
   const ids = new URLSearchParams(location.search).get("review");

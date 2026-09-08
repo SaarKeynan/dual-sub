@@ -170,6 +170,9 @@ async function runOcr() {
     return true;
   } catch (error) {
     element("ocrProgress").hidden = true;
+    // A worker that failed mid-recognition may be dead. Keeping the resolved
+    // promise made every later attempt fail the same way until a page reload.
+    ocrWorkerPromise = null;
     setStatus(error.message || "OCR could not read this selection.", "error");
     return false;
   } finally {
@@ -347,6 +350,11 @@ element("clearText").addEventListener("click", () => {
   translationRequestId += 1;
   element("sourceText").value = "";
   element("targetText").value = "";
+  // Clearing supersedes any in-flight request, whose own cleanup then skips
+  // re-enabling the button. Restore it here so the workspace stays usable.
+  const translateButton = element("translateText");
+  translateButton.disabled = false;
+  translateButton.textContent = "Translate now";
   setStatus("");
   updateTranslationActions();
   element("sourceText").focus();

@@ -4,7 +4,7 @@ let saveTimer;
 
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation", "preloadVideoWords",
-  "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "skipCaptionGaps", "hoverDelay", "studyMode",
+  "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "smartPauseUnknownOnly", "skipCaptionGaps", "hoverDelay", "studyMode",
   "captionHoldMs", "translationBufferSeconds", "translationBatchSize",
   "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "pronunciationVoiceURI", "pronunciationRate",
@@ -194,6 +194,7 @@ function setFormValues() {
   element("pauseOnLookup").checked = settings.pauseOnLookup;
   element("recallMode").checked = settings.recallMode;
   element("autoPause").checked = settings.autoPause;
+  element("smartPauseUnknownOnly").checked = settings.smartPauseUnknownOnly;
   element("skipCaptionGaps").checked = settings.skipCaptionGaps;
   element("studyMode").value = settings.studyMode || "watch";
   element("captionHoldMs").value = settings.captionHoldMs ?? 350;
@@ -240,6 +241,7 @@ function readFormValues() {
   settings.pauseOnLookup = element("pauseOnLookup").checked;
   settings.recallMode = element("recallMode").checked;
   settings.autoPause = element("autoPause").checked;
+  settings.smartPauseUnknownOnly = element("smartPauseUnknownOnly").checked;
   settings.skipCaptionGaps = element("skipCaptionGaps").checked;
   settings.studyMode = element("studyMode").value;
   settings.captionHoldMs = Number(element("captionHoldMs").value);
@@ -336,29 +338,24 @@ function updatePreview(prefix) {
   preview.style.fontStyle = element(`${prefix}Italic`).checked ? "italic" : "normal";
 }
 
-function isFrenchVoice(voice) {
-  return /^fr(?:[-_]|$)/i.test(voice.lang || "") || /french|fran[cç]ais|france/i.test(voice.name || "");
-}
-
-function frenchVoiceScore(voice) {
-  return (/^fr-FR$/i.test(voice.lang || "") ? 500 : 300) +
-    (/natural|neural|premium/i.test(voice.name || "") ? 120 : 0) +
-    (voice.localService ? 30 : 0) +
-    (voice.default ? 10 : 0);
-}
-
 function loadPronunciationVoices() {
   const select = element("pronunciationVoiceURI");
   const preferred = settings?.pronunciationVoiceURI || select.value || "";
-  const voices = Array.from(window.speechSynthesis?.getVoices?.() || [])
-    .filter(isFrenchVoice)
-    .sort((left, right) => frenchVoiceScore(right) - frenchVoiceScore(left) || left.name.localeCompare(right.name));
+  const voices = DualSubPronunciation.frenchVoices(window.speechSynthesis?.getVoices?.());
   select.replaceChildren(new Option("Best available French voice", ""));
   voices.forEach((voice) => {
     const quality = /natural|neural|premium/i.test(voice.name) ? " · natural" : "";
     select.add(new Option(`${voice.name} — ${voice.lang}${quality}`, voice.voiceURI));
   });
-  if (preferred && voices.some((voice) => voice.voiceURI === preferred)) select.value = preferred;
+  // The voice list is per machine but the preference syncs. Keep an unavailable
+  // choice visible and selected, so saving this form cannot silently erase it
+  // for the device that can actually speak it.
+  if (preferred && !voices.some((voice) => voice.voiceURI === preferred)) {
+    const missing = new Option("Chosen voice is not installed on this device", preferred);
+    missing.disabled = true;
+    select.add(missing);
+  }
+  if (preferred) select.value = preferred;
   const preview = element("previewPronunciation");
   preview.disabled = false;
   preview.dataset.missingVoice = String(voices.length === 0);
@@ -373,7 +370,7 @@ function previewPronunciation() {
   }
   const voices = synthesis.getVoices();
   const preferred = element("pronunciationVoiceURI").value;
-  const voice = voices.find((candidate) => candidate.voiceURI === preferred) || voices.find(isFrenchVoice);
+  const voice = DualSubPronunciation.chooseFrenchVoice(voices, preferred);
   if (!voice) {
     browser.tabs.create({ url: browser.runtime.getURL("help/pronunciation.html") });
     return;
@@ -625,6 +622,18 @@ async function initialize() {
   element("clearTranslationCache").addEventListener("click", async () => {
     const response = await browser.runtime.sendMessage({ type: "clear-translation-cache" });
     element("cacheStatus").textContent = response?.ok ? "Cache cleared" : (response?.error || "Could not clear cache");
+  });
+  // Keyboard commands, the sidebar and the content script all write settings
+  // while this page is open. Without this the next debounced save would write
+  // the whole stale form back and silently undo their change.
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync" || !changes.settings) return;
+    const incoming = DualSubSettings.merge(changes.settings.newValue);
+    if (JSON.stringify(incoming) === JSON.stringify(settings)) return;
+    settings = incoming;
+    loadPronunciationVoices();
+    setFormValues();
+    updateProviderFields();
   });
   window.speechSynthesis?.addEventListener?.("voiceschanged", loadPronunciationVoices);
   setTimeout(loadPronunciationVoices, 250);
