@@ -6,6 +6,7 @@ module.exports = {
     ".github/**",
     ".agents/**",
     ".codex/**",
+    ".remember/**",
     "docs/**",
     "CLAUDE.md",
     ".web-ext-artifacts/**",
@@ -16,6 +17,10 @@ module.exports = {
     "tests/**",
     "scripts",
     "scripts/**",
+    // Screenshot output for visual review. Git ignores it, but web-ext packages
+    // from the source directory and would otherwise ship the PNGs.
+    ".shots",
+    ".shots/**",
     "vendor/lexique/Lexique383.tsv",
     "package.json",
     "package-lock.json",

@@ -55,7 +55,7 @@ YouTube page context                   Firefox extension context
 | `video-cache.js` | Persistent per-video caption/translation snapshots, expiry, merging, and cache clearing |
 | `language/french.js` | French morphology, infinitives, elisions, lexical information, and word-group classification |
 | `popup/*` | Home workspace launcher plus searchable General, Appearance, and Tools settings |
-| `sidebar/*` | Live bilingual transcript, seeking, buffer health, and known/unknown-word tools |
+| `sidebar/*` | Tabbed transcript, the video's word list with one-click saving, and listening practice |
 | `vocabulary/*` | Vocabulary browsing, editing, import/export, pronunciation, and spaced review |
 | `tools/translator.*` | Type-to-translate workspace and local French OCR result popup |
 | `help/pronunciation.*` | OS-specific instructions for installing a French speech voice |
@@ -270,9 +270,49 @@ superseded requests.
 The sidebar polls the active YouTube tab for `get-transcript-state`. To reduce
 message size, the content script can omit unchanged cue data when the sidebar
 sends its last revision. The response includes the cue list, active index,
-buffer length, provider, study mode, vocabulary coverage, frequent unknown
-words, and repeated phrases. Sidebar cue clicks seek through a content-script
-message rather than controlling the tab directly.
+buffer length, provider, study mode, vocabulary coverage, and `studyWords`.
+Sidebar cue clicks seek through a content-script message rather than controlling
+the tab directly.
+
+`analyzeTranscriptWords` counts every distinct word, records the first cue each
+appeared in, and computes coverage. `describeStudyWords` then attaches the
+context-aware lookup query, its reading key, and a grammatical label to at most
+60 unknown words. Morphology stays in the content script because the sidebar
+does not load `language/french.js`, and the whole analysis is memoised on the
+transcript and word-state revisions, so it runs once per transcript.
+
+### Sidebar views
+
+The sidebar presents three mutually exclusive tabs — Transcript, Words and
+Practice — so the selected view gets the full column width. An unrevealed
+dictation forces the Practice tab and disables the other two: the word list
+reveals the answer just as the transcript does.
+
+`sidebar/word-list.js` renders one row per word, carrying its grammatical
+reading, recurrence count, meaning, and a Save button. Save is one click from
+any row state; on a word with no meaning yet it resolves the meaning through
+`translate-selection` first, because `add-vocabulary` rejects an entry without a
+translation. Expanding a row reveals the source line and the secondary
+known/ignored/seek actions.
+
+Meanings are cache-first. On open, one `peek-word-meanings` message returns, per
+word, any translation already in the corrections store or the translation cache,
+plus whether the word is already in the vocabulary. The peek contacts no
+provider, so it works while a provider is in backoff. `lookupBatchItem` in
+`background.js` builds the batch item and options for both the peek and the
+interactive lookup, so the two cannot disagree about cache keys.
+
+A word already in the vocabulary shows a `Saved` marker instead of a Save
+button. Word state alone cannot carry this: saving a new word sets `learning`,
+but importing vocabulary sets no word states, so imported words would otherwise
+be offered for saving again. A `storage.onChanged` listener on the local
+`vocabulary` key re-checks saved state when the in-video card saves a word.
+
+Passing `?followTab=<id>` opens the same page in a tab bound to one YouTube tab.
+A tab-mode page cannot ask which tab is active, because the answer would be
+itself. Above 780px the layout becomes two columns, transcript beside word list.
+A followed tab that closes or leaves the video is reported rather than silently
+replaced. Refreshes are skipped while the page is hidden.
 
 ## Vocabulary and corrections
 
@@ -298,7 +338,10 @@ entries locally for optional infinitive grouping; each surface form retains its
 own review state.
 
 Known/learning/ignored word states are separate from vocabulary entries. They
-drive sidebar coverage and unknown-word filtering.
+drive sidebar coverage and unknown-word filtering. Saving a new entry also marks
+its word `learning`; re-saving an existing entry and importing entries do not
+touch word state, which is why the sidebar word list asks the vocabulary itself
+whether a word is already saved.
 
 ## Listening practice and session recap
 
@@ -317,9 +360,9 @@ words, preserving accent differences. Shadowing repeats a selected range after a
 control the current exercise.
 
 The content script records distinct words encountered during playback and words
-saved during the current video session. Transcript state includes a recap; the
-sidebar can open a review of up to ten matching saved entries. These session
-counters are in memory and reset on navigation.
+saved during the current video session. Transcript state includes a recap, shown
+in the Practice tab; the sidebar can open a review of up to ten matching saved
+entries. These session counters are in memory and reset on navigation.
 
 ## OCR and manual translation
 

@@ -1,5 +1,156 @@
 # Changelog
 
+## Unreleased — a sidebar you can actually study from
+
+- The sidebar's four overlapping "words from this video" surfaces are now one
+  list. Frequency chips, a session counter, a review launcher and a repeated
+  phrases panel all claimed to show the same thing, and none of them could add
+  a word: the chips' `+` wrote a word state, never a vocabulary entry, and the
+  phrase chips had no buttons at all.
+- Every word now shows its meaning, its grammatical reading and the line it came
+  from, so you are no longer asked to judge a bare word with no context. Saving
+  is one click from any row, including a word never looked up — it fetches the
+  meaning and saves in the same action.
+- A word already in your vocabulary says so and cannot be added twice, whether
+  it was saved here, from the in-video card, or imported from a backup.
+- Meanings are read from the cache before any request is made, so opening the
+  list costs nothing and keeps working while a translation provider is rate
+  limited.
+- The sidebar is laid out as three tabs — Transcript, Words and Practice — so
+  the view you are using gets the whole column instead of six panels sharing it.
+- The transcript can open in a full tab, where the width becomes a second column
+  rather than a longer scroll. A dictation now hides the word list along with
+  the transcript, since it gives away the same answer.
+- Removed the English buffer readout, which reported how far ahead translation
+  had run rather than anything you act on.
+
+## Unreleased — grammatical accuracy and settings integrity
+
+- Rebuilt the Lexique indexes. The build matched `cgram` exactly, so every
+  subcategorized row was discarded and the shipped index contained no articles,
+  pronouns, demonstratives or possessives at all. `lui` and `tu` had also
+  inherited the lemmas of `luire` and `taire`.
+- Stopped inventing verbs from spelling. The `-é` heuristic turned `idée`,
+  `café` and `société` into forms of `ider`, `cafer` and `sociéter`, and stored
+  those lemmas in vocabulary and cache keys. A guessed infinitive is now
+  rejected unless the bundled Lefff list attests it, and a noun reading survives
+  on its own instead of depending on a verb guess.
+- `ce` is no longer treated as a subject pronoun, so `ce livre` reads as a noun
+  like `le livre`. Closed-class words keep their reading when a rare verb
+  homograph exists, and `s’il` is explained as *si + il* rather than reflexive.
+- Added the schwa and `ɥ` transcription codes, so the card shows `/ʒə/` and
+  `/nɥi/` instead of `/ʒ°/` and `/n8i/`, and lookups with a typographic
+  apostrophe such as `aujourd’hui` now resolve.
+- The settings page follows changes made elsewhere. Toggling DualSub or the
+  English reveal from the keyboard while it is open no longer gets reverted by
+  its next save, and a pronunciation voice that is not installed on this machine
+  is preserved instead of blanked for every synced device.
+- Restoring a backup merges instead of overwriting. Review progress, notes and
+  saved examples survive an older backup, and a newer one still carries its
+  progress forward.
+- One unusable word no longer discards a whole word-preloading batch, English
+  stays visible for the same hold as French while a provider supplies it, and
+  lines that failed while a provider was down are retried once it recovers.
+- The OCR screenshot, which captures the whole visible tab, is discarded as soon
+  as the result window closes and no longer stores the watched page URL.
+- Long translation corrections are keyed by their full text, so two passages
+  sharing an opening no longer resolve to one saved meaning.
+- The transcript sidebar distinguishes a search that matched nothing from a
+  video without French captions. Vocabulary review uses the configured voice and
+  speed, CSV exports open correctly in Excel, and the OCR workspace recovers
+  from a failed recognition without a reload.
+- Added the missing Tesseract entry to `THIRD_PARTY_NOTICES.md`.
+
+### Fewer translation requests, same translations
+
+- Caption batches now reach Google's keyless endpoint as a single request per
+  batch instead of one request per line. A ten-minute video drops from roughly
+  350 requests to about a dozen, which is what the endpoint rate limits on, so
+  English keeps up with French far more often.
+
+  The first attempt at this repeated the `q` parameter, which does not work:
+  the endpoint translates the first `q`, silently ignores the rest, and returns
+  a normal-looking 200. Measured against the live service, several lines joined
+  by newlines come back as one chunk per line, each repeating its own source
+  text. The batch is accepted only when every chunk's source matches the line it
+  should translate, in order, because pairing the wrong English with a French
+  caption is worse than spending more requests; anything else falls back to one
+  request per line for the rest of the session.
+- Word preloading translates its whole list in one batch and then applies the
+  same per-word quality checks a hover lookup applies, rather than spending one
+  request per word. MyMemory keeps the previous per-word path because it sends
+  one request per text anyway and rejects a whole call over one bad answer.
+  A saved correction is used without contacting the provider at all.
+- Hovering a French word no longer costs two requests. The infinitive is only
+  used as evidence for highlighting the English word, so it is fetched only when
+  that setting is on, and the prefetch waits for the pointer to settle instead
+  of firing after 90ms on every word it merely crosses.
+- Preloading skips determiners, pronouns, prepositions and conjunctions, and any
+  word already marked known or ignored. The most frequent words in a French
+  video are `le`, `la`, `de` and `que`, which no learner looks up. Skipped words
+  are still translated on demand when hovered, so only the preload changes, and
+  the freed slots go to content words further down the list.
+
+### Design
+
+- Fixed a caption regression from the width work in this release: the measure
+  cap was applied to the line wrapper, whose font size comes from YouTube rather
+  than from the caption, so it resolved about half as wide as intended and made
+  every subtitle narrow and multi-line. The caption size now sits on the block
+  the cap measures, and the cap sits on the stack so both rows share one width
+  instead of the English row getting a narrower one for being smaller.
+- Added `npm run screenshots`, which renders the overlay at three player sizes
+  and each extension page in an installed Chrome or Edge and reports layout
+  measurements. The jsdom suites have no layout engine and cannot catch a visual
+  regression; this is how the caption width and the status badge were checked.
+- The status badge scales with the player. At fullscreen a fixed 12px pill sat
+  under 45px captions. Its close button also grows to a 24px target.
+
+- The subtitle overlay scales with the player. Size and vertical offset were
+  absolute pixels, so a caption was the same size in a mini player and in a 4K
+  fullscreen one. Sizes are now authored against a 720px-tall player and scaled
+  from there, clamped at both ends. Default line width drops from 88 to 62
+  percent with a 46-character cap, near the 40 broadcast subtitling targets
+  rather than the 100 the old default allowed.
+- Word-group colours collapse from ten hues to five roles. Simulated, the old
+  noun and verb colours were 4 apart on a 441-point scale, meaning they were the
+  same colour to a deuteranope; the new set is at least 105 apart under both
+  deuteranopia and protanopia. Roles a learner does not act on differently now
+  share a colour. A palette the reader customised is left exactly as it was.
+- The status badge over the video distinguishes ready, loading and failed. All
+  three used to render as the same blue pill, so a translation failure looked
+  like success. A matched English word now takes the colour of the French word
+  it answers, which previously only lined up when that word was a noun.
+- Dropped Inter, which six stylesheets requested and none bundled, and snapped
+  the fourteen fractional weights written against it onto weights that actually
+  render. Added `shared/tokens.css` so the pages stop each defining their own
+  slightly different black, surface and border.
+- The main on/off switch, the transcript and the word list are usable with a
+  screen reader: the switch has a name, the two lists no longer re-announce
+  themselves on every keystroke, and the lookup card announces its result rather
+  than its whole contents. Escape now closes the lookup card and the OCR window
+  from anywhere on the page. Revealing a review answer keeps focus in the dialog.
+- Rating a word "Again" puts it back in the session. Its next due time is ten
+  minutes out, so the session always ended first and the corrective repetition
+  never happened. Repeatedly forgotten words are flagged on the card, using a
+  lapse counter that was recorded on every entry and never shown.
+- The transcript sidebar hides its status, playback and practice panels on a
+  video with no French captions instead of showing six empty modules above the
+  sentence explaining why. The vocabulary page holds its counters until data
+  arrives and tells a first run apart from a search that matched nothing.
+- The French example sentence on a vocabulary card gets two lines and the
+  English gloss one. It was the other way round.
+- Removing a word now clears the "learning" state that saving it created, so
+  coverage and smart pausing stop counting words that are gone. A state the
+  reader set themselves is left alone.
+- Added a storage migration step, so superseded keys are removed on upgrade
+  instead of sitting in local storage forever, and moved the video-cache epoch
+  into storage: the background is an event page, and a counter in memory reset
+  to zero on every restart.
+- Voice selection lives in `shared/pronunciation.js` instead of three copies
+  with three different scoring rules, and the setting that limits automatic
+  pausing to lines with unfamiliar words finally has a control.
+
 ## 0.9.1 — video snapshots and consistent word meanings
 
 - Persist complete timed caption tracks and generated English translations per

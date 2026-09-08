@@ -131,6 +131,12 @@ header { display: flex; flex: none; align-items: center; justify-content: space-
   body[data-mode="tab"] .pane[data-pane="words"] { max-width: 360px; border-left: 1px solid var(--border); background: rgba(13,22,38,.45); }
   body[data-mode="tab"] .pane[data-pane="practice"][data-active="false"] { display: none; }
   body[data-mode="tab"] .tabs { max-width: 420px; }
+  /* Controls sized for a 340px column stretch absurdly at tab width; a
+     coverage bar the width of a desk says nothing more than a short one. */
+  body[data-mode="tab"] .status-strip { gap: 16px; }
+  body[data-mode="tab"] .coverage { max-width: 240px; }
+  body[data-mode="tab"] .provider-badge { margin-left: auto; }
+  body[data-mode="tab"] .pane-controls, body[data-mode="tab"] .playback { max-width: 620px; }
   body[data-mode="tab"] .transcript { padding-inline: 12px; }
   body[data-mode="tab"] .cue { grid-template-columns: 48px 1fr; }
   body[data-mode="tab"] .french { font-size: 14px; }
