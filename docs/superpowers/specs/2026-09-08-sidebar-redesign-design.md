@@ -44,6 +44,8 @@ Settled with the user against interactive mockups
 - **Meanings are cache-first.** Rows already in the translation cache render
   immediately; the rest resolve on demand. No bulk provider traffic.
 - **Save is one click from any row state**, including a word never looked up.
+- **A word already in the vocabulary cannot be added again**, whichever surface
+  saved it.
 - **Repeated phrases and the English buffer readout are deleted.**
 - **Tab mode** opens the same page in a tab, two columns, bound to one video tab.
 
@@ -98,8 +100,11 @@ Rendered by a new `sidebar/word-list.js`. One row per word:
 │ pourtant  adv                 ×4 [Save]│   ← two sibling controls
 │ yet, however                           │
 ├────────────────────────────────────────┤
-│ compris   past part. · comprendre       │
+│ compris   past part. · comprendre      │
 │ understood                    ×3 [Save]│
+├────────────────────────────────────────┤
+│ inévitable  adj                ×2 Saved│   ← already in vocabulary (§3a)
+│ inevitable, unavoidable                │
 └────────────────────────────────────────┘
 ```
 
@@ -141,16 +146,49 @@ saved directly, so Save on such a row performs both steps as one action:
 3. On success, send `add-vocabulary` with the word, its meaning, the first cue's
    sentence and translation, the video id/title, and that cue's start time —
    the same shape the in-video card sends (`content.js:2277`).
-4. Button reads `Saved ✓`. The row also records a `learning` word state, so a
-   saved word leaves the unknown list and counts toward coverage.
+4. The button is replaced by a `Saved` marker, permanently for that word.
 
 On failure the button returns to `Save` and the row shows the error text from
 the response. Two failures are worth distinct messages: a full vocabulary
 (2,000 entries) and a provider that could not produce a meaning.
 
-Save is idempotent per row within a session; a second press on `Saved ✓` does
-nothing. Re-saving an existing entry is already safe — `addVocabularyEntryUnlocked`
-merges contexts and preserves notes.
+### 3a. A word already saved cannot be saved again
+
+A word already in the vocabulary renders with a non-interactive `Saved` marker
+in place of the button. The row still expands, so its context, "I know this",
+"Ignore" and "Go to line" all remain available; only the add is withdrawn. The
+Words tab badge counts addable rows only.
+
+**Why this is not automatic.** The two stores are independent. Saving from the
+in-video card writes a vocabulary entry and does *not* touch `wordStatesV1`, so
+such a word keeps the state `unknown` and would otherwise reappear in the list
+offering `Save` a second time. Relying on word state to hide saved words would
+therefore miss exactly the words saved by the extension's older path.
+
+**Where the match happens.** In `background.js`, not the sidebar. The two sides
+normalise differently — `learningTokens` emits `NFC` plus
+`toLocaleLowerCase("fr")` (`content.js:1020`), while `entry.normalized` comes
+from `vocabularyKey`, which is `NFKC` plus a locale-less lowercase
+(`background.js:95`) — so a raw string comparison would miss. `vocabularyKey` is
+the authority because it produced the stored value, and it is not exported.
+The peek in §4 therefore returns a `saved` flag per word, computed by applying
+`vocabularyKey` to the incoming token and testing it against the vocabulary's
+`normalized` values. One round trip, one normalisation, no duplicated rule.
+
+**Staying current.** The list marks a row saved immediately on its own save,
+without waiting for a round trip. To catch a save made from the in-video card
+while the sidebar is open, `sidebar.js` listens for `browser.storage.onChanged`
+on the local `vocabulary` key and re-runs the peek. Polling `get-vocabulary`
+every 900ms alongside the transcript refresh is rejected: it reads the whole
+vocabulary, up to 2,000 entries, for a value that changes a few times an hour.
+
+**Deliberately unchanged.** Saving does not write a `learning` word state.
+Coverage keeps its present meaning — the share of occurrences you have marked
+known or learning — so this redesign does not silently move every existing
+user's percentage. `addVocabularyEntryUnlocked` also keeps its merge behaviour
+for entries arriving from elsewhere: this is a guard in the list's interface,
+not a new rejection in storage, so the in-video card can still re-save a word to
+attach a fresh context.
 
 ### 4. Meaning resolution
 
@@ -164,8 +202,14 @@ touching a provider:
 → { type: "peek-word-meanings",
     words: [{ text, lookupText, readingKey, context }, …],
     sourceLanguage, targetLanguage }
-← { ok: true, meanings: [ { translatedText, provenance } | null, … ] }
+← { ok: true, meanings: [ { translatedText, provenance, saved }, … ] }
 ```
+
+One entry per word, positionally matched, never null: a cache miss is
+`translatedText: ""`. `saved` is the duplicate guard from §3a and is reported for
+every word regardless — a word can sit in the vocabulary while its translation
+has aged out of the cache (entries expire after `MAX_CACHE_AGE_MS`), and such a
+row must still refuse a second save.
 
 `background.js` answers it by checking, per word, the same two sources
 `translateSelectionWithEngine` checks before it calls a provider: the user's
@@ -248,10 +292,10 @@ of a spoiler as the transcript, so it is covered by the same rule.
 | --- | --- |
 | `sidebar/sidebar.html` | Tabs, one status strip; phrases and buffer removed |
 | `sidebar/sidebar.css` | Rewritten on `shared/tokens.css`; two-column mode |
-| `sidebar/sidebar.js` | Shell: polling, tab selection, transcript, practice, follow-tab |
-| `sidebar/word-list.js` | New. List rendering, peek, fetch, save, word states |
+| `sidebar/sidebar.js` | Shell: polling, tab selection, transcript, practice, follow-tab, the `storage.onChanged` vocabulary listener |
+| `sidebar/word-list.js` | New. List rendering, peek, fetch, save, saved state, word states |
 | `content.js` | `buildTranscriptState` per §5 |
-| `background.js` | `peek-word-meanings`; extract the lookup item/options helper |
+| `background.js` | `peek-word-meanings` including the §3a saved flag; extract the lookup item/options helper |
 | `translation-engine.js` | Export `cachedResults` |
 | `package.json` | Add `sidebar/word-list.js` to the hand-enumerated `check` |
 | `docs/ARCHITECTURE.md` | "Study modes and transcript sidebar", "Listening practice and session recap" |
@@ -286,9 +330,18 @@ storage changes:
    `add-vocabulary`, in that order, from one click.
 3. A save rejected for a full vocabulary surfaces the error and does not mark
    the row saved.
-4. A peek returns meanings while the provider circuit is open.
-5. An unrevealed dictation leaves the Transcript and Words tabs unreachable.
-6. Tab mode with a `followTab` id polls that id and never
+4. A word already in the vocabulary renders with no Save control, and the Words
+   badge does not count it. Covered for a word saved from the in-video card,
+   whose `wordStatesV1` state is still `unknown` — the case word state alone
+   would miss.
+5. The guard matches across the two normalisations: a transcript token and a
+   stored `normalized` value that differ only by `NFC` versus `NFKC` are treated
+   as the same word.
+6. A save made elsewhere while the sidebar is open marks the row through the
+   `storage.onChanged` listener, without a transcript refresh.
+7. A peek returns meanings while the provider circuit is open.
+8. An unrevealed dictation leaves the Transcript and Words tabs unreachable.
+9. Tab mode with a `followTab` id polls that id and never
    `tabs.query({active:true})`.
 
 `npm run verify` for the runtime change, and `npm run screenshots` because
