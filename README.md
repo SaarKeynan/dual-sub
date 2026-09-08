@@ -51,8 +51,8 @@ French analysis, and French-to-English word matching are detailed in
 - French source captions plus an English caption track or YouTube's English
   auto-translation, rendered simultaneously. Auto-generated French captions
   are supported, with JSON and XML caption-format fallbacks. If YouTube returns
-  an empty downloadable translation, DualSub falls back to the player's live
-  English caption renderer.
+  an empty downloadable translation, DualSub translates the timed French cues
+  with your selected provider instead.
 - One-click on/off switch and `Alt+Shift+D` keyboard shortcut.
 - A compact type-or-paste translator and local French OCR workspace. Video OCR
   pauses playback and lets you drag directly over video text; releasing opens a

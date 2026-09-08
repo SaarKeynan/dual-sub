@@ -14,18 +14,58 @@ Use `README.md` for installation and user-facing behavior.
 Use Node.js 22 or newer and install dependencies with `npm ci`.
 
 ```sh
-npm run check    # JavaScript syntax checks
-npm test         # Smoke, regression, jsdom UI, and video cache tests
-npm run lint     # Firefox web-ext lint; warnings are errors
-npm run verify   # All of the above
-npm run build    # Package into .web-ext-artifacts/
+npm run check        # JavaScript syntax checks
+npm test             # Smoke, regression, jsdom UI, and video cache tests
+npm run lint         # Firefox web-ext lint; warnings are errors
+npm run verify       # All of the above
+npm run build        # Package into .web-ext-artifacts/
+npm run screenshots  # Render the overlay and pages to .shots/ for visual review
 ```
+
+The test suites use jsdom, which has no layout engine, so they cannot catch a
+visual regression. `npm run screenshots` renders the subtitle overlay at three
+player sizes and each extension page in the Chrome or Edge already installed,
+writes PNGs to `.shots/`, and prints measurements jsdom cannot produce: computed
+caption size, resolved line widths, row counts, whether the page scrolls
+sideways, and how many elements render below 10px. Look at the PNGs after any
+change to `content.css` or a page stylesheet. Set `DUALSUB_CHROME` if neither
+browser is in a standard location.
 
 For manual testing, open Firefox `about:debugging#/runtime/this-firefox`, choose
 Load Temporary Add-on, and select `manifest.json`. Reload the extension and the
 YouTube tab after runtime changes. Automated tests do not establish that current
 YouTube endpoints, fullscreen behavior, or live screenshot capture work; report
 whether a live Firefox check was performed.
+
+## Gotchas
+
+- There is no module system. Each script attaches a frozen `globalThis.DualSub*`
+  object and later scripts read it, so load order in `manifest.json` is the
+  dependency order. A new script must be registered in three places: the
+  matching `manifest.json` list (`content_scripts[].js` or `background.scripts`),
+  the hand-enumerated `check` script in `package.json`, and `web-ext-config.cjs`
+  if it is development-only.
+- `tests/smoke.test.js` slices function bodies out of `content.js` by name
+  markers (for example `refreshCueAlignment` through `startAheadTranslation`)
+  and asserts on literal source and CSS strings. Renaming, reordering, or moving
+  those functions breaks the suite even when behavior is unchanged; update the
+  markers in the same change.
+- The runtime is French-to-English only. `sourceLanguage` and `targetLanguage`
+  exist in settings but no UI exposes them, and elision splitting, morphology,
+  and lookup readings assume French.
+- Regenerating `vendor/lexique/*.json` needs `vendor/lexique/Lexique383.tsv`,
+  which is gitignored and must be downloaded separately. Lexique `cgram` codes
+  carry subcategories such as `PRO:per` and `ART:def`.
+- `docs/ARCHITECTURE.md` and `docs/TRANSLATION_AND_ALIGNMENT.md` state the
+  version they describe in their first paragraph; update both on release.
+- Google's keyless `translate_a/single` endpoint translates exactly one `q` and
+  silently ignores any others, so repeating `q` does not batch and looks like a
+  success. It does return one chunk per newline-separated line, and each chunk
+  repeats its own source text, which is how `translateGoogle` batches: the
+  mapping is verified against those source strings and falls back to one request
+  per line if they do not match. The endpoint is rate limited per IP and starts
+  answering 429 after very few requests, so measure request counts, not just
+  whether a call succeeded.
 
 ## Code ownership
 

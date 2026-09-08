@@ -28,3 +28,15 @@ The transformation, source checksum, and retained fields are documented in
 as `vendor/lexique/LICENSE-CC-BY-SA-4.0`.
 
 Project: https://www.lexique.org/
+
+## Tesseract.js 7.0.0 and Tesseract.js Core
+
+DualSub bundles the Tesseract.js worker, its SIMD LSTM WebAssembly core, and a
+compact French trained-data package so optical character recognition runs
+locally. Tesseract.js and Tesseract.js Core are distributed under the Apache
+License 2.0; the French trained data is distributed by `@tesseract.js-data/fra`
+under the MIT License and originates from the Tesseract tessdata project. The
+license texts and the full component notice are included in
+`vendor/tesseract/`.
+
+Project: https://github.com/naptha/tesseract.js
