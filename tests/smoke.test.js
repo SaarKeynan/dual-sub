@@ -94,12 +94,21 @@ async function testCaptionProcessing() {
     "Translate the current cue first, then recent context and upcoming cues"
   );
   assert.strictEqual(context.translationPrefetchOrder(prefetchCues, 7200, 1000, 1000)[0], 3);
-  const warmupWords = Array.from(context.videoWordWarmupOrder([
+  const warmupCues = [
     { start: 0, end: 2000, text: "je mange avec Marie" },
     { start: 3000, end: 5000, text: "je mange souvent" },
     { start: 6000, end: 8000, text: "Marie mange aussi" }
-  ], 3500, 4));
+  ];
+  const warmupWords = Array.from(context.videoWordWarmupOrder(warmupCues, 3500, 4));
   assert(warmupWords.includes("mange") && warmupWords.includes("je"), "Frequent video words should be prioritized for warm-up");
+  // The most frequent words in any French video are articles and pronouns the
+  // learner never looks up, so the caller can exclude them. Excluded words are
+  // still translated on demand when hovered; only the preload skips them.
+  const skipped = new Set(["je", "avec", "aussi"]);
+  const contentWords = Array.from(context.videoWordWarmupOrder(warmupCues, 3500, 4, (word) => !skipped.has(word)));
+  assert(!contentWords.includes("je"), "An excluded word is never preloaded");
+  assert(contentWords.includes("mange") && contentWords.includes("marie"), "Content words keep their frequency order");
+  assert(contentWords.includes("souvent"), "The list refills from further down the frequency order");
   assert(source.includes("video.currentTime * 1000 + effectiveCaptionOffsetMs()"));
   assert(readme.includes("docs/ARCHITECTURE.md"), "The architecture guide should be linked from the README");
   for (const documentedPart of ["content.js", "page-bridge.js", "background.js", "translation-engine.js", "language/french.js", "OCR and manual translation", "Persistent data"]) {
@@ -228,15 +237,37 @@ async function testCaptionProcessing() {
       `${group} should have an editable color under Appearance → French`
     );
   }
-  assert(contentCss.includes("--dualsub-group-unknown: #ffffff"));
-  assert(contentCss.includes("--dualsub-group-verb: #a78bfa"));
-  assert(contentCss.includes("var(--dualsub-group-adverb, #facc15)"));
+  // The palette lives in shared/settings.js and is mirrored by content.css for
+  // the moment before settings load. Assert the two agree rather than asserting
+  // a literal colour, so a palette change fails loudly instead of drifting.
+  const settingsContext = {};
+  vm.createContext(settingsContext);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "shared", "settings.js"), "utf8"), settingsContext);
+  const groupColors = settingsContext.DualSubSettings.defaults.wordGroupColors;
+  for (const [group, color] of Object.entries(groupColors)) {
+    assert(contentCss.includes(`--dualsub-group-${group}: ${color};`), `content.css should declare the default ${group} colour`);
+    assert(!contentCss.includes(`var(--dualsub-group-${group}, `), `The ${group} colour should not be duplicated as an inline fallback`);
+  }
+  assert.notStrictEqual(groupColors.noun, groupColors.verb, "Noun and verb must stay distinguishable");
   assert(contentCss.includes('.dualsub-card-translation[data-group="verb"]'));
   assert(contentCss.includes('.dualsub-status[data-state="error"] .dualsub-status-close'));
-  assert(contentCss.includes("width: 22px"), "The status close button should remain compact");
-  assert(contentCss.includes("background: #1d4ed8"), "The status close button should use a blue circle");
-  assert(contentCss.includes("background: #93c5fd"), "The CSS-drawn close icon should use a contrasting blue");
+  assert(contentCss.includes('.dualsub-status[data-state="ready"] {'), "A ready status needs its own appearance");
+  assert(contentCss.includes('.dualsub-status[data-state="error"] {'), "A failed status must not look like a ready one");
+  assert(contentCss.includes("background: var(--dualsub-group-color)"), "An aligned English word takes the French word's group colour");
   assert(contentCss.includes("touch-action: manipulation"));
+
+  // Inter was requested on six surfaces and never bundled, so it fell back
+  // silently and every weight written against its variable axis rendered as an
+  // ordinary static one. Either bundle a face or stay on real weights.
+  const stylesheets = ["content.css", "help/pronunciation.css", "popup/popup.css", "sidebar/sidebar.css", "tools/translator.css", "vocabulary/vocabulary.css"]
+    .map((file) => ({ file, source: fs.readFileSync(path.join(projectRoot, file), "utf8") }));
+  const bundledFaces = stylesheets.some(({ source }) => source.includes("@font-face"));
+  for (const { file, source } of stylesheets) {
+    assert(bundledFaces || !/\bInter\b/.test(source), `${file} requests a font the extension does not bundle`);
+    const fractional = (source.match(/font-weight:\s*\d{3};/g) || [])
+      .filter((rule) => !/[1-9]00;/.test(rule));
+    assert.strictEqual(fractional.length, 0, `${file} uses weights only a variable font can render: ${fractional.join(" ")}`);
+  }
   assert(source.includes('statusCloseNode.addEventListener("pointerdown", dismissStatus)'));
   assert(source.includes("dismissedStatusKeys.add(displayedStatusKey)"));
   assert(source.includes("!dismissedStatusKeys.has(statusKey)"));
@@ -389,6 +420,74 @@ async function testAblautMorphology() {
   assert.strictEqual(fullShabiller.mood, "infinitive");
 }
 
+// The other French tests run language/french.js with no browser global, which
+// leaves it on its synchronous fallback tables. This one loads the real WASM
+// engine, Lefff lemma list and Lexique indexes, which is the configuration
+// every user actually runs.
+async function testFrenchWithLoadedResources() {
+  const context = { console, TextDecoder, TextEncoder, WebAssembly, URL };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "vendor", "ablaut", "ablaut.js"), "utf8"), context);
+  const readVendor = (relativePath) => fs.readFileSync(path.join(projectRoot, relativePath));
+  context.browser = {
+    runtime: {
+      // french.js hands this value straight to wasm_bindgen as module_or_path,
+      // which accepts bytes as well as a URL.
+      getURL: (relativePath) => relativePath.endsWith(".wasm") ? readVendor(relativePath) : relativePath
+    }
+  };
+  context.fetch = async (relativePath) => ({
+    ok: true,
+    json: async () => JSON.parse(readVendor(relativePath).toString("utf8"))
+  });
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
+  const french = context.DualSubFrench;
+  await french.ready;
+  assert.strictEqual(french.engineState, "ready", "The morphology engine should load from bundled resources");
+  assert.strictEqual(french.wordGroupState, "ready");
+  assert.strictEqual(french.lexicalInfoState, "ready");
+
+  // Sanity: real verbs still analyze once the engine is loaded.
+  assert.strictEqual(french.analyzeWord("mangeaient", "ils mangeaient").lemma, "manger");
+  assert.strictEqual(french.classifyWord("mangeaient", "ils mangeaient").group, "verb");
+
+  // The -é regex invents an infinitive for any noun ending in é. Once the
+  // attested lemma list is loaded, an unattested guess must be rejected.
+  assert.strictEqual(french.analyzeWord("idée", "quelle bonne idée"), null, "idée must not be analyzed as a verb");
+  assert.strictEqual(french.classifyWord("idée", "quelle bonne idée").group, "noun");
+  const cafe = french.analyzeWord("café", "un café noir");
+  assert.strictEqual(cafe.partOfSpeech, "nominal", "café must not become a form of cafer");
+  assert.strictEqual(cafe.lemma, "café");
+  assert.strictEqual(cafe.verbReadings.length, 0, "No verb reading exists for café");
+  assert.strictEqual(french.classifyWord("société", "la société").group, "noun");
+
+  // ce is a determiner before a noun; treating it as a subject pronoun
+  // suppressed the nominal reading that le/la already get.
+  assert.strictEqual(french.classifyWord("livre", "ce livre est bon").group, "noun");
+  assert.strictEqual(french.classifyWord("marché", "ce marché").group, "noun");
+  assert.strictEqual(french.classifyWord("marché", "le marché").group, "noun", "the article reading must not regress");
+
+  // Rare verb homographs must not outrank a closed-class reading.
+  assert.strictEqual(french.classifyWord("lui", "je lui parle").group, "pronoun");
+  assert.strictEqual(french.classifyWord("tu", "tu es là").group, "pronoun");
+
+  // Lexique's schwa and yod codes reached the card unconverted.
+  assert.strictEqual(french.lexicalInfo("je").pronunciation, "ʒə");
+  assert(french.lexicalInfo("nuit").pronunciation.includes("ɥ"), "The yod code 8 should render as ɥ");
+  assert(!/[°8]/u.test(french.lexicalInfo("aujourd'hui").pronunciation), "No raw Lexique codes should reach the card");
+
+  // Overlay tokens keep the typographic apostrophe, so lookups arrive that way.
+  assert(french.lexicalInfo("aujourd’hui"), "A curly apostrophe must resolve like a straight one");
+  assert.strictEqual(french.lexicalInfo("aujourd’hui").lemma, french.lexicalInfo("aujourd'hui").lemma);
+
+  // s' before il is si, not the reflexive pronoun se.
+  const reflexive = french.analyzeElisionParticle("s’", "s’appelle");
+  assert.strictEqual(reflexive.expanded, "se");
+  const conditional = french.analyzeElisionParticle("s’", "s’il");
+  assert.strictEqual(conditional.expanded, "si", "s’il is si + il, not a reflexive pronoun");
+  assert.strictEqual(conditional.group, "conjunction");
+}
+
 async function testWordGroupResource() {
   const groups = JSON.parse(fs.readFileSync(
     path.join(projectRoot, "vendor", "lexique", "french-word-groups.json"), "utf8"
@@ -396,11 +495,23 @@ async function testWordGroupResource() {
   assert(Object.keys(groups).length > 120000, "The offline word-group index should cover common French forms");
   assert(groups.maison?.includes("n"));
   assert(groups.rapidement?.includes("r"));
+  // Lexique subcategorizes closed classes (ART:def, PRO:per, ADJ:dem). Those
+  // rows must survive the build or the index loses every article and pronoun.
+  assert(groups.le?.includes("d"), "Definite articles must be indexed as determiners");
+  assert(groups.une?.includes("d"), "Indefinite articles must be indexed as determiners");
+  assert(groups.cette?.includes("d"), "Demonstrative determiners must be indexed");
+  assert(groups.mes?.includes("d"), "Possessive determiners must be indexed");
+  assert(groups.je?.includes("p"), "Personal pronouns must be indexed as pronouns");
+  assert(groups.celui?.includes("p"), "Demonstrative pronouns must be indexed");
   const info = JSON.parse(fs.readFileSync(
     path.join(projectRoot, "vendor", "lexique", "french-lexical-info.json"), "utf8"
   ));
   assert.strictEqual(Object.keys(info).length, 50000, "The enriched Lexique index should retain the most useful 50,000 forms");
   assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
+  // Dropping the subcategorized rows also let rare verb homographs win the
+  // highest-frequency slot, so lui claimed the lemma luire and tu claimed taire.
+  assert.strictEqual(info.lui?.[0], "lui", "The pronoun lui must not inherit the lemma of luire");
+  assert.strictEqual(info.tu?.[0], "tu", "The pronoun tu must not inherit the lemma of taire");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
   assert.strictEqual(manifest.version, JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8")).version);
@@ -430,12 +541,20 @@ async function testTranslationEngine() {
     } } },
     fetch: async (url) => {
       fetchCount += 1;
-      const text = new URL(url).searchParams.get("q");
+      // The keyless endpoint translates one q and ignores any others, but
+      // returns one chunk per newline-separated line, each repeating its own
+      // source text. That is what lets a caption batch cost a single request.
+      const lines = new URL(url).searchParams.getAll("q")[0].split("\n");
       return {
         ok: true,
         status: 200,
         headers: { get() { return null; } },
-        async json() { return [[[`${text}-en`]]]; }
+        async json() {
+          return [lines.map((line, index) => {
+            const tail = index < lines.length - 1 ? "\n" : "";
+            return [`${line}-en${tail}`, `${line}${tail}`];
+          })];
+        }
       };
     }
   };
@@ -457,7 +576,7 @@ async function testTranslationEngine() {
     { text: "bonjour", cacheId: "cue-1" }, { text: "merci", cacheId: "cue-2" }
   ], options, {});
   assert(second.results.every((item) => item.cacheHit));
-  assert.strictEqual(fetchCount, 2, "A repeated batch should be served entirely from the persistent line cache");
+  assert.strictEqual(fetchCount, 1, "Two caption lines cost one batched request, and a repeat is served from the cache");
   context.fetch = async (url) => {
     fetchCount += 1;
     const text = new URL(url).searchParams.get("q");
@@ -539,10 +658,12 @@ async function testVocabularyStorage() {
   assert.strictEqual(defaultSettings.settings.subtitleLeadMs, undefined);
   assert.strictEqual(defaultSettings.settings.colorFrenchWordGroups, false);
   assert.strictEqual(defaultSettings.settings.preloadVideoWords, true);
-  assert.strictEqual(defaultSettings.settings.wordGroupColors.unknown, "#ffffff");
-  assert.strictEqual(defaultSettings.settings.wordGroupColors.verb, "#a78bfa");
-  assert.strictEqual(defaultSettings.settings.wordGroupColors.adverb, "#facc15");
+  // Every group keeps its own entry so the palette stays editable, but the
+  // default values collapse ten hues onto the five roles a learner acts on.
   assert.strictEqual(Object.keys(defaultSettings.settings.wordGroupColors).length, 10);
+  assert.notStrictEqual(defaultSettings.settings.wordGroupColors.noun, defaultSettings.settings.wordGroupColors.verb);
+  assert.strictEqual(new Set(Object.values(defaultSettings.settings.wordGroupColors)).size, 5);
+  assert.strictEqual(defaultSettings.settings.wordGroupPaletteVersion, 3);
   assert.strictEqual(defaultSettings.settings.pronunciationVoiceURI, "");
   assert.strictEqual(defaultSettings.settings.pronunciationRate, 0.88);
   assert.strictEqual(defaultSettings.settings.skipCaptionGaps, false);
@@ -686,10 +807,59 @@ async function testVocabularyStorage() {
   assert(removed.ok && removed.removed);
 }
 
+// The sidebar word list is built from these two functions. Each row needs the
+// line the word came from, so a count alone is not enough.
+async function testTranscriptWordAnalysis() {
+  const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  const analysis = extract(source, "  function learningTokens", "  async function buildTranscriptState");
+  const context = {
+    console,
+    DualSubFrench: {
+      analyzeWord: (word) => (word === "compris" ? { partOfSpeech: "verb", lemma: "comprendre" } : null),
+      classifyWord: (word) => ({ group: word === "compris" ? "verb" : "adverb" }),
+      lexicalInfo: () => null,
+      lookupReading: (word) => ({ text: word === "compris" ? "j'ai compris" : word, key: word === "compris" ? "verb:comprendre" : "" })
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(analysis, context);
+
+  const cues = [
+    { text: "Pourtant tout allait bien" },
+    { text: "Je n'avais pas compris pourtant" },
+    { text: "Pourtant il est parti" }
+  ];
+  const { vocabulary, coveragePercent } = context.analyzeTranscriptWords(cues, { bien: { state: "known" } });
+  const pourtant = vocabulary.find((item) => item.word === "pourtant");
+  assert.strictEqual(pourtant.count, 3, "A word is counted across every cue");
+  assert.strictEqual(pourtant.cueIndex, 0, "A row points at the first line the word appears in");
+  assert.strictEqual(vocabulary.find((item) => item.word === "compris").cueIndex, 1);
+  assert(coveragePercent > 0 && coveragePercent < 100, "Coverage counts marked occurrences only");
+
+  const studied = context.describeStudyWords(vocabulary, cues);
+  assert(studied.every((item) => item.state === "unknown"), "Marked words are not offered for study");
+  const verb = studied.find((item) => item.word === "compris");
+  assert.strictEqual(verb.lookupText, "j'ai compris", "A row carries the context-aware query, not the bare word");
+  assert.strictEqual(verb.readingKey, "verb:comprendre");
+  assert.strictEqual(verb.label, "verb · comprendre", "A verb row names its infinitive");
+  assert.strictEqual(studied.find((item) => item.word === "pourtant").label, "adverb");
+
+  const many = context.describeStudyWords(
+    Array.from({ length: 90 }, (_, index) => ({ word: `mot${index}`, count: 1, cueIndex: 0, state: "unknown" })),
+    cues
+  );
+  assert.strictEqual(many.length, 60, "The list is capped so morphology stays bounded");
+
+  assert(!source.includes("topPhrases") && !source.includes("topUnknown"),
+    "The replaced word surfaces are gone from the transcript state");
+}
+
 Promise.resolve()
   .then(testCaptionProcessing)
+  .then(testTranscriptWordAnalysis)
   .then(testFrenchConjugation)
   .then(testAblautMorphology)
+  .then(testFrenchWithLoadedResources)
   .then(testWordGroupResource)
   .then(testTranslationEngine)
   .then(testVocabularyStorage)

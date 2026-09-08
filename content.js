@@ -103,7 +103,11 @@
   const lookupTranslationCache = new Map();
   const lookupTranslationMetadata = new Map();
   const aheadTranslationPending = new Set();
-  const aheadTranslationFailed = new Set();
+  // Index to earliest retry time. A line that failed while the provider was
+  // down must become eligible again instead of staying blank for the whole
+  // video; a batch that succeeds clears the rest immediately.
+  const aheadTranslationFailed = new Map();
+  const AHEAD_TRANSLATION_RETRY_MS = 15000;
   const aheadTranslationQueue = [];
   let aheadTranslationActive = 0;
   let aheadTranslationGeneration = 0;
@@ -126,6 +130,7 @@
   let lookupPinned = false;
   let phraseSelectionAnchor = null;
   let pausedByLookup = false;
+  let lookupPauseExpected = false;
   let loopCueRange = null;
   let playbackRateBeforeSlow = 1;
   let lastPlaybackCueIndex = -1;
@@ -162,8 +167,46 @@
     return `rgba(${red}, ${green}, ${blue}, ${Math.max(0, Math.min(100, opacity)) / 100})`;
   }
 
+  // Caption sizes are authored against a 720px-tall player. The overlay is
+  // mounted inside the player, so without this a 30px line is 30px in a mini
+  // player and in a 4K fullscreen one, where YouTube's own captions scale.
+  const OVERLAY_REFERENCE_HEIGHT = 720;
+  const OVERLAY_MIN_SCALE = 0.6;
+  const OVERLAY_MAX_SCALE = 2.2;
+  let playerSizeObserver = null;
+
+  function updateOverlayScale() {
+    if (!root) return;
+    const height = Number(root.parentElement?.clientHeight) || 0;
+    const scale = height
+      ? Math.max(OVERLAY_MIN_SCALE, Math.min(OVERLAY_MAX_SCALE, height / OVERLAY_REFERENCE_HEIGHT))
+      : 1;
+    root.style.setProperty("--dualsub-scale", String(Number(scale.toFixed(3))));
+  }
+
+  function observePlayerSize() {
+    const player = root?.parentElement;
+    playerSizeObserver?.disconnect();
+    playerSizeObserver = null;
+    updateOverlayScale();
+    if (!player || typeof ResizeObserver !== "function") return;
+    playerSizeObserver = new ResizeObserver(() => updateOverlayScale());
+    playerSizeObserver.observe(player);
+  }
+
   function applyLineStyle(line, style) {
-    line.style.fontSize = `${style.fontSize}px`;
+    // The caption size belongs on the block, not the inline plate: a ch-based
+    // width cap on the block would otherwise resolve against YouTube's own font
+    // size and come out roughly half as wide. The plate inherits it, and its
+    // padding, radius and shadow are all em-based, so they follow.
+    const block = line.parentElement || line;
+    block.style.fontSize = `calc(${style.fontSize}px * var(--dualsub-scale, 1))`;
+    line.style.fontSize = "";
+    // The stack carries the French size so its ch-based measure is one width
+    // for both rows rather than a narrower one for the smaller English row.
+    if (block === sourceLine?.parentElement) {
+      block.parentElement?.style.setProperty("font-size", block.style.fontSize);
+    }
     line.style.color = style.textColor;
     line.style.backgroundColor = hexToRgba(style.backgroundColor, style.backgroundOpacity);
     line.style.fontFamily = style.fontFamily;
@@ -498,6 +541,11 @@
     return cachedNativeCaptionText;
   }
 
+  // Currently unreachable: loadTracks prefers provider translation of the timed
+  // French cues when YouTube's tlang=en track fails, because the live renderer
+  // needs the viewer to enable auto-translation by hand. The supporting
+  // usingNativeTranslation render, status and CSS branches are kept so this
+  // path can be restored deliberately rather than rebuilt.
   function startNativeTranslation(sourceTrack) {
     stopNativeCapture(false);
     usingNativeTranslation = true;
@@ -928,7 +976,7 @@
     if (sessionId) browser.runtime.sendMessage({ type: "cancel-translation-session", sessionId }).catch(() => {});
   }
 
-  function videoWordWarmupOrder(cues, timeMs, limit = 36) {
+  function videoWordWarmupOrder(cues, timeMs, limit = 36, shouldWarm = () => true) {
     const words = new Map();
     for (const cue of cues || []) {
       const distance = Math.abs(((Number(cue.start) + Number(cue.end)) / 2 || 0) - timeMs);
@@ -942,18 +990,86 @@
         words.set(surface, current);
       }
     }
-    return Array.from(words.values())
-      .sort((left, right) =>
-        right.count - left.count || left.nearestDistance - right.nearestDistance || left.text.localeCompare(right.text, "fr")
-      )
-      .slice(0, Math.max(0, limit))
-      .map((entry) => entry.text);
+    const ordered = Array.from(words.values()).sort((left, right) =>
+      right.count - left.count || left.nearestDistance - right.nearestDistance || left.text.localeCompare(right.text, "fr")
+    );
+    // Skipping a word only removes it from the preload; hovering it still
+    // translates it, so the list refills from further down the order.
+    const chosen = [];
+    for (const entry of ordered) {
+      if (chosen.length >= Math.max(0, limit)) break;
+      if (shouldWarm(entry.text)) chosen.push(entry.text);
+    }
+    return chosen;
+  }
+
+  const PRELOAD_SKIPPED_GROUPS = new Set(["determiner", "pronoun", "preposition", "conjunction"]);
+
+  function isWorthPreloading(word) {
+    // The most frequent words in any French video are le, la, de, je and que,
+    // which a learner does not look up, and a word already marked known or
+    // ignored will never be hovered either.
+    const state = wordStatesCache[word]?.state;
+    if (state === "known" || state === "ignored") return false;
+    const group = globalThis.DualSubFrench?.classifyWord(word)?.group;
+    return !PRELOAD_SKIPPED_GROUPS.has(group);
   }
 
   function learningTokens(text) {
     return (String(text || "").match(/[\p{L}]+(?:['\u2019][\p{L}]+)*/gu) || [])
       .map((word) => word.normalize("NFC").toLocaleLowerCase("fr"))
       .filter((word) => word.length > 1);
+  }
+
+  // Counting words and judging coverage is separable from assembling the
+  // transcript message, and the sidebar word list is built entirely from this.
+  // Each word remembers the first cue it appeared in, because a row without the
+  // line it came from cannot be studied or looked up in context.
+  function analyzeTranscriptWords(cues, wordStates) {
+    const counts = new Map();
+    const firstCue = new Map();
+    cues.forEach((cue, index) => {
+      for (const word of learningTokens(cue.text)) {
+        counts.set(word, (counts.get(word) || 0) + 1);
+        if (!firstCue.has(word)) firstCue.set(word, index);
+      }
+    });
+    const vocabulary = Array.from(counts, ([word, count]) => ({
+      word,
+      count,
+      cueIndex: firstCue.get(word),
+      state: wordStates[word]?.state || "unknown"
+    })).sort((left, right) => right.count - left.count || left.word.localeCompare(right.word, "fr"));
+    const considered = vocabulary.filter((item) => item.state !== "ignored");
+    const knownOccurrences = considered.reduce((total, item) => total + (["known", "learning"].includes(item.state) ? item.count : 0), 0);
+    const totalOccurrences = considered.reduce((total, item) => total + item.count, 0);
+    return {
+      vocabulary,
+      coveragePercent: totalOccurrences ? Math.round(knownOccurrences / totalOccurrences * 100) : 0
+    };
+  }
+
+  // Morphology is expensive and the sidebar shows a bounded list, so only the
+  // words that can actually appear in it are analysed. French stays here rather
+  // than moving into the sidebar, which does not load language/french.js.
+  const STUDY_WORD_LIMIT = 60;
+  function describeStudyWords(vocabulary, cues) {
+    return vocabulary
+      .filter((item) => item.state === "unknown")
+      .slice(0, STUDY_WORD_LIMIT)
+      .map((item) => {
+        const sentence = cues[item.cueIndex]?.text || "";
+        const analysis = globalThis.DualSubFrench?.analyzeWord(item.word, sentence) || null;
+        const reading = globalThis.DualSubFrench?.lookupReading(item.word, sentence, analysis);
+        const group = globalThis.DualSubFrench?.classifyWord(item.word, sentence, analysis)?.group || "";
+        const lemma = analysis?.lemma || globalThis.DualSubFrench?.lexicalInfo(item.word)?.lemma || "";
+        return {
+          ...item,
+          lookupText: reading?.text || item.word,
+          readingKey: reading?.key || "",
+          label: lemma && lemma.toLocaleLowerCase("fr") !== item.word ? `${group} \u00b7 ${lemma}`.trim() : group
+        };
+      });
   }
 
   async function buildTranscriptState(request = {}) {
@@ -969,36 +1085,12 @@
     }
     const analysisKey = `${transcriptSourceRevision}:${wordStatesRevision}`;
     if (!transcriptAnalysisCache || transcriptAnalysisCache.key !== analysisKey) {
-      const wordStates = wordStatesCache;
-      const counts = new Map();
-      const phraseCounts = new Map();
-      sourceCues.forEach((cue) => {
-        const tokens = learningTokens(cue.text);
-        tokens.forEach((word) => counts.set(word, (counts.get(word) || 0) + 1));
-        for (const length of [2, 3]) {
-          for (let index = 0; index <= tokens.length - length; index += 1) {
-            const phrase = tokens.slice(index, index + length).join(" ");
-            phraseCounts.set(phrase, (phraseCounts.get(phrase) || 0) + 1);
-          }
-        }
-      });
-      const vocabulary = Array.from(counts, ([word, count]) => ({
-        word,
-        count,
-        state: wordStates[word]?.state || "unknown"
-      })).sort((left, right) => right.count - left.count || left.word.localeCompare(right.word, "fr"));
-      const considered = vocabulary.filter((item) => item.state !== "ignored");
-      const knownOccurrences = considered.reduce((total, item) => total + (["known", "learning"].includes(item.state) ? item.count : 0), 0);
-      const totalOccurrences = considered.reduce((total, item) => total + item.count, 0);
+      const { vocabulary, coveragePercent } = analyzeTranscriptWords(sourceCues, wordStatesCache);
       transcriptAnalysisCache = {
         key: analysisKey,
         vocabulary,
-        coveragePercent: totalOccurrences ? Math.round(knownOccurrences / totalOccurrences * 100) : 0,
-        topUnknown: vocabulary.filter((item) => item.state === "unknown").slice(0, 12),
-        topPhrases: Array.from(phraseCounts, ([phrase, count]) => ({ phrase, count }))
-          .filter((item) => item.count >= 2)
-          .sort((left, right) => right.count - left.count || right.phrase.length - left.phrase.length)
-          .slice(0, 10)
+        coveragePercent,
+        studyWords: describeStudyWords(vocabulary, sourceCues)
       };
     }
     const revision = `${tabSessionId}:${currentVideoId}:${transcriptRevision}:${wordStatesRevision}`;
@@ -1016,8 +1108,7 @@
       provider: settings.translationProvider,
       studyMode: effectiveStudyMode(),
       coveragePercent: transcriptAnalysisCache.coveragePercent,
-      topUnknown: transcriptAnalysisCache.topUnknown,
-      topPhrases: transcriptAnalysisCache.topPhrases,
+      studyWords: transcriptAnalysisCache.studyWords,
       vocabulary: transcriptAnalysisCache.vocabulary,
       cues: request.lastRevision === revision ? null : sourceCues.slice(0, 5000).map((cue, index) => ({
         index,
@@ -1056,7 +1147,7 @@
   async function warmVideoWordCache(generation) {
     if (generation !== wordWarmupGeneration || !settings.preloadVideoWords) return;
     const limit = settings.translationProvider === "mymemory" ? 12 : 36;
-    const queue = videoWordWarmupOrder(sourceCues, (video?.currentTime || 0) * 1000, limit);
+    const queue = videoWordWarmupOrder(sourceCues, (video?.currentTime || 0) * 1000, limit, isWorthPreloading);
     wordWarmupQueued = queue.length;
     if (!queue.length) return;
     warmupSessionId = `warmup-${tabSessionId}-${currentVideoId}-${generation}`;
@@ -1110,7 +1201,7 @@
       if (
         aheadTranslations.has(index) ||
         aheadTranslationPending.has(index) ||
-        aheadTranslationFailed.has(index)
+        (aheadTranslationFailed.get(index) || 0) > Date.now()
       ) continue;
       aheadTranslationPending.add(index);
       aheadTranslationQueue.push(index);
@@ -1168,12 +1259,15 @@
           indices.reverse().forEach((index) => aheadTranslationQueue.unshift(index));
           setStatus("loading", `${aheadTranslationLastError} French remains available while English waits.`);
         } else {
-          indices.forEach((index) => aheadTranslationFailed.add(index));
+          indices.forEach((index) => aheadTranslationFailed.set(index, Date.now() + AHEAD_TRANSLATION_RETRY_MS));
         }
         return;
       }
       aheadTranslationBlockedUntil = 0;
       aheadTranslationLastError = "";
+      // The provider is answering again, so lines that failed while it was
+      // down deserve another attempt instead of staying blank for the video.
+      aheadTranslationFailed.clear();
       indices.forEach((index, resultIndex) => {
         const result = response.results?.[resultIndex];
         if (!result?.translatedText) return;
@@ -1190,7 +1284,7 @@
     }).catch((error) => {
       if (generation !== aheadTranslationGeneration) return;
       aheadTranslationLastError = error.message || "Translation batch failed.";
-      indices.forEach((index) => aheadTranslationFailed.add(index));
+      indices.forEach((index) => aheadTranslationFailed.set(index, Date.now() + AHEAD_TRANSLATION_RETRY_MS));
     }).finally(() => {
       if (generation !== aheadTranslationGeneration) return;
       aheadTranslationActive = 0;
@@ -1234,7 +1328,7 @@
     if (!word) return { group: "unknown", alternatives: [] };
     const text = word.dataset.word || word.textContent;
     const particle = word.dataset.elisionParticle === "true"
-      ? globalThis.DualSubFrench?.analyzeElisionParticle(text)
+      ? globalThis.DualSubFrench?.analyzeElisionParticle(text, word.dataset.elisionCompound || "")
       : null;
     if (particle) {
       const nextGroup = word.dataset.elisionNextGroup;
@@ -1415,7 +1509,9 @@
           prefetchAheadTranslations(timeMs);
           lastAheadPrefetchAt = performance.now();
         }
-        if (sourceCue && timeMs >= sourceCue.start && timeMs < sourceCue.end) {
+        // Follow the same visibility window as the French line. Testing the raw
+        // cue end instead made English blink off during every caption hold.
+        if (sourceCueIsActive) {
           targetText = aheadTranslations.get(sourceIndex) || "";
           targetCue = targetText ? { start: sourceCue.start, end: sourceCue.end, text: targetText } : null;
         }
@@ -1460,6 +1556,7 @@
   function clearWordHighlights() {
     root?.querySelectorAll(".dualsub-word.is-hovered, .dualsub-word.is-aligned, .dualsub-word.is-range-anchor, .dualsub-word.is-range-selected").forEach((word) => {
       word.classList.remove("is-hovered", "is-aligned", "is-range-anchor", "is-range-selected");
+      if (word.closest(".dualsub-target")) delete word.dataset.wordGroup;
     });
   }
 
@@ -1523,6 +1620,16 @@
     return left && right && left.start <= right.end && right.start <= left.end;
   }
 
+  // Carry the French word's group onto its English match so the pair shares a
+  // colour. Target words are never tagged by the French analyser, so this
+  // attribute is ours to set and to clear.
+  function markAlignedWord(targetWord, sourceWord) {
+    const group = sourceWord?.dataset.wordGroup;
+    if (group) targetWord.dataset.wordGroup = group;
+    else delete targetWord.dataset.wordGroup;
+    targetWord.classList.add("is-aligned");
+  }
+
   function applyPreciseProviderAlignment(sourceWord) {
     if (!settings.wordAlignment || currentSourceCueIndex < 0) return false;
     if (aheadAlignmentKinds.get(currentSourceCueIndex) !== "character") return false;
@@ -1538,7 +1645,7 @@
     targetLine.querySelectorAll(".dualsub-word").forEach((targetWord) => {
       const range = wordCharacterRange(targetWord, targetLine, currentTargetText);
       if (targetRanges.some((targetRange) => rangesOverlap(range, targetRange))) {
-        targetWord.classList.add("is-aligned");
+        markAlignedWord(targetWord, sourceWord);
         highlighted = true;
       }
     });
@@ -1696,7 +1803,7 @@
     if (!best) return;
     targetWords.forEach((word) => word.classList.remove("is-aligned"));
     for (let index = best.start; index < best.start + best.length; index += 1) {
-      targetWords[index]?.classList.add("is-aligned");
+      if (targetWords[index]) markAlignedWord(targetWords[index], hoveredSourceWord);
     }
   }
 
@@ -1722,7 +1829,7 @@
         const wordText = lookupTextForWord(word);
         const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText, currentSourceText);
         const reading = globalThis.DualSubFrench?.lookupReading(wordText, currentSourceText, conjugation);
-        const evidenceTexts = [wordText, conjugation?.pronominalLemma || conjugation?.lemma]
+        const evidenceTexts = [wordText, settings.wordAlignment ? conjugation?.pronominalLemma || conjugation?.lemma : ""]
           .filter((text, index, values) => text && values.indexOf(text) === index);
         const results = await Promise.allSettled(evidenceTexts.map((text) => browser.runtime.sendMessage({
           type: "translate-selection", text,
@@ -1747,7 +1854,10 @@
       } catch (_error) {
         // The lookup card will show a provider error if the hover continues.
       }
-    }, 90);
+      // Wait until the pointer has settled for most of the card's own delay.
+      // Firing after 90ms spent a request on every word the pointer merely
+      // crossed on its way somewhere else.
+    }, Math.max(90, Math.round((Number(settings.hoverDelay) || 420) * 0.7)));
     const delay = Math.max(120, Math.min(1500, Number(settings.hoverDelay) || 420));
     hoverLookupTimer = setTimeout(() => {
       showSelectionCard(lookupTextForWord(word), rect.left + rect.width / 2, rect.bottom, "word");
@@ -1828,7 +1938,10 @@
     const sourceWords = Array.from(sourceLine.querySelectorAll(".dualsub-word"));
     const hoveredWord = sourceLine.querySelector(".dualsub-word.is-hovered");
     const particle = kind === "word" && hoveredWord?.dataset.elisionParticle === "true"
-      ? globalThis.DualSubFrench?.analyzeElisionParticle(hoveredWord.dataset.word || hoveredWord.textContent)
+      ? globalThis.DualSubFrench?.analyzeElisionParticle(
+          hoveredWord.dataset.word || hoveredWord.textContent,
+          hoveredWord.dataset.elisionCompound || ""
+        )
       : null;
     if (particle) {
       showElisionParticleCard(hoveredWord, particle, clientX, clientY);
@@ -1934,6 +2047,7 @@
     positionSelectionCard(clientX, clientY);
 
     if (settings.pauseOnLookup && video && !video.paused) {
+      lookupPauseExpected = true;
       video.pause();
       pausedByLookup = true;
     }
@@ -1954,7 +2068,10 @@
         cacheMode: kind === "word" ? "word" : "phrase",
         context: sentence
       });
-    const lemmaTexts = conjugation?.partOfSpeech === "verb"
+    // The infinitive is only ever used as evidence for highlighting the English
+    // word, so requesting it when that is switched off spends a request on a
+    // result nothing reads.
+    const lemmaTexts = settings.wordAlignment && conjugation?.partOfSpeech === "verb"
       ? [conjugation?.pronominalLemma || conjugation?.lemma]
       .filter((lemma, index, values) => lemma && values.indexOf(lemma) === index)
       .filter((lemma) => normalizeLookupWord(lemma) !== normalizeLookupWord(cleanText))
@@ -1994,20 +2111,6 @@
     }
   }
 
-  function chooseFrenchVoice(voices, preferredVoiceURI = "") {
-    const candidates = Array.from(voices || []).filter((voice) =>
-      /^fr(?:[-_]|$)/i.test(voice.lang || "") || /french|fran[cç]ais|france/i.test(voice.name || "")
-    );
-    return candidates.sort((left, right) => {
-      const score = (voice) =>
-        (voice.voiceURI === preferredVoiceURI ? 10000 : 0) +
-        (/^fr-FR$/i.test(voice.lang || "") ? 500 : 300) +
-        (/natural|neural|premium/i.test(voice.name || "") ? 120 : 0) +
-        (voice.localService ? 30 : 0) +
-        (voice.default ? 10 : 0);
-      return score(right) - score(left) || left.name.localeCompare(right.name);
-    })[0] || null;
-  }
 
   async function handleLearningCardAction(event) {
     const button = event.target.closest?.("[data-action]");
@@ -2173,7 +2276,11 @@
 
     if (action === "speak") {
       const synthesis = window.speechSynthesis;
-      const voice = chooseFrenchVoice(synthesis?.getVoices?.(), settings.pronunciationVoiceURI);
+      let voice = DualSubPronunciation.chooseFrenchVoice(synthesis?.getVoices?.(), settings.pronunciationVoiceURI);
+      // Firefox often returns an empty list until the engine has enumerated its
+      // voices, which sent the first click to the voice-setup page even when a
+      // French voice was installed.
+      if (synthesis && !voice) voice = await DualSubPronunciation.waitForFrenchVoice(synthesis, settings.pronunciationVoiceURI);
       if (!synthesis || typeof SpeechSynthesisUtterance !== "function" || !voice) {
         button.textContent = "Opening voice setup…";
         browser.runtime.sendMessage({ type: "open-pronunciation-help" }).catch(() => {});
@@ -2184,7 +2291,7 @@
       const utterance = new SpeechSynthesisUtterance(lookupContext.sourceText);
       utterance.voice = voice;
       utterance.lang = voice.lang || "fr-FR";
-      utterance.rate = Math.max(0.6, Math.min(1.2, Number(settings.pronunciationRate) || 0.88));
+      utterance.rate = DualSubPronunciation.speechRate(settings.pronunciationRate);
       synthesis.speak(utterance);
       return;
     }
@@ -2284,6 +2391,7 @@
 
   function attachToPlayer() {
     if (!createOverlay()) return;
+    observePlayerSize();
     const nextVideo = document.querySelector(".html5-video-player video");
     if (video && video !== nextVideo) practice.stop();
     video = nextVideo;
@@ -2292,6 +2400,12 @@
       ["play", "pause", "seeking", "seeked", "ratechange", "loadedmetadata"].forEach((eventName) => {
         video.addEventListener(eventName, requestRender, { passive: true });
       });
+      video.addEventListener("pause", () => {
+        // Only the pause the lookup card itself requested may be undone when
+        // the card closes; a pause the reader triggered has to stick.
+        if (lookupPauseExpected) lookupPauseExpected = false;
+        else pausedByLookup = false;
+      }, { passive: true });
     }
     requestRender();
   }
@@ -2412,9 +2526,13 @@
   }
 
   function hideOcrPopup() {
+    const hadPopup = Boolean(ocrPopup);
     ocrPopup?.remove();
     ocrPopup = null;
     updateOcrCaptionVisibility();
+    // The stored capture is a screenshot of the whole visible tab. Discard it
+    // as soon as the window closes rather than waiting for the next OCR run.
+    if (hadPopup) browser.runtime.sendMessage({ type: "discard-ocr-capture" }).catch(() => {});
   }
 
   function showOcrPopup() {
@@ -2565,6 +2683,19 @@
     attachToPlayer();
     if (ocrPopup) (document.fullscreenElement || document.documentElement).appendChild(ocrPopup);
   }, 50));
+  // The overlay-scoped Escape handler is unreachable once a caption change has
+  // dropped focus to the body, so also listen at the document. Capture runs
+  // before YouTube's own Escape handling.
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (ocrPopup) {
+      hideOcrPopup();
+    } else if (selectionCard?.classList.contains("is-visible") || phraseSelectionAnchor) {
+      hideSelectionCard();
+    } else return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
   document.addEventListener("mousedown", (event) => {
     if (phraseSelectionAnchor && !event.target.closest?.(".dualsub-source .dualsub-word")) {
       phraseSelectionAnchor = null;
