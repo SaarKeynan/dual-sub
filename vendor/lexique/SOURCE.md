@@ -10,6 +10,12 @@ Category codes are compacted as follows: noun `n`, verb or
 auxiliary `v`, adjective `j`, adverb `r`, pronoun `p`, determiner `d`,
 preposition `s`, conjunction `c`, and interjection/onomatopoeia `i`.
 
+Lexique subcategorizes closed classes in its `cgram` column (`ART:def`,
+`PRO:per`, `ADJ:dem`), and it has no `DET` category at all. The build reads the
+subcategory first and then its prefix, so demonstrative, possessive, indefinite,
+and interrogative `ADJ` rows become determiners while `ADJ:num` stays
+adjectival, matching the traditional French *adjectif numéral*.
+
 The lexical-info derivative retains the 50,000 highest-frequency normalized
 forms and only their lemma, Lexique phonological transcription, gender, number,
 syllable count, and combined film/book frequency. Definitions and all other
@@ -24,8 +30,8 @@ Source: http://www.lexique.org/databases/Lexique383/Lexique383.tsv
 
 Source SHA-256: `637BA37A767A66679C48371D673ECE50CBF541B49A4E40E598963D4F3FBCE52B`
 
-Generated derivative SHA-256: `CD8570B4D0EBB77D1FCBD9804EDCEC3C66190F00EF829BD96E49DD51E17013B0`
+Generated derivative SHA-256: `80B413C17EDF87E2535D21E3F17EDB112AA13BECCFAA4F46E69263CCD55E3429`
 
-Generated lexical-info derivative SHA-256: `B092C329BC8DBF1965377D49A3F2BBED333F35D1EBD31A0C72D6397BA12DB2EC`
+Generated lexical-info derivative SHA-256: `E90E77123882CBBDF1D654FF432A06A436FBF0DB072059FA28161B03CA0B2F11`
 
 Project and documentation: https://www.lexique.org/

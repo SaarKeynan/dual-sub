@@ -55,13 +55,18 @@
   function lexiqueToIpa(value) {
     const mapping = {
       "@": "ɑ̃", "§": "ɔ̃", "5": "ɛ̃", "1": "œ̃", "2": "ø", "9": "œ",
-      "E": "ɛ", "O": "ɔ", "S": "ʃ", "Z": "ʒ", "R": "ʁ", "N": "ɲ", "G": "ŋ"
+      "E": "ɛ", "O": "ɔ", "S": "ʃ", "Z": "ʒ", "R": "ʁ", "N": "ɲ", "G": "ŋ",
+      // Schwa and the labial-palatal glide are among the most frequent codes in
+      // Lexique; leaving them unmapped printed /ʒ°/ and /n8i/ on the card.
+      "°": "ə", "8": "ɥ"
     };
     return Array.from(String(value || ""), (character) => mapping[character] || character).join("");
   }
 
   function lexicalInfo(rawWord) {
-    const word = normalize(rawWord).replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    // Overlay tokens keep YouTube's typographic apostrophe, but Lexique keys
+    // use the straight one, so aujourd’hui missed the index entirely.
+    const word = normalize(rawWord).replace(/’/gu, "'").replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
     const value = lexicalInfoIndex?.[word];
     if (!Array.isArray(value)) return null;
     return {
@@ -281,7 +286,10 @@
     ["je", ["1st", "singular"]], ["j", ["1st", "singular"]],
     ["tu", ["2nd", "singular"]],
     ["il", ["3rd", "singular"]], ["elle", ["3rd", "singular"]],
-    ["on", ["3rd", "singular"]], ["ce", ["3rd", "singular"]], ["c", ["3rd", "singular"]],
+    // ce is only a subject before être, which arrives elided as c’. Listing the
+    // bare form here made “ce livre” look like a clause with a subject and
+    // suppressed the nominal reading that “le livre” receives.
+    ["on", ["3rd", "singular"]], ["c", ["3rd", "singular"]],
     ["nous", ["1st", "plural"]], ["vous", ["2nd", "plural"]],
     ["ils", ["3rd", "plural"]], ["elles", ["3rd", "plural"]]
   ]);
@@ -297,11 +305,23 @@
     qu: { expanded: "que", role: "conjunction or pronoun", group: "conjunction", meaning: "that / which" }
   });
 
-  function analyzeElisionParticle(rawParticle) {
+  function analyzeElisionParticle(rawParticle, compound = "") {
     const canonical = normalize(rawParticle).replace(/’/gu, "'").replace(/\s+/gu, "");
     const match = canonical.match(/^(j|m|t|s|l|n|c|d|qu)'$/u);
     if (!match) return null;
     const key = match[1];
+    // s’il and s’ils are si + il, not the reflexive pronoun se. The caller
+    // passes the whole elided form so the two readings stay distinguishable.
+    if (key === "s" && ["il", "ils"].includes(splitElidedClitic(compound).base)) {
+      return {
+        key,
+        surface: "s’",
+        expanded: "si",
+        role: "conjunction",
+        group: "conjunction",
+        meaning: "if"
+      };
+    }
     return {
       key,
       surface: `${key}’`,
@@ -415,13 +435,23 @@
     return result;
   }
 
+  // regularAnalysis derives an infinitive from spelling alone, so every noun
+  // ending in -é looks like a past participle: idée became a form of "ider".
+  // The guess is only safe while no attested lemma list has loaded; once Lefff
+  // is available it is the authority on whether the verb exists.
+  function attestedRegularAnalysis(word) {
+    const analysis = regularAnalysis(word);
+    if (!analysis) return null;
+    return !attestedLemmas || attestedLemmas.has(analysis.lemma) ? analysis : null;
+  }
+
   function fallbackAnalysis(rawWord, sentence = "") {
     const parts = splitElidedClitic(rawWord);
     const word = parts.base;
     if (!word || word.includes(" ")) return null;
     const context = inferVerbContext(parts, sentence);
     const known = [...(formIndex.get(word) || [])].sort((left, right) => contextRank(left, context) - contextRank(right, context));
-    const analysis = known[0] || regularAnalysis(word);
+    const analysis = known[0] || attestedRegularAnalysis(word);
     if (!analysis) return null;
     const result = addVerbContext({
       partOfSpeech: "verb",
@@ -517,12 +547,23 @@
     d: "determiner", s: "preposition", c: "conjunction", i: "interjection"
   });
 
-  function lexicalGroups(rawWord) {
+  function closedWordGroup(rawWord) {
     const word = splitElidedClitic(rawWord).base;
     for (const [group, words] of closedWordGroups) {
-      if (words.has(word)) return [group];
+      if (words.has(word)) return group;
     }
-    return Array.from(wordGroupIndex?.[word] || "", (code) => groupByCode[code]).filter(Boolean);
+    return "";
+  }
+
+  function lexicalGroups(rawWord) {
+    const word = splitElidedClitic(rawWord).base;
+    const indexed = Array.from(wordGroupIndex?.[word] || "", (code) => groupByCode[code]).filter(Boolean);
+    const closed = closedWordGroup(rawWord);
+    if (!closed) return indexed;
+    // "or" and "car" are conjunctions but also ordinary nouns. Keep the closed
+    // reading first and expose the lexicon readings as alternatives instead of
+    // discarding them.
+    return [closed, ...indexed.filter((group) => group !== closed)];
   }
 
   function likelyNominalLemma(rawWord) {
@@ -557,17 +598,22 @@
 
   function analyzeWord(rawWord, sentence = "") {
     const analysis = analyzeWithMorphology(rawWord, sentence) || fallbackAnalysis(rawWord, sentence);
-    const hasNominalLexiconReading = lexicalGroups(rawWord).some((group) => group === "noun" || group === "adjective");
+    const parts = splitElidedClitic(rawWord);
+    const nominalLemma = likelyNominalLemma(rawWord);
+    // A feminine participle spelling such as psychée is not in the lexicon
+    // itself, but reducing -ée to -é finds the attested noun.
+    const hasNominalLexiconReading =
+      lexicalGroups(rawWord).some((group) => group === "noun" || group === "adjective") ||
+      nominalLemma !== parts.base;
     if (
-      analysis &&
       hasNominalDeterminer(rawWord, sentence) &&
-      (analysis.mood === "participle" || hasNominalLexiconReading)
+      (analysis ? analysis.mood === "participle" || hasNominalLexiconReading : hasNominalLexiconReading)
     ) {
-      const readings = [analysis, ...(analysis.alternatives || [])];
+      const readings = analysis ? [analysis, ...(analysis.alternatives || [])] : [];
       const seenLemmas = new Set();
       return {
-        surface: analysis.surface,
-        lemma: likelyNominalLemma(rawWord),
+        surface: analysis?.surface || parts.surface,
+        lemma: nominalLemma,
         partOfSpeech: "nominal",
         confidence: "context",
         alternatives: [],
@@ -586,13 +632,25 @@
     const groups = lexicalGroups(rawWord);
     if (analysis?.partOfSpeech === "nominal") {
       const contextualGroup = groups.find((group) => group === "noun" || group === "adjective") || "noun";
+      // Only offer a verb alternative when a verb reading was actually found.
+      const candidates = analysis.verbReadings?.length ? [...groups, "verb"] : groups;
       return {
         group: contextualGroup,
-        alternatives: Array.from(new Set([...groups, "verb"])).filter((group) => group !== contextualGroup),
+        alternatives: Array.from(new Set(candidates)).filter((group) => group !== contextualGroup),
         confidence: "context"
       };
     }
     if (analysis?.partOfSpeech === "verb") {
+      // tu, lui and plus are attested participles of taire, luire and plaire,
+      // but in running text the closed-class reading is overwhelmingly likelier.
+      const closed = closedWordGroup(rawWord);
+      if (closed) {
+        return {
+          group: closed,
+          alternatives: Array.from(new Set([...groups.filter((group) => group !== closed), "verb"])),
+          confidence: "closed-class"
+        };
+      }
       return {
         group: "verb",
         alternatives: groups.filter((group) => group !== "verb"),

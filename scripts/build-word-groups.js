@@ -10,6 +10,13 @@ const groupCodes = new Map([
   ["PRO", "p"], ["DET", "d"], ["ART", "d"], ["PRE", "s"], ["CON", "c"],
   ["ONO", "i"], ["INT", "i"]
 ]);
+// Lexique 3.83 has no DET category. Demonstrative, possessive, indefinite and
+// interrogative determiners are filed as ADJ subcategories, so they need an
+// explicit mapping; ADJ:num stays adjectival because the subcategory also
+// collects ordinary plural adjectives.
+const subcategoryGroupCodes = new Map([
+  ["ADJ:DEM", "d"], ["ADJ:POS", "d"], ["ADJ:IND", "d"], ["ADJ:INT", "d"]
+]);
 
 const lines = fs.readFileSync(sourcePath, "utf8").split(/\r?\n/u);
 const headers = lines.shift().split("\t");
@@ -22,8 +29,11 @@ for (const line of lines) {
   if (!line) continue;
   const cells = line.split("\t");
   const word = String(cells[column.ortho] || "").trim().toLocaleLowerCase("fr").normalize("NFC");
+  // Lexique subcategorizes closed classes as ART:def, PRO:per, ADJ:dem and so
+  // on. Matching the whole field silently discards every article, pronoun and
+  // demonstrative, so consult the subcategory first and then its prefix.
   const rawCategory = String(cells[column.cgram] || "").trim().toUpperCase();
-  const group = groupCodes.get(rawCategory);
+  const group = subcategoryGroupCodes.get(rawCategory) || groupCodes.get(rawCategory.split(":")[0]);
   if (!word || !group || !/^[\p{L}][\p{L}'\u2019-]*$/u.test(word)) continue;
   const frequency = Number(cells[column.freqfilms2] || 0) + Number(cells[column.freqlivres] || 0);
   const scores = entries.get(word) || new Map();
