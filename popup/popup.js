@@ -2,12 +2,17 @@ let settings;
 let defaults;
 let saveTimer;
 
+// Each translation location has its own switch, because a subtitle is read once
+// and a saved word meaning is studied.
+const FALLBACK_SWITCHES = [["subtitles", "fallbackSubtitles"], ["translator", "fallbackTranslator"], ["lookups", "fallbackLookups"]];
+
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation", "preloadVideoWords",
   "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "smartPauseUnknownOnly", "skipCaptionGaps", "hoverDelay", "studyMode",
   "captionHoldMs", "translationBufferSeconds", "translationBatchSize",
   "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
   "pronunciationVoiceURI", "pronunciationRate",
+  "fallbackSubtitles", "fallbackTranslator", "fallbackLookups",
   "wordGroupColorUnknown", "wordGroupColorNoun", "wordGroupColorVerb", "wordGroupColorAdjective",
   "wordGroupColorAdverb", "wordGroupColorPronoun", "wordGroupColorDeterminer",
   "wordGroupColorPreposition", "wordGroupColorConjunction", "wordGroupColorInterjection",
@@ -209,6 +214,7 @@ function setFormValues() {
   element("lookupCardPosition").value = settings.lookupCardPosition || "smart";
   element("pronunciationVoiceURI").value = settings.pronunciationVoiceURI || "";
   element("pronunciationRate").value = settings.pronunciationRate || 0.88;
+  for (const [location, id] of FALLBACK_SWITCHES) element(id).checked = Boolean(settings.translationFallback?.[location]);
   for (const group of ["unknown", "noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"]) {
     const id = `wordGroupColor${group[0].toUpperCase()}${group.slice(1)}`;
     element(id).value = settings.wordGroupColors[group];
@@ -256,6 +262,8 @@ function readFormValues() {
   settings.lookupCardPosition = element("lookupCardPosition").value;
   settings.pronunciationVoiceURI = element("pronunciationVoiceURI").value;
   settings.pronunciationRate = Number(element("pronunciationRate").value);
+  // Written whole: a partial object would let one edited switch drop the others.
+  settings.translationFallback = Object.fromEntries(FALLBACK_SWITCHES.map(([location, id]) => [location, element(id).checked]));
   settings.wordGroupColors = {};
   for (const group of ["unknown", "noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"]) {
     const id = `wordGroupColor${group[0].toUpperCase()}${group.slice(1)}`;

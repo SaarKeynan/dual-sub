@@ -212,6 +212,7 @@ async function translateText({ automatic = false } = {}) {
     const response = await browser.runtime.sendMessage({
       type: "translate-selection",
       text: sourceText,
+      purpose: "translator",
       sourceLanguage: "fr",
       targetLanguage: "en",
       cacheMode: wordCount <= 3 ? "word" : "phrase"

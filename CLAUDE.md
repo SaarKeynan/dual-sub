@@ -105,7 +105,14 @@ whether a live Firefox check was performed.
 - MyMemory match/quality scores do not guarantee a correct meaning. The observed
   `avez` result `her name is Anna` is rejected by word-quality validation and
   uses the concise Google fallback. Preloading must apply the same checks as
-  interactive lookup. Do not turn rate-limit errors into automatic fallback.
+  interactive lookup.
+- A rate limit may continue on another engine only where `translationFallback`
+  allows it, one switch per translation location. Subtitles and the translator
+  page default to on; word lookups and preloading default to off, because those
+  meanings are saved and studied. Try eligible engines cheapest first, skip an
+  engine whose credentials are missing, and never advance the chain on a missing
+  key, an empty response, or a cancelled session. A substituted result must name
+  the engine that answered it.
 - Keep video snapshots isolated by video, languages, tracks, provider, and custom
   endpoint. Preserve expiry and size limits. Clearing caches must prevent late
   saves or pagehide handlers from restoring cleared snapshots.

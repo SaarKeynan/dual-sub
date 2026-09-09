@@ -470,10 +470,116 @@ async function practiceTests() {
   await assert.rejects(practice.start("shadow", 1, 0), /valid/);
 }
 
+// Running out of requests mid-video used to stop English for the rest of the
+// video. A line may now continue down a configured chain of engines, and the
+// result always names the engine that actually answered it.
+async function providerFallbackTests() {
+  const c = background().context;
+  const hosts = [];
+  const rateLimitedGoogle = async (url) => {
+    const target = new URL(url);
+    hosts.push(target.host);
+    if (target.host === "translate.googleapis.com") return { ok: false, status: 429, headers: { get: () => "60" } };
+    const query = target.searchParams.get("q");
+    return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: `${query} [mm]` } }) };
+  };
+  c.fetch = rateLimitedGoogle;
+  const { results } = await c.DualSubTranslation.translateBatch(
+    [{ text: "bonjour", cacheId: "chain:1" }],
+    { provider: "google", fallbackProviders: ["mymemory"], videoId: "chain" }
+  );
+  assert.equal(results[0].translatedText, "bonjour [mm]", "A rate-limited primary hands the line to the next engine");
+  assert.equal(results[0].provider, "mymemory");
+  assert.equal(results[0].fellBackFrom, "google", "and the result names the engine that ran dry");
+  assert.deepEqual(hosts, ["translate.googleapis.com", "api.mymemory.translated.net"]);
+
+  // Without a chain the engine must still refuse, which is what every caller
+  // that has fallback switched off relies on.
+  const pinned = background().context;
+  pinned.fetch = rateLimitedGoogle;
+  await assert.rejects(
+    pinned.DualSubTranslation.translateBatch([{ text: "salut" }], { provider: "google" }),
+    { code: "PROVIDER_RATE_LIMITED" },
+    "An empty chain leaves the existing single-provider behaviour untouched"
+  );
+
+  // Leaving the video cancels the session. That is not a provider running out
+  // of requests, so it must not walk the chain and spend a second engine.
+  const leaving = background().context;
+  let attempts = 0;
+  leaving.fetch = async () => { attempts += 1; throw Object.assign(new Error("Aborted"), { name: "AbortError" }); };
+  leaving.DualSubTranslation.cancelSession("navigation");
+  await assert.rejects(
+    leaving.DualSubTranslation.translateBatch([{ text: "salut" }], { provider: "google", fallbackProviders: ["mymemory"], sessionId: "navigation" }),
+    { code: "TRANSLATION_CANCELLED" }
+  );
+  assert.equal(attempts, 0, "Navigation cancellation never reaches a fallback engine");
+  assert.equal(leaving.DualSubTranslation.health().failures, 0, "and never counts as a provider failure");
+
+  // The chain is configured per translation location. Subtitles are read once and
+  // may continue on any engine; a word lookup is saved and studied, so it stays
+  // on the engine that was chosen for it until that is switched on deliberately.
+  const exhausted = (answered, extra = {}) => async (url, init) => {
+    const target = new URL(url);
+    answered.push(target.host);
+    if (target.host === "translate.googleapis.com") return { ok: false, status: 429, headers: { get: () => "60" } };
+    if (target.host === "api.mymemory.translated.net") {
+      if (extra.mymemoryExhausted) return { ok: false, status: 429, headers: { get: () => "60" } };
+      return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: "hello" } }) };
+    }
+    if (target.host === "libre.example") return { ok: true, json: async () => ({ translatedText: "hello from libre" }) };
+    throw new Error(`Unexpected engine contacted: ${target.host}`);
+  };
+
+  const captions = background().context;
+  const captionHosts = [];
+  captions.fetch = exhausted(captionHosts);
+  const subtitles = await captions.translateBatchMessage({ items: [{ text: "bonjour", cacheId: "line:1" }], sessionId: "captions" });
+  assert.equal(subtitles.results[0].translatedText, "hello", "A subtitle line continues on the next engine with no setup");
+  assert.equal(subtitles.results[0].provider, "mymemory");
+  assert.equal(subtitles.results[0].fellBackFrom, "google");
+
+  const pinnedLookup = background().context;
+  pinnedLookup.fetch = exhausted([]);
+  await assert.rejects(
+    pinnedLookup.translateSelectionWithEngine({ text: "salut", cacheMode: "word", sessionId: "lookup" }),
+    { code: "PROVIDER_RATE_LIMITED" },
+    "A word lookup does not silently change engine, because its answer is studied"
+  );
+
+  // Preloading feeds the same lookup card and sidebar, so it follows the lookup
+  // switch rather than having one of its own that could drift from it.
+  const pinnedPreload = background().context;
+  pinnedPreload.fetch = exhausted([]);
+  await assert.rejects(
+    pinnedPreload.translateBatchMessage({ items: [{ text: "pourtant", cacheId: "word:pourtant" }], sessionId: "warmup" }),
+    { code: "PROVIDER_RATE_LIMITED" },
+    "Preloaded words follow the lookup switch, not the subtitle one"
+  );
+
+  const optedIn = background({ settings: { translationFallback: { subtitles: true, lookups: true, translator: true } } }).context;
+  optedIn.fetch = exhausted([]);
+  const lookup = await optedIn.translateSelectionWithEngine({ text: "salut", cacheMode: "word", sessionId: "opted" });
+  assert.equal(lookup.translatedText, "hello", "Switching lookups on lets a lookup continue too");
+  assert.equal(lookup.fellBackFrom, "google");
+
+  // Cheapest first: the free engines absorb the overflow, an engine with no
+  // credentials is skipped rather than attempted, and a paid key is only spent
+  // once everything free has also run dry.
+  const ordered = background().context;
+  await ordered.DualSubTranslation.saveProviderSecrets({ libreEndpoint: "https://libre.example/", deeplKey: "paid-key" });
+  const orderedHosts = [];
+  ordered.fetch = exhausted(orderedHosts, { mymemoryExhausted: true });
+  const overflow = await ordered.translateBatchMessage({ items: [{ text: "bonjour", cacheId: "line:2" }], sessionId: "ordered" });
+  assert.equal(overflow.results[0].translatedText, "hello from libre");
+  assert.deepEqual(orderedHosts, ["translate.googleapis.com", "api.mymemory.translated.net", "libre.example"],
+    "Free engines are tried first, unconfigured Azure is skipped, and the DeepL key is never spent");
+}
+
 (async () => {
   await storageTests(); await backupMergeTests(); await palettePaletteTests();
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
-  await translationTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
+  await translationTests(); await providerFallbackTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

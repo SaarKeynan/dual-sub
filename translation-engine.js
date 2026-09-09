@@ -27,6 +27,8 @@
   };
   let databasePromise;
 
+  const PROVIDERS = ["google", "mymemory", "libretranslate", "azure", "deepl"];
+
   function normalizeProvider(value) {
     return ["azure", "deepl", "libretranslate", "mymemory"].includes(value) ? value : "google";
   }
@@ -78,16 +80,39 @@
     return circuitState.get(provider);
   }
 
-  function assertCircuitAvailable(provider) {
+  function circuitBlockFor(provider) {
     const circuit = circuitFor(provider);
-    if (circuit.blockedUntil > Date.now()) {
-      throw providerError(
-        `${provider} is paused until ${new Date(circuit.blockedUntil).toLocaleTimeString()}.`,
-        "PROVIDER_CIRCUIT_OPEN",
-        null,
-        circuit.blockedUntil - Date.now()
-      );
-    }
+    if (circuit.blockedUntil <= Date.now()) return null;
+    return providerError(
+      `${provider} is paused until ${new Date(circuit.blockedUntil).toLocaleTimeString()}.`,
+      "PROVIDER_CIRCUIT_OPEN",
+      null,
+      circuit.blockedUntil - Date.now()
+    );
+  }
+
+  function assertCircuitAvailable(provider) {
+    const blocked = circuitBlockFor(provider);
+    if (blocked) throw blocked;
+  }
+
+  // Running out of requests is the only failure a different engine can answer.
+  // A missing key or an empty response fails the same way everywhere, and a
+  // cancelled session is not a provider failure at all. A circuit that a rate
+  // limit opened counts too: that pause is the window a fallback exists for.
+  function rateLimited(provider, error) {
+    if (error?.code === "PROVIDER_RATE_LIMITED" || error?.code === "MYMEMORY_RATE_LIMITED") return true;
+    if (error?.code !== "PROVIDER_CIRCUIT_OPEN") return false;
+    const reason = circuitFor(provider).reason;
+    return reason === "PROVIDER_RATE_LIMITED" || reason === "MYMEMORY_RATE_LIMITED";
+  }
+
+  // The caller decides which engines are eligible; the engine only orders and
+  // deduplicates them. The selected provider leads and never repeats.
+  function fallbackChain(raw, primary) {
+    const seen = new Set([primary]);
+    return (Array.isArray(raw) ? raw : [])
+      .filter((entry) => PROVIDERS.includes(entry) && !seen.has(entry) && seen.add(entry));
   }
 
   function recordProviderSuccess(provider) {
@@ -579,51 +604,74 @@
     };
     metrics.batches += 1;
     metrics.lastProvider = options.provider;
-    const keys = items.map((item) => cacheKeyFor(item, options));
-    const cached = await cachedResults(keys);
-    assertSessionActive(options.sessionId);
     const results = new Array(items.length);
-    const missing = [];
-    items.forEach((item, index) => {
-      if (cached[index]?.translatedText) {
-        results[index] = { ...cached[index], cacheHit: true };
-        metrics.cacheHits += 1;
-      } else {
-        missing.push({ item, index, key: keys[index] });
+    const translators = {
+      azure: translateAzure,
+      deepl: translateDeepL,
+      libretranslate: translateLibre,
+      mymemory: translateMyMemory,
+      google: translateGoogle
+    };
+    // The selected engine leads. Each further engine is tried only when the one
+    // before it has run out of requests, and only for the lines still missing.
+    const candidates = [options.provider, ...fallbackChain(rawOptions.fallbackProviders, options.provider)];
+    let pending = items.map((item, index) => ({ item, index }));
+    let lastError = null;
+    for (const [candidateIndex, provider] of candidates.entries()) {
+      const substitute = provider !== options.provider;
+      const attempt = substitute ? { ...options, provider } : options;
+      // Cache keys carry the provider, so every candidate is asked of the cache
+      // before it is allowed to spend a request: a line this engine already
+      // translated must not be bought twice.
+      const keys = pending.map(({ item }) => cacheKeyFor(item, attempt));
+      const cached = await cachedResults(keys);
+      assertSessionActive(options.sessionId);
+      const missing = [];
+      pending.forEach((entry, position) => {
+        if (cached[position]?.translatedText) {
+          results[entry.index] = { ...cached[position], cacheHit: true, ...(substitute ? { fellBackFrom: options.provider } : {}) };
+          metrics.cacheHits += 1;
+        } else {
+          missing.push({ ...entry, key: keys[position] });
+        }
+      });
+      pending = missing;
+      if (!pending.length) break;
+
+      const blocked = circuitBlockFor(provider);
+      if (blocked) {
+        lastError = blocked;
+        if (rateLimited(provider, blocked) && candidateIndex < candidates.length - 1) continue;
+        throw blocked;
       }
-    });
-    if (missing.length) {
-      assertCircuitAvailable(options.provider);
-      const texts = missing.map(({ item }) => item.text);
+      const texts = pending.map(({ item }) => item.text);
       const secrets = await providerSecrets();
-      const translators = {
-        azure: translateAzure,
-        deepl: translateDeepL,
-        libretranslate: translateLibre,
-        mymemory: translateMyMemory,
-        google: translateGoogle
-      };
       try {
+        metrics.lastProvider = provider;
         metrics.characters += texts.reduce((total, text) => total + text.length, 0);
-        const translated = await translators[options.provider](texts, options, options.provider === "mymemory" ? settings : secrets, options.sessionId);
+        const translated = await translators[provider](texts, attempt, provider === "mymemory" ? settings : secrets, options.sessionId);
         assertSessionActive(options.sessionId);
         const savedAt = Date.now();
         const cacheEntries = [];
-        missing.forEach(({ item, index, key }, translatedIndex) => {
-          const result = { ...translated[translatedIndex], sourceText: item.text, cacheHit: false };
+        pending.forEach(({ item, index, key }, translatedIndex) => {
+          const result = { ...translated[translatedIndex], sourceText: item.text, cacheHit: false, ...(substitute ? { fellBackFrom: options.provider } : {}) };
           results[index] = result;
           cacheEntries.push({ key, savedAt, result });
         });
         await cacheResults(cacheEntries);
-        recordProviderSuccess(options.provider);
+        recordProviderSuccess(provider);
+        pending = [];
+        break;
       } catch (error) {
         if (error.code === "TRANSLATION_CANCELLED") throw error;
         metrics.failures += 1;
         metrics.lastError = error.message;
-        if (error.code !== "MYMEMORY_UNRELIABLE_RESULT") recordProviderFailure(options.provider, error);
-        throw error;
+        if (error.code !== "MYMEMORY_UNRELIABLE_RESULT") recordProviderFailure(provider, error);
+        lastError = error;
+        if (!rateLimited(provider, error) || candidateIndex === candidates.length - 1) throw error;
       }
     }
+    if (pending.length && lastError) throw lastError;
     return { results, health: health() };
   }
 

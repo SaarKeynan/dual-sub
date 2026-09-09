@@ -94,6 +94,13 @@
             <label>Buffer ahead (seconds)<input id="translationBufferSeconds" type="number" min="15" max="300" step="5"></label>
             <label>Batch size<input id="translationBatchSize" type="number" min="1" max="100" step="1"></label>
           </div>
+          <fieldset class="fallback-group">
+            <legend>When the engine runs out of requests</legend>
+            <label class="check-row"><input id="fallbackSubtitles" type="checkbox"> Finish subtitles on another engine</label>
+            <label class="check-row"><input id="fallbackTranslator" type="checkbox"> Finish translator-page text on another engine</label>
+            <label class="check-row"><input id="fallbackLookups" type="checkbox"> Change engine for word meanings too</label>
+            <p class="privacy">Word meanings are saved and studied, so they stay on the engine you chose unless you switch this on. Engines are tried cheapest first, and one whose key or endpoint is missing is skipped.</p>
+          </fieldset>
           <div data-provider-config="azure">
             <label class="field-label">Azure Translator key
               <input id="azureKey" type="password" placeholder="Leave blank to keep saved key" autocomplete="off">
@@ -122,7 +129,7 @@
           </div>
           <div class="service-actions"><button id="saveProvider" type="button">Save provider access</button><button id="clearProvider" type="button">Forget saved keys</button><span id="providerStatus" class="inline-status" role="status"></span></div>
           <div class="service-actions"><button id="clearTranslationCache" type="button" title="Clear saved video captions and individual translations">Clear subtitle caches</button><span id="cacheStatus" class="inline-status"></span></div>
-          <p class="privacy">Fallback text is sent to the selected provider. Morphology and vocabulary stay local.</p>
+          <p class="privacy">Subtitle and lookup text is sent to the selected provider, and to any engine above that is allowed to take over when it runs out of requests. Morphology and vocabulary stay local.</p>
             </div>
           </details>
         </section>

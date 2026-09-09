@@ -34,6 +34,17 @@ async function testCaptionProcessing() {
   const elisionTools = extract(source, "  function splitFrenchElision", "  function tagFrenchWord");
   const nativeMessageFilter = extract(source, "  function isNativeCaptionSystemMessage", "  function readNativeCaptionText");
   const captureCrop = extract(translatorSource, "function captureCropPixels", "function loadImage");
+
+  // Which engines may take over when the selected one runs out of requests is a
+  // per-location setting, and a request that does not say where it came from is
+  // treated as a word lookup, which never substitutes an engine. A live subtitle
+  // cue uses the same message type as a lookup, so it has to say so explicitly or
+  // it would silently stop falling back.
+  const liveCue = extract(source, "  async function translateLiveSourceCue", "  function commitLiveSourceCue");
+  assert(/purpose: "subtitles"/.test(liveCue), "A live subtitle cue identifies itself as a subtitle");
+  const nativePrefetch = extract(source, "  function handleObservedNativeSource", "  function stopNativeCapture");
+  assert(/purpose: "subtitles"/.test(nativePrefetch), "So does the prefetch that runs ahead of it");
+  assert(/purpose: "translator"/.test(translatorSource), "The translator page identifies itself so its own switch applies");
   const context = { console, scheduleVideoSnapshot() {} };
   vm.createContext(context);
   vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${elisionTools}\n${nativeMessageFilter}\nconst clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));\n${captureCrop}`, context);

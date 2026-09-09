@@ -45,6 +45,16 @@ const DEFAULT_SETTINGS = {
   pronunciationRate: 0.88,
   captionOffsetMs: 0,
   translationProvider: "google",
+  // Which translation locations may continue on another engine when the selected
+  // one runs out of requests. Subtitles and the translator page are read once, so
+  // finishing the line matters more than which engine finished it. A word lookup
+  // is saved into the vocabulary and studied, so it stays on the engine that was
+  // chosen for it unless this is switched on deliberately.
+  translationFallback: {
+    subtitles: true,
+    lookups: false,
+    translator: true
+  },
   bottomOffset: 72,
   maxWidth: 88,
   mymemoryEmail: "",
@@ -99,6 +109,7 @@ function mergeSettings(value = {}) {
     studyMode: ["watch", "study", "shadow"].includes(value.studyMode) ? value.studyMode : "watch",
     wordGroupPaletteVersion: 3,
     wordGroupColors,
+    translationFallback: { ...DEFAULT_SETTINGS.translationFallback, ...(value.translationFallback || {}) },
     sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
     targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
   };

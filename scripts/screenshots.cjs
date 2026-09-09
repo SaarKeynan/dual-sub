@@ -171,7 +171,7 @@ const stub = (page) => page.evaluateOnNewDocument((entries) => {
     await page.close();
   }
 
-  for (const [name, file, width, height, click] of [
+  for (const [name, file, width, height, click, scrollTo] of [
     ["popup", "popup/popup.html", 400, 640],
     ["popup-wide", "popup/popup.html", 1200, 900],
     ["vocabulary", "vocabulary/vocabulary.html", 1280, 900],
@@ -179,6 +179,9 @@ const stub = (page) => page.evaluateOnNewDocument((entries) => {
     // The word list is the study surface now, so it needs its own look.
     ["sidebar-words", "sidebar/sidebar.html", 340, 900, '[data-view="words"]'],
     ["sidebar-tab", "sidebar/sidebar.html?followTab=1", 1100, 760],
+    // The per-location fallback switches sit behind a tab and a disclosure, so
+    // reaching them takes two clicks.
+    ["popup-translation", "popup/popup.html", 400, 900, ['[data-panel="general"]', "#panel-general section details:nth-of-type(2) summary"], ".fallback-group"],
     ["help", "help/pronunciation.html", 900, 820]
   ]) {
     const page = await browser.newPage();
@@ -187,7 +190,14 @@ const stub = (page) => page.evaluateOnNewDocument((entries) => {
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
     await page.goto("file:///" + path.join(root, file).replace(/\\/g, "/"), { waitUntil: "load" });
     await new Promise((resolve) => setTimeout(resolve, 400));
-    if (click) { await page.click(click); await new Promise((resolve) => setTimeout(resolve, 200)); }
+    for (const selector of [].concat(click || [])) {
+      await page.click(selector);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (scrollTo) {
+      await page.evaluate((selector) => document.querySelector(selector)?.scrollIntoView({ block: "center" }), scrollTo);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
     await page.screenshot({ path: path.join(out, `${name}.png`) });
     report.push([name, await page.evaluate(() => ({
       bodyFont: getComputedStyle(document.body).fontFamily.split(",")[0],

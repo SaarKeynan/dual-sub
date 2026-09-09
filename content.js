@@ -616,6 +616,7 @@
       const response = await browser.runtime.sendMessage({
         type: "translate-selection",
         text,
+        purpose: "subtitles",
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
         context: liveSourceText || text
@@ -708,6 +709,7 @@
         browser.runtime.sendMessage({
           type: "translate-selection",
           text: nativeSourceText,
+          purpose: "subtitles",
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
           context: nativeSourceText

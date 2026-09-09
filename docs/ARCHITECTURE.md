@@ -162,6 +162,8 @@ The engine:
 - deduplicates concurrent word and phrase lookups in `background.js`;
 - retries temporary failures with `Retry-After`-aware delays;
 - opens a per-provider circuit after repeated failures or rate limits;
+- continues a request on the next eligible engine when the selected one has run
+  out of requests, for the translation locations that allow it;
 - supports session cancellation when the video changes;
 - reports provider health and cache statistics to the settings UI;
 - returns `provider`, `provenance`, `cacheHit`, and any alignment information

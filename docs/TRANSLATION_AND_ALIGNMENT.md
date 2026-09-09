@@ -43,12 +43,42 @@ complete tracks, buffered provider translation, or live fallback.
 ## How provider translation is selected
 
 The setting `translationProvider` selects Google, Azure, DeepL, MyMemory, or
-LibreTranslate. There is no hidden provider cascade for normal caption lines:
-the selected provider is used until it succeeds, fails, or is rate-limited.
+LibreTranslate. It is used until it succeeds, fails, or runs out of requests.
 
-The exception is a short word lookup that appears clearly unreliable. A bad
-result from MyMemory, Azure, DeepL, or LibreTranslate may be retried through the
-Google concise-word path. An unreliable result already produced by Google is
+Running out of requests is the one failure another engine can answer, and
+`translationFallback` decides where that is allowed. It holds one switch per
+translation location, because the locations do not carry the same risk:
+
+| Location | Covers | Default |
+| --- | --- | --- |
+| `subtitles` | Caption batches and the live-cue path | on |
+| `translator` | The standalone translator page | on |
+| `lookups` | Word and phrase lookups, and word preloading | off |
+
+A subtitle is read once and then gone, so finishing the line matters more than
+which engine finished it. A word meaning is saved into the vocabulary and
+studied for weeks, so it stays on the chosen engine unless the reader switches
+that on deliberately. Preloading follows the `lookups` switch rather than having
+its own, because the lookup card and the sidebar word list read preloaded and
+hovered meanings from the same cache.
+
+Eligible engines are tried cheapest first — Google, MyMemory, LibreTranslate,
+Azure, DeepL — so a free engine absorbs an overflow before a paid key is spent.
+An engine whose key or endpoint is missing is skipped rather than attempted,
+because a missing credential fails identically every time. Only a rate limit, or
+a circuit a rate limit opened, advances the chain: a missing key, an empty
+response, and a session cancelled by navigation do not. Every candidate is asked
+of the cache before it is allowed to spend a request, since cache keys carry the
+provider. A result produced by a substitute engine carries `fellBackFrom`, and
+its `provenance` names the engine that actually answered, never the selected one.
+
+Because cache keys carry the provider, lines translated by a substitute stay as
+that engine translated them once the selected engine recovers. Mixed-provider
+subtitles within one video are the expected result, not a fault.
+
+A separate exception is a short word lookup that appears clearly unreliable. A
+bad result from MyMemory, Azure, DeepL, or LibreTranslate may be retried through
+the Google concise-word path. An unreliable result already produced by Google is
 rejected instead of repeatedly calling the same service.
 
 ### Lookup decision order
@@ -63,6 +93,8 @@ identical request already in flight
 persistent provider-specific cache
         ↓ absent
 selected translation provider
+        ↓ out of requests, and lookups may change engine
+next eligible engine, cheapest first
         ↓ suspicious short-word result
 Google concise-word fallback, unless Google was already selected
 ```
@@ -80,6 +112,10 @@ The source row in the lookup card exposes the outcome:
   **Google web**, or **MyMemory** means an engine request supplied the result;
 - **Google concise fallback** means another engine's short-word answer failed
   the quality check and Google supplied the replacement.
+
+A result that a substitute engine supplied names that engine, so a lookup made
+while DeepL was out of requests reads **Google web**, not **DeepL contextual**.
+The result also carries `fellBackFrom` with the engine that ran dry.
 
 The adjacent provider link opens the same source text in a public Google,
 MyMemory, DeepL, or Microsoft Translator lookup. A self-hosted LibreTranslate

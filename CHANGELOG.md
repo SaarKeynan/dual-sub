@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — finishing the line when an engine runs out
+
+- A translation engine that has run out of requests no longer stops English for
+  the rest of the video. The line continues on the next engine that is available,
+  and the lookup card names the engine that actually answered it rather than the
+  one you selected.
+- Where that is allowed is a switch per translation location, under Translation
+  service. Subtitles and the translator page start switched on: a subtitle is
+  read once, so finishing it matters more than which engine finished it. Word
+  meanings start switched off, because they are saved into your vocabulary and
+  studied for weeks, and preloaded words follow the same switch as hovered ones.
+- Engines are tried cheapest first — Google, MyMemory, LibreTranslate, Azure,
+  DeepL — so a free engine absorbs the overflow before a paid key is spent, and
+  an engine whose key or endpoint is missing is skipped rather than attempted.
+  With word meanings switched on, an Azure or DeepL key can now be spent without
+  being asked, once everything free has also run dry.
+- Only running out of requests moves to another engine. A missing key, an empty
+  answer, and leaving the video do not, and each engine is asked of the cache
+  before it is allowed to spend a request. Lines that a substitute translated
+  stay as that engine translated them after the selected one recovers, so one
+  video can hold subtitles from two engines.
+
 ## Unreleased — a sidebar you can actually study from
 
 - The sidebar's four overlapping "words from this video" surfaces are now one

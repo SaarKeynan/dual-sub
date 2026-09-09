@@ -308,6 +308,18 @@ async function popup() {
     voiceSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.equal(writes[writes.length - 1].pronunciationVoiceURI, "", "Explicitly choosing the default voice is saved");
+
+    // Falling back to another engine is one switch per translation location: a
+    // subtitle is read once, but a word lookup is saved and studied.
+    assert.equal(w.document.getElementById("fallbackSubtitles").checked, true, "Subtitles may finish on another engine by default");
+    assert.equal(w.document.getElementById("fallbackTranslator").checked, true);
+    const studiedWords = w.document.getElementById("fallbackLookups");
+    assert.equal(studiedWords.checked, false, "Studied words stay on the chosen engine until this is switched on");
+    studiedWords.checked = true;
+    studiedWords.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(writes[writes.length - 1].translationFallback, { subtitles: true, lookups: true, translator: true },
+      "Every location is written, so editing one switch cannot drop the others");
   } finally { w.close(); }
 }
 

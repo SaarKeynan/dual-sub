@@ -457,7 +457,7 @@ async function translateWordsIndividually(items, message) {
 // hundred texts at once. Translate them together, then apply exactly the same
 // quality checks a hover lookup applies so a preloaded meaning can never be one
 // the lookup card would have rejected.
-async function translateWordBatch(items, message, settings) {
+async function translateWordBatch(items, message, settings, fallbackProviders = []) {
   const sourceLanguage = message.sourceLanguage || settings.sourceLanguage;
   const targetLanguage = message.targetLanguage || settings.targetLanguage;
   // A word with no usable meaning stays null so the caller can tell it apart
@@ -486,7 +486,8 @@ async function translateWordBatch(items, message, settings) {
       sourceLanguage,
       targetLanguage,
       context: message.context,
-      sessionId: message.sessionId || `word-batch-${Date.now()}`
+      sessionId: message.sessionId || `word-batch-${Date.now()}`,
+      fallbackProviders
     },
     settings
   );
@@ -509,15 +510,44 @@ async function translateWordBatch(items, message, settings) {
   return { results, health: DualSubTranslation.health() };
 }
 
+// Cheapest first. An engine that costs nothing absorbs the overflow before any
+// paid key is spent, and an engine whose credentials are missing is skipped
+// rather than attempted, because a missing key fails identically every time.
+const FALLBACK_ORDER = ["google", "mymemory", "libretranslate", "azure", "deepl"];
+
+// Anything that is not a subtitle or the translator page is treated as a lookup,
+// so a caller that forgets to say where it is translating from gets the pinned
+// behaviour rather than the substituting one.
+function fallbackLocation(purpose) {
+  return ["subtitles", "translator"].includes(purpose) ? purpose : "lookups";
+}
+
+async function fallbackProvidersFor(purpose, settings) {
+  if (!settings.translationFallback?.[fallbackLocation(purpose)]) return [];
+  const secrets = await DualSubTranslation.providerSecrets();
+  const configured = {
+    google: true,
+    mymemory: true,
+    libretranslate: Boolean(secrets.libreEndpoint?.trim()),
+    azure: Boolean(secrets.azureKey?.trim()),
+    deepl: Boolean(secrets.deeplKey?.trim())
+  };
+  return FALLBACK_ORDER.filter((provider) => configured[provider]);
+}
+
 async function translateBatchMessage(message) {
   const settings = await getSettings();
   if (Array.isArray(message.items) && message.items.length && message.items.every((item) => String(item.cacheId || "").startsWith("word:"))) {
     const items = message.items.slice(0, 1000);
+    // These are word meanings whatever asked for them, so they follow the lookup
+    // switch: the card and the sidebar read preloaded and hovered words from the
+    // same cache, and two switches could only drift apart.
+    const fallbackProviders = await fallbackProvidersFor("lookups", settings);
     // MyMemory sends one request per text and rejects the whole call when a
     // single answer looks unreliable, so batching it would only waste requests.
     return settings.translationProvider === "mymemory"
       ? translateWordsIndividually(items, message)
-      : translateWordBatch(items, message, settings);
+      : translateWordBatch(items, message, settings, fallbackProviders);
   }
   return DualSubTranslation.translateBatch(message.items, {
     provider: message.provider || settings.translationProvider,
@@ -526,7 +556,8 @@ async function translateBatchMessage(message) {
     videoId: message.videoId,
     context: message.context,
     providerVersion: message.providerVersion,
-    sessionId: message.sessionId
+    sessionId: message.sessionId,
+    fallbackProviders: await fallbackProvidersFor(message.purpose || "subtitles", settings)
   }, settings);
 }
 
@@ -671,7 +702,8 @@ async function translateSelectionWithEngine(message) {
       // cancellation, and cacheKeyFor ignores it, so peek and fetch still agree.
       batch = await DualSubTranslation.translateBatch([item], {
         ...options,
-        sessionId: message.sessionId || `lookup-${Date.now()}`
+        sessionId: message.sessionId || `lookup-${Date.now()}`,
+        fallbackProviders: await fallbackProvidersFor(message.purpose || "lookups", settings)
       }, settings);
     } catch (error) {
       if (settings.translationProvider !== "mymemory" || message.cacheMode !== "word" || error.code !== "MYMEMORY_UNRELIABLE_RESULT") throw error;
