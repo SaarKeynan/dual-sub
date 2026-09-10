@@ -320,6 +320,25 @@ async function popup() {
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.deepEqual(writes[writes.length - 1].translationFallback, { subtitles: true, lookups: true, translator: true },
       "Every location is written, so editing one switch cannot drop the others");
+
+    // Cheapest first is only a default, so the order is a list the reader can
+    // rearrange. Dragging cannot be exercised here — jsdom has no drag-and-drop
+    // — so the buttons that exist for keyboard and touch carry the test, and the
+    // rows are checked to be draggable at all.
+    const engineOrder = () => Array.from(w.document.querySelectorAll("#fallbackOrder li")).map((row) => row.dataset.provider);
+    assert.deepEqual(engineOrder(), ["google", "mymemory", "libretranslate", "azure", "deepl"], "The list starts cheapest first");
+    assert.equal(w.document.querySelector("#fallbackOrder li").draggable, true, "Rows can be dragged");
+    w.document.querySelector('#fallbackOrder li[data-provider="deepl"] [data-move="up"]').click();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(engineOrder(), ["google", "mymemory", "libretranslate", "deepl", "azure"],
+      "Moving an engine up swaps it with the one above");
+    assert.deepEqual(writes[writes.length - 1].translationFallbackOrder, ["google", "mymemory", "libretranslate", "deepl", "azure"],
+      "and the whole order is saved, not just the moved engine");
+
+    // The engine at the top has nothing to swap with, so its up button must not
+    // be offerable: a control that silently does nothing is worse than none.
+    assert.equal(w.document.querySelector('#fallbackOrder li[data-provider="google"] [data-move="up"]').disabled, true);
+    assert.equal(w.document.querySelector('#fallbackOrder li[data-provider="azure"] [data-move="down"]').disabled, true);
   } finally { w.close(); }
 }
 

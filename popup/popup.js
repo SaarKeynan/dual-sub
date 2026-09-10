@@ -6,6 +6,16 @@ let saveTimer;
 // and a saved word meaning is studied.
 const FALLBACK_SWITCHES = [["subtitles", "fallbackSubtitles"], ["translator", "fallbackTranslator"], ["lookups", "fallbackLookups"]];
 
+const ENGINE_NAMES = {
+  google: "Google", mymemory: "MyMemory", libretranslate: "LibreTranslate", azure: "Azure", deepl: "DeepL"
+};
+
+// An engine with no credentials stays in the list and stays movable: it is only
+// skipped when the chain runs, and hiding it would make the order look wrong the
+// moment a key is pasted.
+let providerReadiness = { google: "free", mymemory: "free", libretranslate: "no endpoint", azure: "no key", deepl: "no key" };
+let fallbackOrder = [];
+
 const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation", "preloadVideoWords",
   "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "smartPauseUnknownOnly", "skipCaptionGaps", "hoverDelay", "studyMode",
@@ -215,6 +225,8 @@ function setFormValues() {
   element("pronunciationVoiceURI").value = settings.pronunciationVoiceURI || "";
   element("pronunciationRate").value = settings.pronunciationRate || 0.88;
   for (const [location, id] of FALLBACK_SWITCHES) element(id).checked = Boolean(settings.translationFallback?.[location]);
+  fallbackOrder = [...(settings.translationFallbackOrder || DualSubSettings.engines)];
+  renderFallbackOrder();
   for (const group of ["unknown", "noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"]) {
     const id = `wordGroupColor${group[0].toUpperCase()}${group.slice(1)}`;
     element(id).value = settings.wordGroupColors[group];
@@ -231,6 +243,90 @@ function setFormValues() {
     element(`${prefix}Italic`).checked = style.italic;
   }
   updateOutputs();
+}
+
+function renderFallbackOrder() {
+  const list = element("fallbackOrder");
+  list.replaceChildren(...fallbackOrder.map((provider, position) => {
+    const row = document.createElement("li");
+    row.dataset.provider = provider;
+    row.draggable = true;
+    const grip = document.createElement("span");
+    grip.className = "grip";
+    grip.textContent = "⠿";
+    grip.setAttribute("aria-hidden", "true");
+    const name = document.createElement("span");
+    name.className = "engine";
+    name.textContent = ENGINE_NAMES[provider] || provider;
+    const state = document.createElement("span");
+    state.className = "state";
+    state.textContent = providerReadiness[provider];
+    state.dataset.ready = String(!String(providerReadiness[provider]).startsWith("no "));
+    row.append(grip, name, state);
+    for (const [direction, glyph, offset] of [["up", "▲", -1], ["down", "▼", 1]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.move = direction;
+      button.textContent = glyph;
+      button.disabled = position + offset < 0 || position + offset >= fallbackOrder.length;
+      button.setAttribute("aria-label", `Move ${ENGINE_NAMES[provider] || provider} ${direction}`);
+      button.addEventListener("click", () => moveEngine(provider, offset));
+      row.append(button);
+    }
+    return row;
+  }));
+}
+
+function moveEngine(provider, offset) {
+  const from = fallbackOrder.indexOf(provider);
+  const to = from + offset;
+  if (from < 0 || to < 0 || to >= fallbackOrder.length) return;
+  fallbackOrder.splice(to, 0, ...fallbackOrder.splice(from, 1));
+  renderFallbackOrder();
+  scheduleSave();
+}
+
+function placeEngine(provider, beforeProvider) {
+  const from = fallbackOrder.indexOf(provider);
+  if (from < 0 || provider === beforeProvider) return;
+  const without = fallbackOrder.filter((entry) => entry !== provider);
+  const target = beforeProvider ? without.indexOf(beforeProvider) : without.length;
+  without.splice(target < 0 ? without.length : target, 0, provider);
+  fallbackOrder = without;
+  renderFallbackOrder();
+  scheduleSave();
+}
+
+function enableFallbackDragging() {
+  const list = element("fallbackOrder");
+  let dragged = "";
+  list.addEventListener("dragstart", (event) => {
+    const row = event.target.closest("li");
+    if (!row) return;
+    dragged = row.dataset.provider;
+    row.dataset.dragging = "true";
+    event.dataTransfer.effectAllowed = "move";
+    // Firefox starts no drag at all unless something is written here.
+    event.dataTransfer.setData("text/plain", dragged);
+  });
+  list.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const row = event.target.closest("li");
+    for (const other of list.children) delete other.dataset.dropbefore;
+    if (row && row.dataset.provider !== dragged) row.dataset.dropbefore = "true";
+  });
+  list.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const row = event.target.closest("li");
+    const provider = dragged || event.dataTransfer.getData("text/plain");
+    for (const other of list.children) delete other.dataset.dropbefore;
+    if (provider) placeEngine(provider, row?.dataset.provider || "");
+  });
+  list.addEventListener("dragend", () => {
+    dragged = "";
+    for (const other of list.children) { delete other.dataset.dragging; delete other.dataset.dropbefore; }
+  });
 }
 
 function readFormValues() {
@@ -264,6 +360,7 @@ function readFormValues() {
   settings.pronunciationRate = Number(element("pronunciationRate").value);
   // Written whole: a partial object would let one edited switch drop the others.
   settings.translationFallback = Object.fromEntries(FALLBACK_SWITCHES.map(([location, id]) => [location, element(id).checked]));
+  settings.translationFallbackOrder = [...fallbackOrder];
   settings.wordGroupColors = {};
   for (const group of ["unknown", "noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"]) {
     const id = `wordGroupColor${group[0].toUpperCase()}${group.slice(1)}`;
@@ -488,6 +585,14 @@ async function initialize() {
     element("deeplKey").placeholder = providerResponse.secrets.deeplKey ? "Saved · enter a replacement" : "Paste a DeepL API key";
     element("libreEndpoint").value = providerResponse.secrets.libreEndpoint || "";
     element("libreApiKey").placeholder = providerResponse.secrets.libreApiKey ? "Saved · enter a replacement" : "Optional";
+    providerReadiness = {
+      google: "free",
+      mymemory: "free",
+      libretranslate: providerResponse.secrets.libreEndpoint ? "endpoint set" : "no endpoint",
+      azure: providerResponse.secrets.azureKey ? "key saved" : "no key",
+      deepl: providerResponse.secrets.deeplKey ? "key saved" : "no key"
+    };
+    renderFallbackOrder();
   }
   const cacheResponse = await browser.runtime.sendMessage({ type: "get-translation-cache-stats" }).catch(() => null);
   if (cacheResponse?.ok) element("cacheStatus").textContent = `${cacheResponse.cache.entries} cached translations`;
@@ -500,6 +605,7 @@ async function initialize() {
     setFormValues(); scheduleSave();
   });
   element("translationProvider").addEventListener("change", updateProviderFields);
+  enableFallbackDragging();
   element("reset").addEventListener("click", () => {
     settings = {
       ...settings,

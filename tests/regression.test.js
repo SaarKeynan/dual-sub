@@ -574,6 +574,39 @@ async function providerFallbackTests() {
   assert.equal(overflow.results[0].translatedText, "hello from libre");
   assert.deepEqual(orderedHosts, ["translate.googleapis.com", "api.mymemory.translated.net", "libre.example"],
     "Free engines are tried first, unconfigured Azure is skipped, and the DeepL key is never spent");
+
+  // Cheapest first is only the default. A reader who would rather spend a paid
+  // key than read a worse translation reorders the list, and that order decides.
+  const preferred = background({
+    settings: { translationFallbackOrder: ["deepl", "mymemory", "google", "libretranslate", "azure"] }
+  }).context;
+  await preferred.DualSubTranslation.saveProviderSecrets({ deeplKey: "paid-key" });
+  const preferredHosts = [];
+  preferred.fetch = async (url) => {
+    const target = new URL(url);
+    preferredHosts.push(target.host);
+    if (target.host === "translate.googleapis.com") return { ok: false, status: 429, headers: { get: () => "60" } };
+    if (target.host === "api-free.deepl.com") return { ok: true, json: async () => ({ translations: [{ text: "good evening" }] }) };
+    throw new Error(`Unexpected engine contacted: ${target.host}`);
+  };
+  const paid = await preferred.translateBatchMessage({ items: [{ text: "bonsoir", cacheId: "line:3" }], sessionId: "preferred" });
+  assert.equal(paid.results[0].translatedText, "good evening");
+  assert.equal(paid.results[0].provider, "deepl");
+  assert.deepEqual(preferredHosts, ["translate.googleapis.com", "api-free.deepl.com"],
+    "The chosen order decides, so MyMemory is not tried before the engine placed above it");
+
+  // A stored order arrives from sync storage and may be older than this version,
+  // truncated, or corrupt. Trusting it would silently shorten the chain.
+  const settings = background().context.DualSubSettings;
+  // Spread out of the vm realm: a cross-realm array fails a strict deep compare
+  // on its prototype rather than its contents.
+  const order = (value) => [...settings.merge({ translationFallbackOrder: value }).translationFallbackOrder];
+  assert.deepEqual(order(["mymemory", "mymemory", "nonsense"]),
+    ["mymemory", "google", "libretranslate", "azure", "deepl"],
+    "A stored order is repaired: the choice is kept, duplicates and unknown engines go, and missing engines are appended");
+  assert.deepEqual(order("not a list"),
+    ["google", "mymemory", "libretranslate", "azure", "deepl"],
+    "and a value that is not a list falls back to the default order");
 }
 
 (async () => {

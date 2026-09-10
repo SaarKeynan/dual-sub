@@ -11,11 +11,14 @@
   read once, so finishing it matters more than which engine finished it. Word
   meanings start switched off, because they are saved into your vocabulary and
   studied for weeks, and preloaded words follow the same switch as hovered ones.
-- Engines are tried cheapest first — Google, MyMemory, LibreTranslate, Azure,
-  DeepL — so a free engine absorbs the overflow before a paid key is spent, and
-  an engine whose key or endpoint is missing is skipped rather than attempted.
-  With word meanings switched on, an Azure or DeepL key can now be spent without
-  being asked, once everything free has also run dry.
+- The order engines are tried in is a list you rearrange by dragging, with move
+  buttons on each row so it also works from the keyboard and on a touch screen.
+  It starts cheapest first — Google, MyMemory, LibreTranslate, Azure, DeepL — so
+  a free engine absorbs the overflow before a paid key is spent, and one order is
+  shared by every location. An engine whose key or endpoint is missing stays in
+  the list, marked, and is skipped when the chain runs. With word meanings
+  switched on, an Azure or DeepL key can be spent without being asked, once
+  everything above it has also run dry.
 - Only running out of requests moves to another engine. A missing key, an empty
   answer, and leaving the video do not, and each engine is asked of the cache
   before it is allowed to spend a request. Lines that a substitute translated

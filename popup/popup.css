@@ -111,7 +111,19 @@ input[type="checkbox"] { flex: 0 0 auto; accent-color: #3b82f6; }
 .check-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; line-height: 1.4; cursor: pointer; }
 .fallback-group { margin-top: 11px; padding: 9px 11px 11px; border: 1px solid #344158; border-radius: 9px; background: #101a2c; }
 .fallback-group legend { padding: 0 5px; color: #8797ae; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-.fallback-group .check-row:first-of-type { margin-top: 2px; }
+.fallback-order-label { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin: 2px 0 7px; font-size: 11px; }
+.fallback-order-label span { color: #8090a8; font-size: 10px; }
+.fallback-order { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.fallback-order li { display: flex; align-items: center; gap: 7px; padding: 6px 7px; border: 1px solid #2f3b51; border-radius: 7px; background: #0e1728; cursor: grab; }
+.fallback-order li[data-dragging="true"] { opacity: .45; }
+.fallback-order li[data-dropbefore="true"] { border-top-color: #60a5fa; box-shadow: 0 -2px 0 -1px #60a5fa; }
+.fallback-order .grip { color: #55637d; font-size: 12px; line-height: 1; cursor: grab; }
+.fallback-order .engine { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.fallback-order .state { flex: 0 0 auto; color: #8090a8; font-size: 10px; }
+.fallback-order .state[data-ready="false"] { color: #b98a6a; }
+.fallback-order button { min-width: 22px; min-height: 22px; padding: 0; border-radius: 5px; font-size: 10px; line-height: 1; }
+.fallback-order button:disabled { opacity: .32; cursor: default; }
+.fallback-group .check-row:first-of-type { margin-top: 12px; }
 .range-row, .field-label { display: block; margin-top: 11px; }
 .privacy { margin-top: 9px; color: #8090a8; font-size: 10px; line-height: 1.45; }
 .divider { height: 1px; margin: 11px 0; background: #2b374d; }

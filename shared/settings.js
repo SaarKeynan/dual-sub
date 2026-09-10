@@ -55,6 +55,10 @@ const DEFAULT_SETTINGS = {
     lookups: false,
     translator: true
   },
+  // The order eligible engines are tried in, cheapest first by default so a free
+  // engine absorbs an overflow before a paid key is spent. The reader reorders
+  // this in settings; the selected engine is always tried before any of it.
+  translationFallbackOrder: ["google", "mymemory", "libretranslate", "azure", "deepl"],
   bottomOffset: 72,
   maxWidth: 88,
   mymemoryEmail: "",
@@ -93,6 +97,18 @@ const WORD_GROUP_PALETTE_V2 = Object.freeze({
   interjection: "#94a3b8"
 });
 
+const TRANSLATION_ENGINES = ["google", "mymemory", "libretranslate", "azure", "deepl"];
+
+// A stored order arrives from sync storage and may be older than this version,
+// truncated, or corrupt, so it is repaired rather than trusted: spreading it
+// wholesale would silently shorten the fallback chain. The reader's choices are
+// kept in their order, and anything they never expressed a view on is appended.
+function mergeFallbackOrder(value) {
+  const stored = Array.isArray(value) ? value.filter((entry) => TRANSLATION_ENGINES.includes(entry)) : [];
+  const chosen = [...new Set(stored)];
+  return [...chosen, ...TRANSLATION_ENGINES.filter((engine) => !chosen.includes(engine))];
+}
+
 function mergeSettings(value = {}) {
   const storedColors = value.wordGroupColors || {};
   const wordGroupColors = { ...DEFAULT_SETTINGS.wordGroupColors, ...storedColors };
@@ -110,6 +126,7 @@ function mergeSettings(value = {}) {
     wordGroupPaletteVersion: 3,
     wordGroupColors,
     translationFallback: { ...DEFAULT_SETTINGS.translationFallback, ...(value.translationFallback || {}) },
+    translationFallbackOrder: mergeFallbackOrder(value.translationFallbackOrder),
     sourceStyle: { ...DEFAULT_SETTINGS.sourceStyle, ...(value.sourceStyle || {}) },
     targetStyle: { ...DEFAULT_SETTINGS.targetStyle, ...(value.targetStyle || {}) }
   };
@@ -123,5 +140,5 @@ function applyStudyMode(value, mode) {
   if (settings.studyMode === "study") settings.hoverLookup = true;
   return settings;
 }
-globalThis.DualSubSettings = Object.freeze({ defaults: DEFAULT_SETTINGS, merge: mergeSettings, applyStudyMode });
+globalThis.DualSubSettings = Object.freeze({ defaults: DEFAULT_SETTINGS, merge: mergeSettings, applyStudyMode, engines: TRANSLATION_ENGINES });
 })();

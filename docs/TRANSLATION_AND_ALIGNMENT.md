@@ -62,8 +62,14 @@ that on deliberately. Preloading follows the `lookups` switch rather than having
 its own, because the lookup card and the sidebar word list read preloaded and
 hovered meanings from the same cache.
 
-Eligible engines are tried cheapest first — Google, MyMemory, LibreTranslate,
-Azure, DeepL — so a free engine absorbs an overflow before a paid key is spent.
+Eligible engines are tried in the order held by `translationFallbackOrder`,
+which the reader rearranges by dragging the list in settings, or with the move
+buttons on each row for keyboard and touch. It defaults to cheapest first —
+Google, MyMemory, LibreTranslate, Azure, DeepL — so a free engine absorbs an
+overflow before a paid key is spent, and one order is shared by every location.
+A stored order is repaired on read rather than trusted: unknown and duplicate
+entries are dropped and missing engines appended, so an order written by another
+version can never shorten the chain.
 An engine whose key or endpoint is missing is skipped rather than attempted,
 because a missing credential fails identically every time. Only a rate limit, or
 a circuit a rate limit opened, advances the chain: a missing key, an empty

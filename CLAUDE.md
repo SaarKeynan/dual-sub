@@ -109,7 +109,9 @@ whether a live Firefox check was performed.
 - A rate limit may continue on another engine only where `translationFallback`
   allows it, one switch per translation location. Subtitles and the translator
   page default to on; word lookups and preloading default to off, because those
-  meanings are saved and studied. Try eligible engines cheapest first, skip an
+  meanings are saved and studied. Try eligible engines in the reader's
+  `translationFallbackOrder`, cheapest-first by default and shared by every
+  location; repair that stored order on read instead of trusting it. Skip an
   engine whose credentials are missing, and never advance the chain on a missing
   key, an empty response, or a cancelled session. A substituted result must name
   the engine that answered it.

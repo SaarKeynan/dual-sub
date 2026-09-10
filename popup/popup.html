@@ -96,10 +96,12 @@
           </div>
           <fieldset class="fallback-group">
             <legend>When the engine runs out of requests</legend>
+            <p class="fallback-order-label" id="fallbackOrderLabel">Order engines are tried <span>your selected engine goes first</span></p>
+            <ol id="fallbackOrder" class="fallback-order" aria-labelledby="fallbackOrderLabel"></ol>
             <label class="check-row"><input id="fallbackSubtitles" type="checkbox"> Finish subtitles on another engine</label>
             <label class="check-row"><input id="fallbackTranslator" type="checkbox"> Finish translator-page text on another engine</label>
             <label class="check-row"><input id="fallbackLookups" type="checkbox"> Change engine for word meanings too</label>
-            <p class="privacy">Word meanings are saved and studied, so they stay on the engine you chose unless you switch this on. Engines are tried cheapest first, and one whose key or endpoint is missing is skipped.</p>
+            <p class="privacy">Word meanings are saved and studied, so they stay on the engine you chose unless you switch this on. Engines are tried in the order above, and one whose key or endpoint is missing is skipped.</p>
           </fieldset>
           <div data-provider-config="azure">
             <label class="field-label">Azure Translator key

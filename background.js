@@ -510,11 +510,10 @@ async function translateWordBatch(items, message, settings, fallbackProviders = 
   return { results, health: DualSubTranslation.health() };
 }
 
-// Cheapest first. An engine that costs nothing absorbs the overflow before any
-// paid key is spent, and an engine whose credentials are missing is skipped
-// rather than attempted, because a missing key fails identically every time.
-const FALLBACK_ORDER = ["google", "mymemory", "libretranslate", "azure", "deepl"];
-
+// An engine whose credentials are missing is skipped rather than attempted,
+// because a missing key fails identically every time. The order itself is the
+// reader's, cheapest first until they change it.
+//
 // Anything that is not a subtitle or the translator page is treated as a lookup,
 // so a caller that forgets to say where it is translating from gets the pinned
 // behaviour rather than the substituting one.
@@ -532,7 +531,7 @@ async function fallbackProvidersFor(purpose, settings) {
     azure: Boolean(secrets.azureKey?.trim()),
     deepl: Boolean(secrets.deeplKey?.trim())
   };
-  return FALLBACK_ORDER.filter((provider) => configured[provider]);
+  return settings.translationFallbackOrder.filter((provider) => configured[provider]);
 }
 
 async function translateBatchMessage(message) {
