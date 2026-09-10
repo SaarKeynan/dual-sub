@@ -335,6 +335,23 @@ async function popup() {
     assert.deepEqual(writes[writes.length - 1].translationFallbackOrder, ["google", "mymemory", "libretranslate", "deepl", "azure"],
       "and the whole order is saved, not just the moved engine");
 
+    // Each switch carries an explanation of what it actually affects. Hover is
+    // CSS and cannot be exercised here, so the test covers what a reader without
+    // a mouse depends on: the button is real, it describes a bubble that exists
+    // and names the surface, and a tap opens it.
+    for (const [id, surface] of [["fallbackSubtitles", /subtitle/i], ["fallbackTranslator", /translate/i], ["fallbackLookups", /lookup/i]]) {
+      const line = w.document.getElementById(id).closest(".check-line");
+      const info = line?.querySelector(".info");
+      assert(info, id + " has an info button");
+      const bubble = w.document.getElementById(info.getAttribute("aria-describedby"));
+      assert(bubble, id + " describes a bubble that exists");
+      assert(surface.test(bubble.textContent), id + " says which surface it affects");
+      info.click();
+      assert.equal(bubble.dataset.open, "true", "A tap opens it, since a touch screen cannot hover");
+      info.click();
+      assert.notEqual(bubble.dataset.open, "true", "and taps it shut again");
+    }
+
     // The search index is hand-maintained, so a setting missing from it is a
     // setting the reader cannot find: this one is folded inside a collapsed
     // section on a tab they may never open.

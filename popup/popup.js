@@ -607,6 +607,16 @@ async function initialize() {
   });
   element("translationProvider").addEventListener("change", updateProviderFields);
   enableFallbackDragging();
+  // Hover and focus are handled in CSS; the click is for touch, which has
+  // neither, and it closes any other explanation that is pinned open.
+  for (const info of document.querySelectorAll(".info")) {
+    info.addEventListener("click", () => {
+      const bubble = info.nextElementSibling;
+      const open = bubble.dataset.open !== "true";
+      for (const other of document.querySelectorAll(".info-bubble")) delete other.dataset.open;
+      if (open) bubble.dataset.open = "true";
+    });
+  }
   element("reset").addEventListener("click", () => {
     settings = {
       ...settings,

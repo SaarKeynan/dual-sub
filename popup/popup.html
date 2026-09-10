@@ -98,10 +98,22 @@
             <legend>When the engine runs out of requests</legend>
             <p class="fallback-order-label" id="fallbackOrderLabel">Order engines are tried <span>your selected engine goes first</span></p>
             <ol id="fallbackOrder" class="fallback-order" aria-labelledby="fallbackOrderLabel"></ol>
-            <label class="check-row"><input id="fallbackSubtitles" type="checkbox"> Finish subtitles on another engine</label>
-            <label class="check-row"><input id="fallbackTranslator" type="checkbox"> Finish translator-page text on another engine</label>
-            <label class="check-row"><input id="fallbackLookups" type="checkbox"> Change engine for word meanings too</label>
-            <p class="privacy">Word meanings are saved and studied, so they stay on the engine you chose unless you switch this on. Engines are tried in the order above, and one whose key or endpoint is missing is skipped.</p>
+            <div class="check-line">
+              <label class="check-row"><input id="fallbackSubtitles" type="checkbox"> Finish subtitles on another engine</label>
+              <button class="info" type="button" aria-describedby="fallbackSubtitlesInfo" aria-label="What finish subtitles on another engine affects">i</button>
+              <p class="info-bubble" id="fallbackSubtitlesInfo" role="note">Affects the subtitle rows on the video, including the live rows on auto-generated captions.</p>
+            </div>
+            <div class="check-line">
+              <label class="check-row"><input id="fallbackTranslator" type="checkbox"> Finish translator-page text on another engine</label>
+              <button class="info" type="button" aria-describedby="fallbackTranslatorInfo" aria-label="What finish translator-page text on another engine affects">i</button>
+              <p class="info-bubble" id="fallbackTranslatorInfo" role="note">Affects the Translate workspace, where you type or paste French.</p>
+            </div>
+            <div class="check-line">
+              <label class="check-row"><input id="fallbackLookups" type="checkbox"> Change engine for word meanings too</label>
+              <button class="info" type="button" aria-describedby="fallbackLookupsInfo" aria-label="What change engine for word meanings too affects">i</button>
+              <p class="info-bubble" id="fallbackLookupsInfo" role="note">Affects word and phrase lookups: the hover card, the sidebar word list, and words preloaded for the video.</p>
+            </div>
+            <p class="privacy">Engines are tried in the order above, and one whose key or endpoint is missing is skipped.</p>
           </fieldset>
           <div data-provider-config="azure">
             <label class="field-label">Azure Translator key

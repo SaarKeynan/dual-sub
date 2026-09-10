@@ -182,6 +182,9 @@ const stub = (page) => page.evaluateOnNewDocument((entries) => {
     // The per-location fallback switches sit behind a tab and a disclosure, so
     // reaching them takes two clicks.
     ["popup-translation", "popup/popup.html", 400, 900, ['[data-panel="general"]', "#panel-general section details:nth-of-type(2) summary"], ".fallback-group"],
+    // The explanations open on hover, so they appear in no other shot. The last
+    // click pins one open the way a tap does.
+    ["popup-fallback-info", "popup/popup.html", 400, 900, ['[data-panel="general"]', "#panel-general section details:nth-of-type(2) summary", '[aria-describedby="fallbackLookupsInfo"]'], ".fallback-group"],
     ["help", "help/pronunciation.html", 900, 820]
   ]) {
     const page = await browser.newPage();
