@@ -335,6 +335,20 @@ async function popup() {
     assert.deepEqual(writes[writes.length - 1].translationFallbackOrder, ["google", "mymemory", "libretranslate", "deepl", "azure"],
       "and the whole order is saved, not just the moved engine");
 
+    // The search index is hand-maintained, so a setting missing from it is a
+    // setting the reader cannot find: this one is folded inside a collapsed
+    // section on a tab they may never open.
+    const search = w.document.getElementById("settingsSearch");
+    search.value = "fallback";
+    search.dispatchEvent(new w.Event("input", { bubbles: true }));
+    await settle();
+    const hit = w.document.querySelector("#settingsSearchResults button");
+    assert(hit, "Searching for the fallback setting finds it");
+    hit.click();
+    await settle();
+    assert.equal(w.document.getElementById("fallbackOrder").closest("details").open, true,
+      "and going there opens the section it is folded inside");
+
     // The engine at the top has nothing to swap with, so its up button must not
     // be offerable: a control that silently does nothing is worse than none.
     assert.equal(w.document.querySelector('#fallbackOrder li[data-provider="google"] [data-move="up"]').disabled, true);

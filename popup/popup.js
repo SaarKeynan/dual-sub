@@ -41,6 +41,7 @@ const settingDestinations = [
   ["Hold captions between lines", "duration disappear hold lines", "captionHoldMs", "general"],
   ["Translation engine", "provider azure deepl google mymemory libretranslate api key", "translationProvider", "general"],
   ["Translation preload", "buffer ahead batch loading speed", "translationBufferSeconds", "general"],
+  ["Engine fallback and order", "fallback order drag chain rate limit runs out of requests another engine subtitles word meanings cheapest paid key", "fallbackOrder", "general"],
   ["French subtitle style", "French font size text color background opacity italic", "sourceFontSize", "appearance", "source"],
   ["English subtitle style", "English translation font size text color background opacity italic", "targetFontSize", "appearance", "target"],
   ["Color French words by grammar", "word group part speech toggle", "colorFrenchWordGroups", "appearance", "source"],

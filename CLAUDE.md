@@ -45,6 +45,15 @@ whether a live Firefox check was performed.
   matching `manifest.json` list (`content_scripts[].js` or `background.scripts`),
   the hand-enumerated `check` script in `package.json`, and `web-ext-config.cjs`
   if it is development-only.
+- A new setting also needs three places: the defaults and any sanitizing in
+  `shared/settings.js`, the form binding in `popup/popup.js` (the `ids` list, or
+  its own render and read for a control that is not a single input), and the
+  hand-maintained `settingDestinations` search index in the same file. Miss the
+  index and the setting is effectively unfindable: most settings sit inside a
+  collapsed `<details>` on a tab, and the search box is how a reader reaches
+  them. `mergeSettings` spreads stored values over the defaults, so a setting
+  whose stored value could be malformed, such as an array or a nested object,
+  needs its own repair step rather than a shallow spread.
 - `tests/smoke.test.js` slices function bodies out of `content.js` by name
   markers (for example `refreshCueAlignment` through `startAheadTranslation`)
   and asserts on literal source and CSS strings. Renaming, reordering, or moving
