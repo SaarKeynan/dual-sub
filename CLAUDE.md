@@ -73,6 +73,16 @@ whether a live Firefox check was performed.
   `vendor/lexique/SOURCE.md` after regenerating.
 - `docs/ARCHITECTURE.md` and `docs/TRANSLATION_AND_ALIGNMENT.md` state the
   version they describe in their first paragraph; update both on release.
+- Regenerating `vendor/wiktionary/french-english.txt` needs
+  `vendor/wiktionary/kaikki-french.jsonl`, which is gitignored, excluded from
+  the package in `web-ext-config.cjs`, and must be downloaded separately from
+  the URL recorded in `vendor/wiktionary/SOURCE.md`. Run
+  `node scripts/build-dictionary.js`; the output must stay code-unit sorted,
+  same as the Lexique indexes, and `vendor/wiktionary/*.txt` is marked `-text`
+  in `.gitattributes` for the same reason. Bump `DATA_VERSION` in
+  `dictionary.js` whenever the shipped file changes, or an existing install
+  keeps importing its old IndexedDB store instead of the new one. Update the
+  SHA-256 hash in `vendor/wiktionary/SOURCE.md` after regenerating.
 - Google's keyless `translate_a/single` endpoint translates exactly one `q` and
   silently ignores any others, so repeating `q` does not batch and looks like a
   success. It does return one chunk per newline-separated line, and each chunk
@@ -93,6 +103,9 @@ whether a live Firefox check was performed.
   requests, translation orchestration, commands, and screenshot capture.
 - `translation-engine.js` owns provider adapters, translation caching,
   cancellation, retries, backoff, and provider health.
+- `dictionary.js` owns the bundled French-English dictionary: importing the
+  shipped Wiktionary derivative into IndexedDB and answering single-word
+  lookups before any provider is asked.
 - `video-cache.js` persists timed caption tracks and available translations
   across refreshes using IndexedDB with a bounded local-storage fallback.
 - `language/french.js` handles local morphology, elisions, grammatical readings,
@@ -121,8 +134,11 @@ whether a live Firefox check was performed.
   word returns a segment containing it rather than its meaning. Measured over ten
   common words it was right four times and wrong four. `mymemoryWordLookup` is
   therefore off by default, sending single words to the concise Google path, but
-  it is a default the reader can override, not a hardcoded substitution. Caption
-  lines and phrases always use it, because those are segments. Its match/quality scores do not
+  it is a default the reader can override, not a hardcoded substitution. A single
+  word reaches MyMemory or Google at all only on a bundled-dictionary miss (or
+  with `dictionaryLookup` off); a dictionary hit answers first and never touches
+  the cache or an engine. Caption lines and phrases always use it, because those
+  are segments, and never consult the dictionary. Its match/quality scores do not
   guarantee a correct meaning: the observed `avez` result `her name is Anna`
   carries quality=100, and `armées` returned `10 + 4 Armed`, a numbered segment
   leaking its numbering that every length-based check passed. Word-quality checks

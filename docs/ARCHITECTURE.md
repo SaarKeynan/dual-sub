@@ -18,6 +18,7 @@ YouTube page context                   Firefox extension context
                                      ┌──────────────▼───────────────┐
                                      │ background.js                │
                                      │ translation-engine.js        │
+                                     │ dictionary.js                │
                                      │ data, network, OCR capture   │
                                      └───────┬──────────────────────┘
                                              │ runtime messages/storage
@@ -52,6 +53,7 @@ YouTube page context                   Firefox extension context
 | `page-bridge.js` | Reads and controls YouTube player internals from the page context |
 | `background.js` | Settings defaults, extension messages, vocabulary, corrections, video profiles, caption proxy, commands, and OCR capture |
 | `translation-engine.js` | Translation providers, batching, cache, retry/backoff, cancellation, and health metrics |
+| `dictionary.js` | Bundled French-English dictionary: imports the shipped Wiktionary derivative into IndexedDB and answers single-word lookups |
 | `video-cache.js` | Persistent per-video caption/translation snapshots, expiry, merging, and cache clearing |
 | `language/french.js` | French morphology, infinitives, elisions, lexical information, and word-group classification |
 | `popup/*` | Home workspace launcher plus searchable General, Appearance, and Tools settings |
@@ -184,6 +186,26 @@ The content script also holds a short-lived in-memory lookup cache. It makes
 repeated hover lookups instant and stores source metadata so the card can say
 whether a result came from the session cache, persistent cache, saved
 correction, or a live provider request.
+
+### Bundled dictionary
+
+`dictionary.js` is loaded before `background.js`, exposing `DualSubDictionary`
+with `lookup(lemma, group)`, `clear()`, and `state`. On the first lookup it
+fetches the shipped `vendor/wiktionary/french-english.txt` and imports it into
+IndexedDB database `dualsub-dictionary` (store `entries`, keyPath `lemma`;
+store `meta` holds a version record written last and only once the import
+finishes, compared against a `DATA_VERSION` constant so a stale or partial
+store is reimported rather than trusted). A lookup is one keyed `get`; nothing
+is held in memory between lookups, since the background is an event page that
+can be unloaded between messages. `group` selects which part of speech
+answers; otherwise the first one does.
+
+`background.js` checks this store for single-word lookups before the
+in-flight-request check and the provider cache, on all three word-meaning
+paths: the hover lookup card, preloaded video words, and the sidebar word
+list's cache-only peek. See [the lookup decision
+order](TRANSLATION_AND_ALIGNMENT.md#lookup-decision-order) for where it sits
+and what it skips.
 
 ### Rolling translation scheduler
 
@@ -423,6 +445,7 @@ profiles.
 | `storage.local.translationProviderSecretsV1` | Provider keys, region, and LibreTranslate endpoint |
 | IndexedDB `dualsub-translation-cache` | Provider translation results |
 | `storage.local.lineTranslationCacheV2` | Translation-cache fallback |
+| IndexedDB `dualsub-dictionary` | Imported bundled French-English dictionary entries |
 | `storage.local.ocrCaptureV1` | One-use screenshot and selected rectangle |
 
 Provider secrets deliberately use local storage, not sync storage. OCR captures

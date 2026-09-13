@@ -79,6 +79,11 @@ French analysis, and French-to-English word matching are detailed in
   their own boundaries, and overlapping cues prefer the newest line.
 - Independent font size, color, background, opacity, font, weight, and italic
   controls for each language, with live previews in the popup.
+- Word meanings are answered from a bundled French-English dictionary derived
+  from Wiktionary before any translation engine is asked, so a known word
+  works instantly and offline, without spending a request. Words missing from
+  the dictionary still fall through to your chosen engine. **Look words up in
+  the bundled dictionary first** under Translation service turns this off.
 - Hover or click a French word for an instant translation. A corresponding
   English word is highlighted only when the translated surface form or inferred
   infinitive provides an exact or strong inflection match; uncertain matches are

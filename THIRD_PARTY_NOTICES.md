@@ -40,3 +40,20 @@ license texts and the full component notice are included in
 `vendor/tesseract/`.
 
 Project: https://github.com/naptha/tesseract.js
+
+## Wiktionary (kaikki.org / wiktextract)
+
+DualSub includes a reduced, filtered French-English dictionary derived from an
+English Wiktionary extract produced by the wiktextract project and published by
+kaikki.org. The transformation, source, and checksum are documented in
+`vendor/wiktionary/SOURCE.md`. Wiktionary's text content is dual-licensed under
+CC BY-SA 4.0 and the GNU Free Documentation License; this derivative is
+distributed under CC BY-SA 4.0, included as
+`vendor/wiktionary/LICENSE-CC-BY-SA-4.0`.
+
+wiktextract reference: Ylonen, Tatu (2022). "Wiktextract: Wiktionary as
+Machine-Readable Structured Data," Proceedings of the 13th Conference on
+Language Resources and Evaluation (LREC 2022), pp. 1317-1325, Marseille, 20-25
+June 2022.
+
+Project: https://kaikki.org/ and https://github.com/tatuylonen/wiktextract
