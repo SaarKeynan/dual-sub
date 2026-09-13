@@ -527,7 +527,24 @@ async function testFrenchWithLoadedResources() {
     ["entre", "entre nous", "preposition"],
     ["contre", "contre le mur", "preposition"],
     ["entre", "il est entre nous", "preposition"],
-    ["contre", "je suis contre", "preposition"]
+    ["contre", "je suis contre", "preposition"],
+    // Only je, tu, il, on, or a subject elle, count: nous, vous and a stressed
+    // or governed elle are not the subject of what follows them.
+    ["entre", "on entre", "verb"],
+    ["entre", "il y entre", "verb"],
+    ["entre", "qu'il entre", "verb"],
+    ["entre", "j'entre dans la pièce", "verb"],
+    ["contre", "je contre l'attaque", "verb"],
+    ["entre", "elle entre dans la cuisine", "verb"],
+    ["contre", "nous contre eux", "preposition"],
+    ["contre", "c'est nous contre le reste du monde", "preposition"],
+    ["contre", "vous contre nous", "preposition"],
+    ["contre", "elle contre lui", "preposition"],
+    ["contre", "pour nous contre la crise", "preposition"],
+    ["entre", "chez nous entre amis", "preposition"],
+    ["entre", "je pense à elle entre deux rendez-vous", "preposition"],
+    ["contre", "c'est elle contre tous", "preposition"],
+    ["contre", "avec elle contre lui", "preposition"]
   ]) {
     assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
   }

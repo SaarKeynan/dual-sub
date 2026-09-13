@@ -588,6 +588,33 @@
   ]);
 
   const prepositionVerbForms = new Set(["entre", "contre"]);
+  const unambiguousSubjects = new Set(["je", "j", "tu", "il", "on"]);
+  const objectClitics = new Set(["me", "m", "te", "t", "se", "s", "le", "la", "les", "l", "lui", "leur", "y", "en", "ne", "n"]);
+  const stressedPronouns = new Set(["lui", "eux", "elle", "elles", "nous", "vous", "moi", "toi"]);
+
+  // entre and contre are also entrer and contrer, but only straight after a
+  // subject clitic ("il entre", "il y entre", "qu'il entre", "j'entre"). nous
+  // and vous are as often stressed ("nous contre eux", "vous contre nous"),
+  // so they never count; elle counts unless a preposition or c'est governs it
+  // ("je pense à elle entre", "c'est elle contre tous") or a stressed pronoun
+  // follows ("elle contre lui").
+  function prepositionVerbAfterSubject(rawWord, sentence) {
+    const word = splitElidedClitic(rawWord).base;
+    if (!prepositionVerbForms.has(word)) return false;
+    const tokens = sentenceTokens(sentence);
+    return tokens.some((token, index) => {
+      if (token !== word) return false;
+      let cursor = index - 1;
+      while (cursor >= 0 && objectClitics.has(tokens[cursor])) cursor -= 1;
+      const subject = tokens[cursor];
+      if (unambiguousSubjects.has(subject)) return true;
+      if (subject !== "elle") return false;
+      const governor = tokens[cursor - 1];
+      if (closedWordGroups.get("preposition").has(governor) || ["d", "au", "aux", "du"].includes(governor)) return false;
+      if (governor === "est" && tokens[cursor - 2] === "c") return false;
+      return !stressedPronouns.has(tokens[index + 1]);
+    });
+  }
 
   const groupByCode = Object.freeze({
     n: "noun", v: "verb", j: "adjective", r: "adverb", p: "pronoun",
@@ -885,11 +912,7 @@
       // tu, lui and plus are attested participles of taire, luire and plaire,
       // but in running text the closed-class reading is overwhelmingly likelier.
       const closed = closedWordGroup(rawWord);
-      // entre and contre are also entrer and contrer. Straight after a subject
-      // ("il entre dans la salle", "elle ne contre pas") they are the verb;
-      // "entre nous" and "je suis contre" have no subject before them.
-      const verbAfterSubject = closed === "preposition" && prepositionVerbForms.has(splitElidedClitic(rawWord).base) &&
-        Boolean(inferVerbContext(splitElidedClitic(rawWord), sentence).person);
+      const verbAfterSubject = closed === "preposition" && prepositionVerbAfterSubject(rawWord, sentence);
       if (closed && !verbAfterSubject) {
         return {
           group: closed,
