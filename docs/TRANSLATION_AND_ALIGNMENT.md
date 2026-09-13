@@ -346,14 +346,26 @@ such as `une ...` can prevent a misleading verb-first explanation.
 
 When the lexicon lists the word as both noun and adjective, the next word
 decides (`nounOrAdjectiveInContext()` in `language/french.js`). A following
-noun makes it a pre-posed adjective (`une nouvelle voiture`). Anything else
+noun makes it a pre-posed adjective (`une nouvelle voiture`, `une bonne
+excuse`). This holds even when Lexique's lemma for that noun is a verb; only a
+form of `être` or `avoir` (`est`, `a`, `été`) counts as the verb. Anything else
 makes it the noun: a verb, a function word, punctuation, or the end of the
-line (`la nouvelle est arrivée`, `une donnée`, `la marine`). A following word
-that is itself noun or adjective is resolved by a short list of adjectives that
-normally stand before their noun (`ma chère amie` is an adjective, `les armées
-ennemies` a noun). The other reading stays as an alternative. A degree adverb
-after a determiner that modifies the next word is the adverb (`le plus grand`),
-not the noun `un plus`.
+line (`la nouvelle est arrivée`, `une donnée`, `la marine`, `les jeunes`). Two
+exceptions apply. Selecting and ordinal adjectives (`bon`, `prochain`,
+`dernier`, `premier`, `seul`, `autre`, `même`, `meilleur`) stand for a noun left
+unsaid and stay adjectives (`c'est le bon`, `à la prochaine`), and `drôle de` is
+the adjective. A following word that is itself noun or adjective is resolved by
+a short list of adjectives that normally stand before their noun (`ma chère
+amie` is an adjective, `les armées ennemies` a noun). The other reading stays
+as an alternative. Lexique keys spell `oe` and `ae`, so `œ` and `æ` are folded
+before every Lexique lookup.
+
+Degree adverbs and closed prepositions have two context rules of their own.
+After a determiner, `plus` or `moins` is the adverb when it modifies the next
+word (`le plus grand`) or sits in a fixed expression (`au moins`, `du moins`,
+`le moins du monde`, `deux au plus`); otherwise it is the noun `un plus`.
+`entre` and `contre` straight after a subject are the verbs `entrer` and
+`contrer` (`il entre dans la salle`), and otherwise the prepositions.
 
 Local analysis selects labels and infinitives; it does not invent the displayed
 English meaning. The displayed meaning still comes from correction, cache, or
