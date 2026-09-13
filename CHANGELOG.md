@@ -11,6 +11,20 @@
   mistaken for a provider or cached answer.
 - **Look words up in the bundled dictionary first**, under Translation
   service, turns this off; it is on by default.
+- Words are read more accurately in context, so the dictionary answers with
+  the right sense:
+  - `plus` and `moins` in superlatives and fixed expressions (`le plus grand`,
+    `le moins cher`, `au moins`, `du moins`) read as adverbs, not as the plus
+    and minus signs.
+  - `tu`, `lui` and `plus` no longer show an infinitive (`taire`, `luire`,
+    `plaire`) or file a saved word under it.
+  - Words spelled with `œ` (`cœur`, `sœur`, `œufs`) are recognised.
+  - `entre` and `contre` straight after a subject (`il entre dans la salle`)
+    read as the verbs.
+- Known limitation: after an article, a word that can be a noun or an adjective
+  is still labelled by the lexicon's order, so some nouns read as adjectives
+  (`la nouvelle` for the news, `une donnée`, `la marine`) and are answered by
+  your translation engine rather than the dictionary.
 
 ## Unreleased — less memory per tab
 

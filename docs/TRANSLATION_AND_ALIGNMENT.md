@@ -174,6 +174,29 @@ The adjacent provider link opens the same source text in a public Google,
 MyMemory, DeepL, or Microsoft Translator lookup. A self-hosted LibreTranslate
 service is labeled but has no external link because its endpoint may be private.
 
+### Known limitations of word classification
+
+The word's classified group decides which dictionary sense answers, so a wrong
+group shows up either as a miss or as a sense of the wrong part of speech. The
+classification (see [How a French word is analyzed](#how-a-french-word-is-analyzed))
+is still lexicon-order based after a determiner:
+
+- Some nouns are labelled adjectives: `la nouvelle` (the news), `une donnée`,
+  `la marine`. Their adjective candidates have no entry, so the dictionary
+  misses and the engine answers, under the adjective label.
+- Nominalised adjectives read as adjectives: `les jeunes`, `la petite`.
+- `en fait` and `à peine` read as the verbs `faire` and `peiner`.
+- An adjective after a noun can read as a verb: `un endroit calme`, `un couple
+  marié`.
+- `nul` reads as a pronoun (`un match nul`, `c'est nul`).
+- All-caps captions carry no capitalisation evidence for proper nouns.
+
+Three rounds of rule-based context heuristics (following-word rules, then
+positive evidence of a noun use) fixed the phrases they were written for and
+regressed on unseen phrases in independent review, so they were reverted. The
+attempts, their measured results and suggested starting points are recorded in
+[docs/superpowers/notes/2026-09-13-french-noun-adjective-classification.md](superpowers/notes/2026-09-13-french-noun-adjective-classification.md).
+
 ## What each provider returns
 
 Every successful result is normalized to approximately this shape:
@@ -336,7 +359,26 @@ is unavailable.
 Lexique can attest multiple word groups for the same spelling. When a form that
 looks like a participle follows a nominal determiner, DualSub prefers a noun or
 adjective reading and retains the verb as an alternative. This is why context
-such as `une ...` can prevent a misleading verb-first explanation.
+such as `une ...` can prevent a misleading verb-first explanation. After a
+determiner, a word the lexicon lists as both noun and adjective takes whichever
+of the two the lexicon lists first; the rest of the phrase is not consulted
+(see [Known limitations](#known-limitations-of-word-classification)). Lexique
+keys spell `oe` and `ae`, so `œ` and `æ` are folded before every Lexique lookup.
+
+A few closed-class words have context rules of their own:
+
+- After a determiner, `plus` or `moins` is the adverb when it modifies the next
+  word (`le plus grand`) or sits in a fixed expression (`au moins`, `du moins`,
+  `le moins du monde`, `deux au plus`); otherwise it is the noun `un plus`.
+- `entre` and `contre` are the verbs `entrer` and `contrer` only straight after
+  `je`, `tu`, `il` or `on` (`il y entre`, `qu'il entre`), or after `elle` when
+  no preposition or `c'est` governs it and no stressed pronoun follows. In `nous
+  contre eux` and `elle contre lui` they stay prepositions.
+- `tu`, `lui` and `plus` are also attested participles of `taire`, `luire` and
+  `plaire`. The closed-class reading wins, and the card shows an infinitive,
+  saves a lemma and requests the infinitive as alignment evidence only for a
+  word read as a verb. For the same reason the lookup text gets a subject
+  pronoun (`tu as`) only for a verb reading.
 
 Local analysis selects labels and infinitives; it does not invent the displayed
 English meaning. The displayed meaning still comes from correction, cache, or
