@@ -24,6 +24,7 @@
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
     });
     return databasePromise;
   }
@@ -105,9 +106,17 @@
     return { senses: chosen.senses || [], pos: chosen.pos || "", gender: chosen.gender || "" };
   }
 
+  // Waits out any import already writing against this same database handle
+  // before wiping. Otherwise a clear() that lands mid-import cannot stop it:
+  // the import would go on to write its later batches, and finally the
+  // version record, straight into the store clear() just emptied, leaving
+  // `ready()` convinced a store missing everything clear() removed is
+  // current.
   async function clear() {
     const database = await openDatabase();
     if (!database) return;
+    const pending = importPromise;
+    if (pending) await pending.catch(() => {});
     await new Promise((resolve) => {
       const transaction = database.transaction([ENTRIES, META], "readwrite");
       transaction.objectStore(ENTRIES).clear();

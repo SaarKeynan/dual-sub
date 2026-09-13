@@ -703,11 +703,122 @@ async function dictionaryStoreTests() {
   assert.equal(c.DualSubDictionary.state, "ready");
 }
 
+// The sidebar word list looks up many words at once, so several lookups
+// racing the same first-ever import is the real access pattern, not a
+// hypothetical. They must all share the one import rather than each starting
+// their own.
+async function dictionaryConcurrentLookupTests() {
+  const index = [
+    'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]',
+    'livre\t[{"pos":"noun","gender":"m","senses":["book"]},{"pos":"verb","senses":["to deliver"]}]'
+  ].join("\n");
+  const { context: c } = background({}, { indexedDB: true });
+  let fetches = 0;
+  let releaseFetch;
+  const gate = new Promise((resolve) => { releaseFetch = resolve; });
+  c.fetch = async () => { fetches++; await gate; return { ok: true, text: async () => index }; };
+  vm.runInContext(source("dictionary.js"), c);
+
+  const many = Promise.all([
+    c.DualSubDictionary.lookup("armée"),
+    c.DualSubDictionary.lookup("livre", "verb"),
+    c.DualSubDictionary.lookup("inconnu"),
+    c.DualSubDictionary.lookup("armée")
+  ]);
+  releaseFetch();
+  const [first, verb, miss, again] = await many;
+  assert.equal(fetches, 1, "Four lookups racing the same import trigger exactly one fetch");
+  assert.equal(first.senses[0], "army");
+  assert.equal(verb.senses[0], "to deliver");
+  assert.equal(miss, null);
+  assert.equal(again.senses[0], "army");
+}
+
+// The companion case: an import that fails must degrade every lookup
+// racing it to null rather than throwing or hanging, and must not wedge the
+// store so a later lookup can never try again.
+//
+// A rider lookup that joins after the failing import has already reset
+// importPromise ends up starting its own (also doomed) attempt rather than
+// sharing the first one's rejection -- unlike a successful import, a failed
+// one clears importPromise as part of settling, so there is no promise left
+// to join once that has happened. Either way every caller must still land on
+// null, never an exception and never a hang, which is what this asserts
+// instead of pinning down how many fetch attempts that takes.
+async function dictionaryImportFailureRecoveryTests() {
+  const index = 'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]';
+  const { context: c } = background({}, { indexedDB: true });
+  let broken = true;
+  let fetches = 0;
+  c.fetch = async () => {
+    fetches++;
+    if (broken) return { ok: false, status: 500 };
+    return { ok: true, text: async () => index };
+  };
+  vm.runInContext(source("dictionary.js"), c);
+
+  const [first, second] = await Promise.all([
+    c.DualSubDictionary.lookup("armée"),
+    c.DualSubDictionary.lookup("armée")
+  ]);
+  assert.equal(first, null, "A failed import degrades the caller to null rather than throwing");
+  assert.equal(second, null, "...and a lookup racing it, not just the one that started it");
+  assert.equal(c.DualSubDictionary.state, "unavailable");
+  const fetchesWhileBroken = fetches;
+
+  // A later lookup must retry rather than being stuck on the earlier failure.
+  broken = false;
+  const retried = await c.DualSubDictionary.lookup("armée");
+  assert.equal(retried.senses[0], "army");
+  assert(fetches > fetchesWhileBroken, "Recovery re-fetches rather than reusing the failed attempt");
+  assert.equal(c.DualSubDictionary.state, "ready");
+}
+
+// clear() must not let an import already writing against the same database
+// hand it stale-but-"complete" data. Without the fix, clear() wipes both
+// stores immediately while the import keeps writing obliviously, then the
+// import puts its version record into the store clear() just emptied: a
+// `ready()` call after that trusts a store missing every lemma clear()
+// removed until the next clear() or a DATA_VERSION bump.
+async function dictionaryClearDuringImportTests() {
+  const index = [
+    'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]',
+    'livre\t[{"pos":"noun","gender":"m","senses":["book"]},{"pos":"verb","senses":["to deliver"]}]'
+  ].join("\n");
+  const { context: c } = background({}, { indexedDB: true });
+  let fetches = 0;
+  let releaseFetch;
+  const gate = new Promise((resolve) => { releaseFetch = resolve; });
+  c.fetch = async () => { fetches++; await gate; return { ok: true, text: async () => index }; };
+  vm.runInContext(source("dictionary.js"), c);
+
+  const lookupPromise = c.DualSubDictionary.lookup("armée");
+  while (c.DualSubDictionary.state !== "importing") await new Promise((resolve) => setTimeout(resolve, 0));
+
+  let clearSettled = false;
+  const clearPromise = c.DualSubDictionary.clear().then(() => { clearSettled = true; });
+
+  // Give clear() every chance to run ahead of the import it did not wait for.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(clearSettled, false, "clear() must wait for the import already writing, not race it");
+
+  releaseFetch();
+  await Promise.all([lookupPromise, clearPromise]);
+  assert.equal(clearSettled, true);
+  assert.equal(c.DualSubDictionary.state, "idle", "clear() has the last word once the import it waited for is done");
+
+  // A stale, unwiped version record would make this lookup trust the
+  // (now-empty) store and answer null forever without ever re-fetching.
+  const after = await c.DualSubDictionary.lookup("livre");
+  assert.equal(fetches, 2, "clear() left no version record behind, so the next lookup re-imports");
+  assert.equal(after.senses[0], "book", "...and the re-import succeeds");
+}
+
 (async () => {
   await storageTests(); await backupMergeTests(); await palettePaletteTests();
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
   await translationTests(); await providerFallbackTests(); await memoryWordLookupTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
-  await dictionaryStoreTests();
+  await dictionaryStoreTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
