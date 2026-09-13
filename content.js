@@ -1069,7 +1069,9 @@
           ...item,
           lookupText: reading?.text || item.word,
           readingKey: reading?.key || "",
-          label: lemma && lemma.toLocaleLowerCase("fr") !== item.word ? `${group} \u00b7 ${lemma}`.trim() : group
+          label: lemma && lemma.toLocaleLowerCase("fr") !== item.word ? `${group} \u00b7 ${lemma}`.trim() : group,
+          lemma: lookupLemmaFor(item.word, analysis, reading),
+          group: reading?.group || ""
         };
       });
   }
@@ -1155,7 +1157,19 @@
     warmupSessionId = `warmup-${tabSessionId}-${currentVideoId}-${generation}`;
     const response = await browser.runtime.sendMessage({
       type: "translate-batch",
-      items: queue.map((word) => ({ text: word, cacheId: `word:${normalizeLookupWord(word)}` })),
+      // There is no sentence for a preloaded word, so the bare word is
+      // analysed on its own -- the same lemma rule as the hover lookup, using
+      // whatever reading the morphology and Lexique agree on without context.
+      items: queue.map((word) => {
+        const analysis = globalThis.DualSubFrench?.analyzeWord(word, "") || null;
+        const reading = globalThis.DualSubFrench?.lookupReading(word, "", analysis);
+        return {
+          text: word,
+          cacheId: `word:${normalizeLookupWord(word)}`,
+          lemma: lookupLemmaFor(word, analysis, reading),
+          group: reading?.group || ""
+        };
+      }),
       sourceLanguage: settings.sourceLanguage,
       targetLanguage: settings.targetLanguage,
       videoId: currentVideoId,

@@ -869,17 +869,25 @@ async function testVocabularyStorage() {
 async function testTranscriptWordAnalysis() {
   const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
   const analysis = extract(source, "  function learningTokens", "  async function buildTranscriptState");
+  // describeStudyWords calls the shared lemma helper defined much later in the
+  // file (next to the hover lookup); splice it in the same way testCaptionProcessing
+  // combines several extracted ranges into one isolated context.
+  const lemmaHelper = extract(source, "  function lookupLemmaFor", "  function stemEnglishWord");
   const context = {
     console,
     DualSubFrench: {
       analyzeWord: (word) => (word === "compris" ? { partOfSpeech: "verb", lemma: "comprendre" } : null),
       classifyWord: (word) => ({ group: word === "compris" ? "verb" : "adverb" }),
       lexicalInfo: () => null,
-      lookupReading: (word) => ({ text: word === "compris" ? "j'ai compris" : word, key: word === "compris" ? "verb:comprendre" : "" })
+      lookupReading: (word) => ({
+        text: word === "compris" ? "j'ai compris" : word,
+        key: word === "compris" ? "verb:comprendre" : "",
+        group: word === "compris" ? "verb" : "adverb"
+      })
     }
   };
   vm.createContext(context);
-  vm.runInContext(analysis, context);
+  vm.runInContext(`${analysis}\n${lemmaHelper}`, context);
 
   const cues = [
     { text: "Pourtant tout allait bien" },
@@ -899,7 +907,12 @@ async function testTranscriptWordAnalysis() {
   assert.strictEqual(verb.lookupText, "j'ai compris", "A row carries the context-aware query, not the bare word");
   assert.strictEqual(verb.readingKey, "verb:comprendre");
   assert.strictEqual(verb.label, "verb · comprendre", "A verb row names its infinitive");
-  assert.strictEqual(studied.find((item) => item.word === "pourtant").label, "adverb");
+  assert.strictEqual(verb.lemma, "comprendre", "A verb row's dictionary lemma is the morphology's infinitive");
+  assert.strictEqual(verb.group, "verb");
+  const adverb = studied.find((item) => item.word === "pourtant");
+  assert.strictEqual(adverb.label, "adverb");
+  assert.strictEqual(adverb.lemma, "pourtant", "With no Lexique entry the word itself is the dictionary lemma");
+  assert.strictEqual(adverb.group, "adverb");
 
   const many = context.describeStudyWords(
     Array.from({ length: 90 }, (_, index) => ({ word: `mot${index}`, count: 1, cueIndex: 0, state: "unknown" })),

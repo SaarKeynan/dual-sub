@@ -775,6 +775,114 @@ async function dictionaryLookupTests() {
   assert.equal(offCalls, 1, "With the setting off the engine answers");
 }
 
+// Preloading and the sidebar word list both ask for single-word meanings, and
+// both must reach the same dictionary answers the interactive hover lookup
+// does -- same order (saved correction, then dictionary, then cache/engine),
+// same shape, and without ever costing a request when every word is answered
+// locally.
+async function dictionaryBatchAndPeekTests() {
+  const index = 'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]';
+  const { context: c } = background({}, { indexedDB: true });
+  let providerCalls = 0;
+  c.fetch = async (url) => {
+    if (String(url).includes("french-english")) return { ok: true, text: async () => index };
+    providerCalls++;
+    return { ok: true, json: async () => [[["armies", "armées"]]] };
+  };
+  vm.runInContext(source("dictionary.js"), c);
+
+  // One hit, one miss: the hit is answered locally, only the miss reaches the
+  // provider.
+  const mixed = await c.translateBatchMessage({
+    items: [
+      { text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" },
+      { text: "zzzz", cacheId: "word:zzzz", lemma: "zzzz", group: "noun" }
+    ],
+    sessionId: "batch1"
+  });
+  assert.equal(mixed.results[0].provider, "dictionary");
+  assert.equal(mixed.results[0].translatedText, "army · armed forces");
+  assert.equal(mixed.results[0].provenance, "Dictionary");
+  assert.equal(mixed.results[0].cacheHit, false);
+  assert.equal(mixed.results[1].translatedText, "armies");
+  assert.equal(providerCalls, 1, "Only the miss reaches the provider");
+
+  // A batch of only hits makes zero provider requests, and so never calls
+  // translateBatch at all.
+  const hitsOnly = await c.translateBatchMessage({
+    items: [{ text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" }],
+    sessionId: "batch2"
+  });
+  assert.equal(hitsOnly.results[0].provider, "dictionary");
+  assert.equal(providerCalls, 1, "A batch of only hits makes no provider request");
+
+  // A saved correction still wins over a dictionary entry in the batch path.
+  await c.saveTranslationCorrection("armées", "my own word");
+  const corrected = await c.translateBatchMessage({
+    items: [{ text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" }],
+    sessionId: "batch3"
+  });
+  assert.equal(corrected.results[0].provider, "correction");
+  assert.equal(corrected.results[0].translatedText, "my own word");
+  assert.equal(providerCalls, 1, "A correction answers without a request too");
+
+  // Switched off, the batch path ignores the dictionary and asks the engine.
+  const off = background({ settings: { dictionaryLookup: false } }, { indexedDB: true }).context;
+  let offCalls = 0;
+  off.fetch = async (url) => {
+    if (String(url).includes("french-english")) return { ok: true, text: async () => index };
+    offCalls++;
+    return { ok: true, json: async () => [[["armies", "armées"]]] };
+  };
+  vm.runInContext(source("dictionary.js"), off);
+  const offBatch = await off.translateBatchMessage({
+    items: [{ text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" }],
+    sessionId: "batch4"
+  });
+  assert.equal(offBatch.results[0].translatedText, "armies");
+  assert.notEqual(offBatch.results[0].provider, "dictionary");
+  assert.equal(offCalls, 1, "With the setting off the batch path asks the engine");
+
+  // peek-word-meanings: a dictionary hit answers the row without a provider
+  // request, alongside an unknown word that keeps today's cache-only answer.
+  const { context: p } = background({}, { indexedDB: true });
+  let peekProviderCalls = 0;
+  p.fetch = async (url) => {
+    if (String(url).includes("french-english")) return { ok: true, text: async () => index };
+    peekProviderCalls++;
+    return { ok: true, json: async () => [[["armies", "armées"]]] };
+  };
+  vm.runInContext(source("dictionary.js"), p);
+  const peeked = await p.peekWordMeanings({
+    words: [
+      { text: "armées", lemma: "armée", group: "noun" },
+      { text: "inconnu", lemma: "inconnu", group: "" }
+    ]
+  });
+  assert.equal(peeked.meanings[0].translatedText, "army · armed forces");
+  assert.equal(peeked.meanings[0].provenance, "Dictionary");
+  assert.equal(peeked.meanings[1].translatedText, "", "An unknown word with nothing cached stays empty");
+  assert.equal(peekProviderCalls, 0, "peek must never contact a provider");
+
+  // A saved correction still wins in peek too.
+  await p.saveTranslationCorrection("armées", "my own word");
+  const peekCorrected = await p.peekWordMeanings({ words: [{ text: "armées", lemma: "armée", group: "noun" }] });
+  assert.equal(peekCorrected.meanings[0].translatedText, "my own word");
+  assert.equal(peekCorrected.meanings[0].provenance, "Your correction");
+  assert.equal(peekProviderCalls, 0, "A correction in peek still costs no request");
+
+  // Switched off, peek ignores the dictionary too and still never contacts a
+  // provider (nothing is cached for this word, so the answer stays empty).
+  const peekOff = background({ settings: { dictionaryLookup: false } }, { indexedDB: true }).context;
+  peekOff.fetch = async (url) => {
+    if (String(url).includes("french-english")) return { ok: true, text: async () => index };
+    throw new Error("peek must never contact a provider");
+  };
+  vm.runInContext(source("dictionary.js"), peekOff);
+  const peekedOff = await peekOff.peekWordMeanings({ words: [{ text: "armées", lemma: "armée", group: "noun" }] });
+  assert.equal(peekedOff.meanings[0].translatedText, "", "With the setting off, peek does not answer from the dictionary");
+}
+
 // The sidebar word list looks up many words at once, so several lookups
 // racing the same first-ever import is the real access pattern, not a
 // hypothetical. They must all share the one import rather than each starting
@@ -891,6 +999,6 @@ async function dictionaryClearDuringImportTests() {
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
   await translationTests(); await providerFallbackTests(); await memoryWordLookupTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
-  await dictionaryStoreTests(); await dictionaryLookupTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
+  await dictionaryStoreTests(); await dictionaryLookupTests(); await dictionaryBatchAndPeekTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

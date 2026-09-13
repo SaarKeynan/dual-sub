@@ -49,7 +49,14 @@
     if (!words.length) return;
     const response = await message({
       type: "peek-word-meanings",
-      words: words.map((item) => ({ text: item.word, lookupText: item.lookupText || item.word, readingKey: item.readingKey || "", context: cues[item.cueIndex]?.text || "" }))
+      words: words.map((item) => ({
+        text: item.word,
+        lookupText: item.lookupText || item.word,
+        readingKey: item.readingKey || "",
+        lemma: item.lemma || "",
+        group: item.group || "",
+        context: cues[item.cueIndex]?.text || ""
+      }))
     });
     if (!response?.ok) return;
     words.forEach((item, index) => {
@@ -87,6 +94,8 @@
       text: item.word,
       lookupText: item.lookupText || item.word,
       readingKey: item.readingKey || "",
+      lemma: item.lemma || "",
+      group: item.group || "",
       cacheMode: "word",
       context: cues[item.cueIndex]?.text || ""
     });

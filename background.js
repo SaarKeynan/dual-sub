@@ -439,19 +439,27 @@ async function translateWordBatch(items, message, settings, fallbackProviders = 
   const results = new Array(items.length).fill(null);
   const corrections = await getTranslationCorrections();
   const pending = [];
-  items.forEach((item, index) => {
+  for (const [index, item] of items.entries()) {
     const text = String(item.text || "").trim();
-    if (!text) return;
+    if (!text) continue;
     const saved = corrections[correctionKey(text, sourceLanguage, targetLanguage)]?.translatedText;
     if (saved) {
       results[index] = {
         sourceText: text, translatedText: saved, provider: "correction",
         provenance: "Your correction", alignment: [], cacheHit: true
       };
-      return;
+      continue;
+    }
+    // A dictionary answer is local and costs no request, same as the
+    // interactive lookup: preloading must apply the same checks and reach the
+    // same answers.
+    const dictionaryHit = await dictionaryWordLookup(text, text, item.lemma, item.group, settings);
+    if (dictionaryHit) {
+      results[index] = dictionaryHit;
+      continue;
     }
     pending.push({ index, text });
-  });
+  }
   if (!pending.length) return { results, health: DualSubTranslation.health() };
   const provider = wordLookupProvider(pending[0].text, settings);
   const batch = await DualSubTranslation.translateBatch(
@@ -598,6 +606,28 @@ function singleWordLookup(value) {
   return (String(value || "").match(/[\p{L}\p{N}]+(?:['’][\p{L}]+)*/gu) || []).length === 1;
 }
 
+// The dictionary answer's shape, shared by the interactive hover lookup, the
+// preloaded word batch and the sidebar peek, so a hit looks identical no
+// matter which of the three asked. Local, instant, and costs no request --
+// checked before any provider and before the provider cache is even keyed.
+// Single words only, and only while the setting allows it.
+async function dictionaryWordLookup(normalizedText, lookupText, lemma, group, settings) {
+  if (settings.dictionaryLookup === false || !singleWordLookup(normalizedText)) return null;
+  const entry = await DualSubDictionary.lookup(lemma || normalizedText, group || "");
+  if (!entry?.senses?.length) return null;
+  return {
+    sourceText: normalizedText,
+    lookupText,
+    translatedText: entry.senses.join(" · "),
+    provider: "dictionary",
+    provenance: "Dictionary",
+    partOfSpeech: entry.pos,
+    gender: entry.gender,
+    alignment: [],
+    cacheHit: false
+  };
+}
+
 function wordLookupProvider(text, settings) {
   const substituted = settings.translationProvider === "mymemory"
     && singleWordLookup(text)
@@ -645,19 +675,25 @@ async function peekWordMeanings(message) {
   const keys = prepared.map(({ item, options }) => DualSubTranslation.cacheKeyFor(item, options));
   // A cache read that throws must not cost the list its saved flags.
   const cached = await DualSubTranslation.cachedResults(keys).catch(() => keys.map(() => null));
-  return {
-    meanings: prepared.map(({ normalizedText }, index) => {
-      const correction = corrections[correctionKey(
-        normalizedText,
-        message.sourceLanguage || settings.sourceLanguage,
-        message.targetLanguage || settings.targetLanguage
-      )];
-      const result = correction?.translatedText
-        ? { translatedText: correction.translatedText, provenance: "Your correction" }
-        : { translatedText: cached[index]?.translatedText || "", provenance: cached[index]?.provenance || "" };
-      return { ...result, saved: saved.has(vocabularyKey(normalizedText)) };
-    })
-  };
+  const meanings = await Promise.all(prepared.map(async ({ normalizedText }, index) => {
+    const isSaved = saved.has(vocabularyKey(normalizedText));
+    const correction = corrections[correctionKey(
+      normalizedText,
+      message.sourceLanguage || settings.sourceLanguage,
+      message.targetLanguage || settings.targetLanguage
+    )];
+    if (correction?.translatedText) {
+      return { translatedText: correction.translatedText, provenance: "Your correction", saved: isSaved };
+    }
+    // A dictionary hit answers the row without a cache entry or a provider,
+    // same order as the interactive lookup: correction, then dictionary.
+    const dictionaryHit = await dictionaryWordLookup(normalizedText, normalizedText, words[index]?.lemma, words[index]?.group, settings);
+    if (dictionaryHit) {
+      return { translatedText: dictionaryHit.translatedText, provenance: dictionaryHit.provenance, saved: isSaved };
+    }
+    return { translatedText: cached[index]?.translatedText || "", provenance: cached[index]?.provenance || "", saved: isSaved };
+  }));
+  return { meanings };
 }
 
 async function translateSelectionWithEngine(message) {
@@ -692,21 +728,9 @@ async function translateSelectionWithEngine(message) {
   // Before any engine and before the provider cache is even keyed: a dictionary
   // answer is local, instant, and costs no request. Single words only — a phrase
   // is not a headword.
-  if (message.cacheMode === "word" && settings.dictionaryLookup !== false && singleWordLookup(normalizedText)) {
-    const entry = await DualSubDictionary.lookup(message.lemma || normalizedText, message.group || "");
-    if (entry?.senses?.length) {
-      return {
-        sourceText: normalizedText,
-        lookupText,
-        translatedText: entry.senses.join(" · "),
-        provider: "dictionary",
-        provenance: "Dictionary",
-        partOfSpeech: entry.pos,
-        gender: entry.gender,
-        alignment: [],
-        cacheHit: false
-      };
-    }
+  if (message.cacheMode === "word") {
+    const dictionaryHit = await dictionaryWordLookup(normalizedText, lookupText, message.lemma, message.group, settings);
+    if (dictionaryHit) return dictionaryHit;
   }
   if (translationPending.has(pendingKey)) return translationPending.get(pendingKey);
   const request = (async () => {
