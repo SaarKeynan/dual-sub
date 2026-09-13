@@ -1,0 +1,5 @@
+# The Lexique indexes are read as one string and searched by byte offset, and
+# their SHA-256 hashes are recorded in vendor/lexique/SOURCE.md. core.autocrlf
+# would rewrite them to CRLF on checkout, leaving a stray carriage return on
+# every value and breaking both the hashes and the offsets. Keep them verbatim.
+vendor/lexique/*.txt -text
