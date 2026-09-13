@@ -2,12 +2,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const path = require("node:path");
+const { IDBFactory } = require("fake-indexeddb");
 const root = path.resolve(__dirname, "..");
 const clone = (value) => structuredClone(value);
 const source = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const event = { addListener() {} };
 
-function background(initial = {}) {
+function background(initial = {}, options = {}) {
   const data = clone(initial);
   const area = {
     async get(keys) { return clone(Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map((key) => [key, data[key]]))); },
@@ -17,8 +18,9 @@ function background(initial = {}) {
   const context = vm.createContext({ console, URL, URLSearchParams, AbortController, setTimeout, clearTimeout, performance, TextEncoder,
     crypto: require("node:crypto").webcrypto,
     browser: { storage: { local: area, sync: area, onChanged: event },
-      runtime: { onInstalled: event, onStartup: event, onMessage: event }, commands: { onCommand: event },
-      tabs: { async query() { return [{ id: 1 }]; }, async sendMessage() { return { ok: true }; } } }
+      runtime: { onInstalled: event, onStartup: event, onMessage: event, getURL: (value) => value }, commands: { onCommand: event },
+      tabs: { async query() { return [{ id: 1 }]; }, async sendMessage() { return { ok: true }; } } },
+    ...(options.indexedDB ? { indexedDB: new IDBFactory() } : {})
   });
   for (const file of ["shared/settings.js", "video-cache.js", "background.js", "translation-engine.js"]) vm.runInContext(source(file), context);
   return { data, context };
@@ -671,10 +673,41 @@ async function memoryWordLookupTests() {
   assert.deepEqual(allowedHosts, ["api.mymemory.translated.net"], "Switching it on sends single words to the store again");
 }
 
+// The dictionary lives on disk, not in memory: the background is an event page
+// and would re-parse a multi-megabyte file on every wake.
+async function dictionaryStoreTests() {
+  const index = [
+    'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]',
+    'livre\t[{"pos":"noun","gender":"m","senses":["book"]},{"pos":"verb","senses":["to deliver"]}]'
+  ].join("\n");
+  const { context: c } = background({}, { indexedDB: true });
+  let fetches = 0;
+  c.fetch = async () => { fetches++; return { ok: true, text: async () => index }; };
+  vm.runInContext(source("dictionary.js"), c);
+
+  const noun = await c.DualSubDictionary.lookup("armée");
+  assert.deepEqual([...noun.senses], ["army", "armed forces"]);
+  assert.equal(noun.pos, "noun");
+  assert.equal(noun.gender, "f");
+
+  // The reading decides which sense of a homograph is returned.
+  assert.equal((await c.DualSubDictionary.lookup("livre", "verb")).senses[0], "to deliver");
+  assert.equal((await c.DualSubDictionary.lookup("livre", "noun")).senses[0], "book");
+  // With no reading, the first part of speech answers rather than nothing.
+  assert.equal((await c.DualSubDictionary.lookup("livre")).pos, "noun");
+  // A group the entry does not have falls back rather than returning nothing.
+  assert.equal((await c.DualSubDictionary.lookup("armée", "verb")).pos, "noun");
+
+  assert.equal(await c.DualSubDictionary.lookup("inconnu"), null, "A miss is null, so the caller can ask an engine");
+  assert.equal(fetches, 1, "The file is read once, not per lookup");
+  assert.equal(c.DualSubDictionary.state, "ready");
+}
+
 (async () => {
   await storageTests(); await backupMergeTests(); await palettePaletteTests();
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
   await translationTests(); await providerFallbackTests(); await memoryWordLookupTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
+  await dictionaryStoreTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
