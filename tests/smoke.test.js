@@ -836,6 +836,28 @@ async function testDictionaryWithRealData() {
     assert(!/front page|nonstandard spelling|to please/.test(result.meaning || ""), `${described} is a known wrong meaning`);
     if (forbidden) assert(!forbidden.test(result.meaning || ""), `${described} must not match ${forbidden}`);
   }
+
+  // Three rounds of context rules each passed their own examples and regressed
+  // on phrases nobody had tried. tests/fixtures/french-context-cases.json keeps
+  // every phrase measured so far, from the reviews and from phrases built to hit
+  // blind spots (anglicisms, proper nouns, digits, coordination, nouns spelled
+  // like verb forms, stressed pronouns). Each row names the expected group
+  // ("a|b" when either is right), and optionally a pattern the meaning must
+  // match and one it must never match. knownWrong rows were already wrong
+  // before the dictionary and no rule addresses them; they are kept as a record.
+  const corpus = JSON.parse(fs.readFileSync(path.join(projectRoot, "tests", "fixtures", "french-context-cases.json"), "utf8"));
+  assert(corpus.length >= 300, "The context corpus should keep every measured phrase");
+  const failures = [];
+  for (const row of corpus) {
+    if (row.knownWrong) continue;
+    const result = await resolve(row.word, row.phrase);
+    const problems = [];
+    if (!row.group.split("|").includes(result.group)) problems.push(`group ${result.group}, expected ${row.group}`);
+    if (row.meaning && !new RegExp(row.meaning).test(result.meaning || "")) problems.push(`meaning does not match /${row.meaning}/`);
+    if (row.forbidden && new RegExp(row.forbidden).test(result.meaning || "")) problems.push(`meaning matches forbidden /${row.forbidden}/`);
+    if (problems.length) failures.push(`${row.word} in "${row.phrase}" -> ${JSON.stringify(result.meaning)}: ${problems.join("; ")}`);
+  }
+  assert.strictEqual(failures.length, 0, `Context corpus failures:\n${failures.join("\n")}`);
 }
 
 async function testWordGroupResource() {
