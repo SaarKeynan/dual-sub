@@ -578,7 +578,10 @@
     ["determiner", new Set(["un", "une", "des", "le", "la", "les", "l", "du", "au", "aux", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "chaque", "quelque", "plusieurs", "aucun", "aucune"] )],
     ["preposition", new Set(["à", "après", "avant", "avec", "chez", "contre", "dans", "de", "depuis", "derrière", "devant", "durant", "en", "entre", "hors", "jusque", "malgré", "par", "parmi", "pendant", "pour", "sans", "selon", "sous", "sur", "vers"] )],
     ["conjunction", new Set(["car", "comme", "donc", "et", "lorsque", "mais", "ni", "or", "ou", "parce", "puisque", "quand", "que", "quoique", "si"] )],
-    ["interjection", new Set(["ah", "aïe", "bah", "ben", "bof", "bravo", "chut", "eh", "euh", "hé", "hélas", "oh", "ouf", "zut"] )]
+    ["interjection", new Set(["ah", "aïe", "bah", "ben", "bof", "bravo", "chut", "eh", "euh", "hé", "hélas", "oh", "ouf", "zut"] )],
+    // Only unambiguous adverbs: pas is also a noun (step) and bien a noun (good).
+    // plus is an attested form of plaire, which otherwise wins.
+    ["adverb", new Set(["plus", "très", "trop", "ne", "jamais"])]
   ]);
 
   const groupByCode = Object.freeze({

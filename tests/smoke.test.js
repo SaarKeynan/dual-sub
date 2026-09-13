@@ -496,6 +496,14 @@ async function testFrenchWithLoadedResources() {
   // Rare verb homographs must not outrank a closed-class reading.
   assert.strictEqual(french.classifyWord("lui", "je lui parle").group, "pronoun");
   assert.strictEqual(french.classifyWord("tu", "tu es là").group, "pronoun");
+  // plus is also an attested form of plaire, and no closed set held it, so
+  // "plus tard" read as a verb and the dictionary answered "to please".
+  assert.strictEqual(french.classifyWord("plus", "plus tard").group, "adverb");
+  assert.strictEqual(french.lookupReading("plus", "je ne sais plus").group, "adverb");
+  assert(french.classifyWord("plus", "plus tard").alternatives.includes("verb"), "The verb reading stays available as an alternative");
+  for (const [word, sentence] of [["très", "très bien"], ["trop", "trop tard"], ["ne", "je ne sais pas"], ["jamais", "jamais de la vie"]]) {
+    assert.strictEqual(french.classifyWord(word, sentence).group, "adverb", `${word} is a closed-class adverb`);
+  }
 
   // Lexique's schwa and yod codes reached the card unconverted.
   assert.strictEqual(french.lexicalInfo("je").pronunciation, "ʒə");
