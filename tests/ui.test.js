@@ -857,6 +857,7 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
   await content(null, "plus tard", { realFrench: true, verbEvidence: { token: "plus", infinitive: "" } });
   await content(null, "tu es là", { realFrench: true, verbEvidence: { token: "tu", infinitive: "" } });
   await content(null, "il mange", { realFrench: true, verbEvidence: { token: "mange", infinitive: "manger" } });
+  await content(null, "il entre", { realFrench: true, verbEvidence: { token: "entre", infinitive: "entrer" } });
   console.log("DualSub UI tests passed");
 })()
   .catch((error) => { console.error(error); process.exitCode = 1; });

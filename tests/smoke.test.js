@@ -518,6 +518,20 @@ async function testFrenchWithLoadedResources() {
     assert.strictEqual(classification.group, "noun", `plus in "${sentence}" modifies nothing, so it is the noun`);
     assert(classification.alternatives.includes("adverb"), `plus in "${sentence}" keeps the adverb as an alternative`);
   }
+  // entre and contre are also forms of entrer and contrer. Right after a
+  // subject they are the verb, which keeps its infinitive.
+  for (const [word, sentence, group] of [
+    ["entre", "il entre dans la salle", "verb"],
+    ["contre", "elle contre l'attaque", "verb"],
+    ["contre", "il ne contre pas", "verb"],
+    ["entre", "entre nous", "preposition"],
+    ["contre", "contre le mur", "preposition"],
+    ["entre", "il est entre nous", "preposition"],
+    ["contre", "je suis contre", "preposition"]
+  ]) {
+    assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
+  }
+  assert(french.classifyWord("entre", "il entre dans la salle").alternatives.includes("preposition"));
   // Fixed adverbial expressions: "au moins" is the commonest moins of all, and
   // read as the noun it answered "the minus sign".
   for (const [word, sentence] of [
@@ -745,6 +759,7 @@ async function testDictionaryWithRealData() {
     ["la morte", "morte", undefined, "", /process of dying/],
     ["une morte", "morte", undefined, "", /process of dying/],
     ["au moins", "moins", undefined, "", /minus sign/],
+    ["il entre dans la salle", "entre", "enter", "", /between/],
     ["c'est un plus", "plus", "plus, the symbol", "the noun, with nothing it modifies"]
   ];
   for (const [sentence, token, expected, reason, forbidden] of cases) {

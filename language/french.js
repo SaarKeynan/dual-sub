@@ -587,6 +587,8 @@
     ["adverb", new Set(["plus", "très", "trop", "ne", "jamais"])]
   ]);
 
+  const prepositionVerbForms = new Set(["entre", "contre"]);
+
   const groupByCode = Object.freeze({
     n: "noun", v: "verb", j: "adjective", r: "adverb", p: "pronoun",
     d: "determiner", s: "preposition", c: "conjunction", i: "interjection"
@@ -828,7 +830,12 @@
       // tu, lui and plus are attested participles of taire, luire and plaire,
       // but in running text the closed-class reading is overwhelmingly likelier.
       const closed = closedWordGroup(rawWord);
-      if (closed) {
+      // entre and contre are also entrer and contrer. Straight after a subject
+      // ("il entre dans la salle", "elle ne contre pas") they are the verb;
+      // "entre nous" and "je suis contre" have no subject before them.
+      const verbAfterSubject = closed === "preposition" && prepositionVerbForms.has(splitElidedClitic(rawWord).base) &&
+        Boolean(inferVerbContext(splitElidedClitic(rawWord), sentence).person);
+      if (closed && !verbAfterSubject) {
         return {
           group: closed,
           alternatives: Array.from(new Set([...groups.filter((group) => group !== closed), "verb"])),
