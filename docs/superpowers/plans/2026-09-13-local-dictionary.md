@@ -19,6 +19,7 @@
 - **The runtime is French→English only.**
 - **Run `npm run verify`** (check + tests + lint, warnings are errors) before every commit. Node is at `C:\Program Files\nodejs` and may not be on PATH.
 - **The working tree is CRLF** (`core.autocrlf=true`). Data files read by byte offset must be listed in `.gitattributes` as `-text` or checkout will corrupt them.
+- **A new development-only file must be added to `ignoreFiles` in `web-ext-config.cjs`.** `.gitignore` does not affect packaging: `web-ext` packages everything under `sourceDir` except what `ignoreFiles` names.
 - **Commit messages end with:**
   ```
   Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
@@ -264,7 +265,7 @@ function genderOf(tags) {
 Run: `node tests/smoke.test.js`
 Expected: PASS, and the whole smoke suite still passes.
 
-- [ ] **Step 6: Ignore the extract and protect the output from CRLF**
+- [ ] **Step 6: Keep the extract out of git AND out of the package**
 
 Append to `.gitignore`:
 
@@ -277,6 +278,19 @@ Append to `.gitattributes`:
 ```
 vendor/wiktionary/*.txt -text
 ```
+
+And add the same path to `ignoreFiles` in `web-ext-config.cjs`, beside the
+`vendor/lexique/Lexique383.tsv` entry:
+
+```js
+    "vendor/wiktionary/kaikki-french.jsonl",
+```
+
+`.gitignore` does not keep a file out of the built `.xpi`: `web-ext` packages
+everything under `sourceDir` except what `ignoreFiles` names. `Lexique383.tsv`
+is listed there for exactly this reason, and CLAUDE.md makes it a standing rule.
+Without it the raw extract downloaded in Task 6 — 550 MB to 23 GB — ships in the
+release artifact, against a 5.4 MB baseline.
 
 - [ ] **Step 7: Write the provenance file**
 
