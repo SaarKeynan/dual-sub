@@ -577,8 +577,7 @@ async function testFrenchWithLoadedResources() {
     assert.strictEqual(french.lookupReading(word, sentence).group, group);
   }
   // excuse, montre, marche and mariée are nouns although Lexique's lemma for
-  // each is the verb (excuser, montrer...). Only a form of être or avoir (est,
-  // a, été) after the word is taken as the verb, so the noun still follows.
+  // each is the verb (excuser, montrer...), so the adjective before them stays.
   for (const [word, sentence, group] of [
     ["bonne", "une bonne excuse", "adjective"],
     ["petite", "une petite montre", "adjective"],
@@ -587,6 +586,40 @@ async function testFrenchWithLoadedResources() {
     ["belle", "une belle marche", "adjective"],
     ["petite", "la petite est là", "noun"],
     ["grande", "la grande a dit", "noun"]
+  ]) {
+    assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
+  }
+  // A noun reading needs positive evidence in the phrase: the end of the
+  // clause, a finite verb, a relative, a preposition, or et/ou before another
+  // determiner. Without it the adjective stays, whatever follows: a word
+  // Lexique does not know (live, tuto), a proper noun, a digit, an adjective
+  // joined by et, a closed word (plus, bravo), or a noun spelled like a form
+  // of être or avoir (avions, sommes, as, été, êtres, aura).
+  for (const [word, sentence, group] of [
+    ["grands", "les grands avions", "adjective"],
+    ["nouveaux", "les nouveaux avions", "adjective"],
+    ["grosses", "les grosses sommes", "adjective"],
+    ["petits", "les petits êtres", "adjective"],
+    ["grand", "un grand as", "adjective"],
+    ["long", "un long été", "adjective"],
+    ["grande", "une grande aura", "adjective"],
+    ["petit", "un petit tuto", "adjective"],
+    ["jeune", "une jeune youtubeuse", "adjective"],
+    ["petit", "le petit Nicolas", "adjective"],
+    ["petite", "la petite Marie", "adjective"],
+    ["belle", "une belle et grande maison", "adjective"],
+    ["petits", "les petits 5 euros", "adjective"],
+    ["petit", "un petit plus", "adjective"],
+    ["grand", "un grand bravo", "adjective"],
+    ["petite", "la petite aura faim", "noun"],
+    ["jeunes", "les jeunes sont partis", "noun"],
+    ["petite", "la petite dort", "noun"],
+    ["jeune", "un jeune de banlieue", "noun"],
+    ["jeune", "le jeune qui parle", "noun"],
+    ["grand", "le grand et le petit", "noun"],
+    ["important", "l'important c'est de participer", "noun"],
+    ["reçu", "un reçu", "noun"],
+    ["ami", "un ami proche", "noun"]
   ]) {
     assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
   }
