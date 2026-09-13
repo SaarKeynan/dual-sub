@@ -81,8 +81,13 @@ Add to `tests/smoke.test.js`, and call it from the runner at the bottom of the f
 async function testDictionaryBuild() {
   const fixture = path.join(projectRoot, "tests", "fixtures", "kaikki-sample.jsonl");
   const output = path.join(os.tmpdir(), `dualsub-dictionary-${process.pid}.txt`);
+  // Fourth argument is the lexicon to intersect with. Empty means none, so this
+  // run isolates the language, part-of-speech and tag filters. "Paris" and "dog"
+  // are both absent from Lexique, so with the intersection on they would be
+  // dropped before those filters were reached and the assertions below would
+  // pass for the wrong reason.
   execFileSync(process.execPath, [
-    path.join(projectRoot, "scripts", "build-dictionary.js"), fixture, output
+    path.join(projectRoot, "scripts", "build-dictionary.js"), fixture, output, ""
   ], { encoding: "utf8" });
 
   const lines = fs.readFileSync(output, "utf8").split("\n");
@@ -115,6 +120,24 @@ async function testDictionaryBuild() {
   assert(!entries.has("Paris"), "Proper nouns are not dictionary lookups");
   assert(!entries.has("dog"), "Only French entries are kept");
   fs.unlinkSync(output);
+
+  // And with a lexicon, only lemmas it knows survive. "chien" is in Lexique and
+  // "zzzznotaword" is not, so this proves the intersection rather than assuming it.
+  const lexicon = path.join(os.tmpdir(), `dualsub-lexicon-${process.pid}.txt`);
+  fs.writeFileSync(lexicon, 'chien\t["chien","SjE~","m","s",1,100]');
+  const filteredFixture = path.join(os.tmpdir(), `dualsub-fixture-${process.pid}.jsonl`);
+  fs.writeFileSync(filteredFixture, [
+    '{"word":"chien","lang_code":"fr","pos":"noun","senses":[{"glosses":["dog"]}]}',
+    '{"word":"zzzznotaword","lang_code":"fr","pos":"noun","senses":[{"glosses":["nothing"]}]}'
+  ].join("\n"));
+  const filteredOut = path.join(os.tmpdir(), `dualsub-filtered-${process.pid}.txt`);
+  execFileSync(process.execPath, [
+    path.join(projectRoot, "scripts", "build-dictionary.js"), filteredFixture, filteredOut, lexicon
+  ], { encoding: "utf8" });
+  const filtered = fs.readFileSync(filteredOut, "utf8");
+  assert(filtered.startsWith("chien\t"), "A lemma the lexicon knows survives");
+  assert(!filtered.includes("zzzznotaword"), "A lemma it does not know is dropped");
+  for (const file of [lexicon, filteredFixture, filteredOut]) fs.unlinkSync(file);
 }
 ```
 
@@ -137,7 +160,12 @@ const readline = require("readline");
 const projectRoot = path.resolve(__dirname, "..");
 const sourcePath = process.argv[2] || path.join(projectRoot, "vendor", "wiktionary", "kaikki-french.jsonl");
 const outputPath = process.argv[3] || path.join(projectRoot, "vendor", "wiktionary", "french-english.txt");
-const lexicalInfoPath = path.join(projectRoot, "vendor", "lexique", "french-lexical-info.txt");
+// Fourth argument overrides the lexicon to intersect with; an empty string
+// disables the intersection, which the build test uses to isolate the other
+// filters. Defaults to the shipped Lexique index.
+const lexicalInfoPath = process.argv[4] === undefined
+  ? path.join(projectRoot, "vendor", "lexique", "french-lexical-info.txt")
+  : process.argv[4];
 
 // Wiktionary names parts of speech its own way. Map onto the labels
 // language/french.js already produces, so a reading and a sense compare directly.
@@ -181,7 +209,7 @@ function genderOf(tags) {
 }
 
 (async () => {
-  const known = fs.existsSync(lexicalInfoPath) ? lexiqueLemmas() : null;
+  const known = lexicalInfoPath && fs.existsSync(lexicalInfoPath) ? lexiqueLemmas() : null;
   const collected = new Map();
   const input = readline.createInterface({ input: fs.createReadStream(sourcePath), crlfDelay: Infinity });
 
@@ -282,7 +310,24 @@ git commit -m "build: render the Wiktionary extract into a dictionary index"
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `tests/regression.test.js` and call it from the runner at the bottom. The harness there (`background()`) already provides `indexedDB` via the same fake used by the video-cache suite; if it does not, require `fake-indexeddb/auto` at the top of the file exactly as `tests/video-cache.test.js` does.
+First extend the harness. `background()` in `tests/regression.test.js` builds a
+context with **no** `indexedDB`, which is why `translation-engine.js` uses its
+`storage.local` fallback throughout that suite. Switching it on globally would
+move every existing test onto a different cache path, so it becomes opt-in:
+
+```js
+const { IDBFactory } = require("fake-indexeddb");
+
+function background(initial = {}, options = {}) {
+  // ... existing body, then in the vm.createContext call add:
+  //   ...(options.indexedDB ? { indexedDB: new IDBFactory() } : {}),
+}
+```
+
+Add `indexedDB` to the `vm.createContext` object exactly that way, leaving every
+existing `background(...)` call untouched and unaffected.
+
+Then add the test below and call it from the runner at the bottom of the file.
 
 ```js
 // The dictionary lives on disk, not in memory: the background is an event page
@@ -292,7 +337,7 @@ async function dictionaryStoreTests() {
     'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]',
     'livre\t[{"pos":"noun","gender":"m","senses":["book"]},{"pos":"verb","senses":["to deliver"]}]'
   ].join("\n");
-  const { context: c } = background();
+  const { context: c } = background({}, { indexedDB: true });
   let fetches = 0;
   c.fetch = async () => { fetches++; return { ok: true, text: async () => index }; };
   vm.runInContext(source("dictionary.js"), c);
@@ -515,7 +560,7 @@ Add to `tests/regression.test.js` and call it from the runner:
 // provider cache, where it would occupy a provider-keyed slot.
 async function dictionaryLookupTests() {
   const index = 'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]';
-  const { context: c } = background();
+  const { context: c } = background({}, { indexedDB: true });
   let providerCalls = 0;
   c.fetch = async (url) => {
     if (String(url).includes("french-english")) return { ok: true, text: async () => index };
@@ -559,7 +604,7 @@ async function dictionaryLookupTests() {
   assert.equal(cached[0], null, "The dictionary does not write into the translation cache");
 
   // Switched off, the same word goes to the engine.
-  const off = background({ settings: { dictionaryLookup: false } }).context;
+  const off = background({ settings: { dictionaryLookup: false } }, { indexedDB: true }).context;
   let offCalls = 0;
   off.fetch = async (url) => {
     if (String(url).includes("french-english")) return { ok: true, text: async () => index };
