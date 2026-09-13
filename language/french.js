@@ -650,30 +650,6 @@
     ) || word;
   }
 
-  // Feminine endings and the masculine each is tried as, in order: nouvelle is
-  // nouveau before nouvel, cruelle falls through to cruel.
-  const feminineAdjectiveEndings = [
-    ["elle", "eau"], ["elle", "el"], ["euse", "eux"], ["ive", "if"], ["ère", "er"],
-    ["enne", "en"], ["onne", "on"], ["ette", "et"], ["sse", "s"], ["e", ""]
-  ];
-
-  // The masculine singular of a feminine or plural adjective, which is where
-  // the dictionary files the adjective. Lexique keeps one lemma per form, and
-  // for nouvelle that lemma is the noun (news). A candidate counts only when
-  // Lexique lists both it and the word as adjectives; otherwise "".
-  function adjectiveLemma(rawWord) {
-    const word = splitElidedClitic(rawWord).base;
-    if (!lexicalGroups(word).includes("adjective")) return "";
-    const singular = word.endsWith("es") ? word.slice(0, -1) : word;
-    if (!singular.endsWith("e")) return "";
-    for (const [feminine, masculine] of feminineAdjectiveEndings) {
-      if (!singular.endsWith(feminine)) continue;
-      const candidate = singular.slice(0, -feminine.length) + masculine;
-      if (candidate && candidate !== word && lexicalGroups(candidate).includes("adjective")) return candidate;
-    }
-    return "";
-  }
-
   function hasNominalDeterminer(rawWord, sentence) {
     const parts = splitElidedClitic(rawWord);
     const word = parts.base;
@@ -694,23 +670,11 @@
     });
   }
 
-  // The token after each occurrence of word that directly follows a nominal
-  // determiner, or undefined at the end. Punctuation is kept as its own token
-  // so a clause boundary ends the phrase.
+  // The sentence as lowercased tokens. Punctuation is kept as its own token so
+  // a clause boundary ends a phrase.
   function sentenceTokens(sentence) {
     return normalize(sentence).replace(/’/gu, "'").match(/[\p{L}]+|[^\p{L}\s']/gu) || [];
   }
-
-  function tokensAfterDeterminer(word, sentence) {
-    const tokens = sentenceTokens(sentence);
-    return tokens.flatMap((token, index) => (
-      token === word && (strongNominalDeterminers.has(tokens[index - 1]) || articleDeterminers.has(tokens[index - 1]))
-        ? [tokens[index + 1]]
-        : []
-    ));
-  }
-
-  const functionWordGroups = new Set(["determiner", "preposition", "conjunction", "pronoun"]);
 
   // Adverbial expressions built on an article: "au moins", "du moins", "deux
   // au plus", "le moins du monde", "c'est le moins qu'on puisse dire". "au
@@ -740,55 +704,18 @@
     const word = splitElidedClitic(rawWord).base;
     if (word !== "moins" && closedWordGroup(word) !== "adverb") return false;
     if (fixedAdverbialExpression(word, sentence)) return true;
-    return tokensAfterDeterminer(word, sentence).some((next) => {
+    const tokens = sentenceTokens(sentence);
+    return tokens.some((token, index) => {
+      if (token !== word) return false;
+      const preceding = tokens[index - 1];
+      if (!strongNominalDeterminers.has(preceding) && !articleDeterminers.has(preceding)) return false;
+      const next = tokens[index + 1];
       if (!next || !/^\p{L}/u.test(next)) return false;
       // Lexique also lists en as an adverb; a function word starts a new phrase.
-      if (functionWordGroups.has(closedWordGroup(next))) return false;
+      if (["determiner", "preposition", "conjunction", "pronoun"].includes(closedWordGroup(next))) return false;
       if (lexicalGroups(next).some((group) => group === "adjective" || group === "adverb")) return true;
       return (analyzeWithMorphology(next) || fallbackAnalysis(next))?.mood === "participle";
     });
-  }
-
-  // How the word after a determiner-led word reads: "noun", "ambiguous" when
-  // the lexicon also has it as an adjective, or "" for anything else. Lexique
-  // lists est, a, as and été as nouns (east, the letter, ace, summer), but as
-  // forms of être and avoir they are overwhelmingly the verb: "la nouvelle est
-  // arrivée". Any other noun counts, even when Lexique's lemma for the form is
-  // a verb, because excuse, montre and marche are ordinary nouns too.
-  const auxiliaryLemmas = new Set(["être", "avoir"]);
-  function followingNounReading(token) {
-    if (!token || !/^\p{L}/u.test(token) || closedWordGroup(token)) return "";
-    const groups = lexicalGroups(token);
-    if (!groups.includes("noun")) return "";
-    const lemma = lexicalInfo(token)?.lemma;
-    if (lemma && lemma !== token && auxiliaryLemmas.has(lemma)) return "";
-    return groups.includes("adjective") ? "ambiguous" : "noun";
-  }
-
-  // Adjectives that ordinarily stand before their noun (the BANGS class and a
-  // few more), by masculine singular lemma. They decide "ma chère amie" and
-  // "le petit ami", where the next word is itself noun or adjective.
-  const preposedAdjectives = new Set([
-    "beau", "bel", "joli", "jeune", "vieux", "vieil", "nouveau", "nouvel", "bon", "mauvais", "meilleur",
-    "grand", "petit", "gros", "long", "haut", "court", "premier", "dernier", "prochain", "autre", "même",
-    "vrai", "faux", "seul", "cher", "pauvre", "brave", "ancien", "futur", "véritable", "simple",
-    "présumé", "prétendu", "soi-disant", "sacré", "moindre", "double"
-  ]);
-
-  // After a determiner, a word the lexicon lists as both noun and adjective is
-  // an adjective only when a noun follows for it to modify: "une nouvelle
-  // voiture", but "la nouvelle est arrivée", "une donnée", "la marine". When the
-  // next word is itself noun or adjective ("les armées ennemies", "ma chère
-  // amie"), a pre-posed adjective keeps the adjective and anything else is the
-  // noun, followed by its own adjective.
-  function nounOrAdjectiveInContext(rawWord, sentence) {
-    const word = splitElidedClitic(rawWord).base;
-    const next = tokensAfterDeterminer(word, sentence)[0];
-    const reading = followingNounReading(next);
-    if (reading === "noun") return "adjective";
-    if (reading !== "ambiguous") return "noun";
-    const lemmas = [word, adjectiveLemma(word), lexicalInfo(word)?.lemma];
-    return lemmas.some((lemma) => lemma && preposedAdjectives.has(lemma)) ? "adjective" : "noun";
   }
 
   function analyzeWord(rawWord, sentence = "") {
@@ -827,9 +754,7 @@
     const analysis = suppliedAnalysis || analyzeWord(rawWord, sentence);
     const groups = lexicalGroups(rawWord);
     if (analysis?.partOfSpeech === "nominal") {
-      const contextualGroup = groups.includes("noun") && groups.includes("adjective")
-        ? nounOrAdjectiveInContext(rawWord, sentence)
-        : groups.find((group) => group === "noun" || group === "adjective") || "noun";
+      const contextualGroup = groups.find((group) => group === "noun" || group === "adjective") || "noun";
       // Only offer a verb alternative when a verb reading was actually found.
       const candidates = analysis.verbReadings?.length ? [...groups, "verb"] : groups;
       return {
@@ -887,7 +812,6 @@
 
   const ready = initializeResources();
   globalThis.DualSubFrench = Object.freeze({
-    adjectiveLemma,
     analyzeWord,
     analyzeElisionParticle,
     classifyWord,

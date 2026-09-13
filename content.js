@@ -1740,25 +1740,16 @@
   // which is no headword). Every other reading tries the surface word first,
   // because Lexique keeps one lemma per form and for `été`, `est` and `as` that
   // lemma is the verb; then Lexique's lemma, which reaches inflected forms the
-  // morphology cannot (`armées` -> `armée`, `yeux` -> `oeil`); then the
-  // morphology's own lemma, which reaches what Lexique files under the verb or
-  // not at all (`présumée` -> `présumé`). A verb analysis under another reading
-  // (`plus` as a form of `plaire`) sends no infinitive. An adjective reading
-  // finally tries the masculine singular (`nouvelle` -> `nouveau`), where the
-  // dictionary files the adjective; Lexique's lemma for `nouvelle` is the noun.
-  // A lemma Lexique knows only as a verb is skipped: Lexique's lemma for
-  // `morte` is `mourir`, whose one noun sense is "the process of dying".
+  // morphology cannot (`armées` -> `armée`, `yeux` -> `oeil`). A lemma Lexique
+  // knows only as a verb is skipped: Lexique's lemma for `morte` is `mourir`,
+  // whose one noun sense is "the process of dying".
   function dictionaryCandidatesFor(word, conjugation, reading) {
     const french = globalThis.DualSubFrench;
     if (reading?.group === "verb" && conjugation?.lemma) return [conjugation.lemma];
-    const verbOnly = (lemma) => {
-      const groups = french?.lexicalGroups?.(lemma) || [];
-      return groups.includes("verb") && !groups.some((group) => group === "noun" || group === "adjective");
-    };
-    const lemmas = [french?.lexicalInfo(word)?.lemma, conjugation?.partOfSpeech === "verb" ? "" : conjugation?.lemma]
-      .filter((lemma) => lemma && !verbOnly(lemma));
-    const masculine = reading?.group === "adjective" ? french?.adjectiveLemma?.(word) : "";
-    return [word, ...lemmas, masculine]
+    const lemma = french?.lexicalInfo(word)?.lemma;
+    const groups = (lemma && french?.lexicalGroups?.(lemma)) || [];
+    const verbOnly = groups.includes("verb") && !groups.some((group) => group === "noun" || group === "adjective");
+    return [word, verbOnly ? "" : lemma]
       .filter((value, index, values) => value && values.indexOf(value) === index);
   }
 

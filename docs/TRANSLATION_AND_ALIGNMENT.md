@@ -130,16 +130,10 @@ morphology's plain infinitive (`appeler`, never `s’appeler`). Every other
 reading sends the surface word and then the Lexique lemma: Lexique keeps one
 lemma per form, and for `été`, `est` and `as` that lemma is the verb, so `cet
 été` must try `été` before `être`, while `armées` and `yeux` only reach an entry
-through their lemma. Last comes the morphology's own lemma, which reaches forms
-Lexique files under the verb or does not list (`la présumée victime` reaches
-the adjective `présumé`); a verb analysis under a non-verb reading, such as
-`plus` as a form of `plaire`, adds nothing. An adjective reading finally tries
-the masculine singular from `adjectiveLemma()` in `language/french.js`
-(`nouvelle` -> `nouveau`), since Wiktionary files the adjective there and
-Lexique's lemma for `nouvelle` is the noun. A Lexique or morphology lemma that
-Lexique knows only as a verb is not sent: the lemma of `morte` is `mourir`,
-whose one noun sense is "the process of dying". The dictionary answers from the
-first candidate with a part of speech matching the group. When the group is a real part of speech that no
+through their lemma. A Lexique lemma that Lexique knows only as a verb is not
+sent: the lemma of `morte` is `mourir`, whose one noun sense is "the process of
+dying". The dictionary answers from the first candidate with a part of speech
+matching the group. When the group is a real part of speech that no
 candidate has, the dictionary does not answer and the engine does: `la maison`
 is a determiner, and the only `la` entries are the pronoun and the musical
 note. Only a word with no reading (`unknown`) takes the first candidate's first
@@ -343,17 +337,6 @@ Lexique can attest multiple word groups for the same spelling. When a form that
 looks like a participle follows a nominal determiner, DualSub prefers a noun or
 adjective reading and retains the verb as an alternative. This is why context
 such as `une ...` can prevent a misleading verb-first explanation.
-
-When the lexicon lists the word as both noun and adjective, the next word
-decides (`nounOrAdjectiveInContext()` in `language/french.js`). A following
-noun makes it a pre-posed adjective (`une nouvelle voiture`). Anything else
-makes it the noun: a verb, a function word, punctuation, or the end of the
-line (`la nouvelle est arrivée`, `une donnée`, `la marine`). A following word
-that is itself noun or adjective is resolved by a short list of adjectives that
-normally stand before their noun (`ma chère amie` is an adjective, `les armées
-ennemies` a noun). The other reading stays as an alternative. A degree adverb
-after a determiner that modifies the next word is the adverb (`le plus grand`),
-not the noun `un plus`.
 
 Local analysis selects labels and infinitives; it does not invent the displayed
 English meaning. The displayed meaning still comes from correction, cache, or

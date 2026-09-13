@@ -565,52 +565,6 @@ async function testFrenchWithLoadedResources() {
   assert.strictEqual(french.classifyWord("moins", "un moins").group, "noun");
   assert.strictEqual(french.classifyWord("moins", "dix moins deux").group, "adverb");
 
-  // After a determiner, a word the lexicon lists as both noun and adjective was
-  // labelled by lexicon order alone, so "la nouvelle est arrivée" and "la
-  // marine" read as adjectives. It is an adjective only before a noun it can
-  // modify; when that next word is itself noun or adjective, a pre-posed
-  // adjective (grand, cher, jeune...) keeps the adjective.
-  for (const [word, sentence, group] of [
-    ["nouvelle", "une nouvelle voiture", "adjective"],
-    ["grand", "un grand homme", "adjective"],
-    ["petit", "le petit chat", "adjective"],
-    ["chère", "ma chère amie", "adjective"],
-    ["meilleure", "la meilleure amie", "adjective"],
-    ["jeunes", "les jeunes filles", "adjective"],
-    ["nouvelle", "la nouvelle est arrivée", "noun"],
-    ["donnée", "une donnée", "noun"],
-    ["marine", "la marine", "noun"],
-    ["marine", "la marine nationale", "noun"],
-    ["grand", "un grand", "noun"],
-    ["belle", "la belle et la bête", "noun"],
-    ["malade", "le malade dort", "noun"],
-    ["malade", "un malade mental", "noun"],
-    ["armées", "les armées ennemies", "noun"],
-    ["rouge", "le rouge te va bien", "noun"]
-  ]) {
-    const classification = french.classifyWord(word, sentence);
-    assert.strictEqual(classification.group, group, `${word} in "${sentence}"`);
-    assert(classification.alternatives.includes(group === "noun" ? "adjective" : "noun"), `${word} in "${sentence}" keeps the other reading`);
-    assert.strictEqual(french.lookupReading(word, sentence).group, group);
-  }
-  // excuse, montre, marche and mariée are nouns although Lexique's lemma for
-  // each is the verb (excuser, montrer...). Only a form of être or avoir (est,
-  // a, été) after the word is taken as the verb, so the noun still follows.
-  for (const [word, sentence, group] of [
-    ["bonne", "une bonne excuse", "adjective"],
-    ["petite", "une petite montre", "adjective"],
-    ["longue", "une longue marche", "adjective"],
-    ["jeune", "la jeune mariée", "adjective"],
-    ["belle", "une belle marche", "adjective"],
-    ["petite", "la petite est là", "noun"],
-    ["grande", "la grande a dit", "noun"]
-  ]) {
-    assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
-  }
-  // Only one of the two readings in the lexicon: nothing to decide.
-  assert.strictEqual(french.classifyWord("présumée", "la présumée victime").group, "adjective");
-  assert.strictEqual(french.classifyWord("maison", "la maison bleue").group, "noun");
-
   // Lexique's schwa and yod codes reached the card unconverted.
   assert.strictEqual(french.lexicalInfo("je").pronunciation, "ʒə");
   assert(french.lexicalInfo("nuit").pronunciation.includes("ɥ"), "The yod code 8 should render as ɥ");
@@ -621,7 +575,7 @@ async function testFrenchWithLoadedResources() {
   assert.strictEqual(french.lexicalInfo("aujourd’hui").lemma, french.lexicalInfo("aujourd'hui").lemma);
 
   // Lexique spells coeur, soeur, oeuvre; captions spell cœur. Unfolded, those
-  // nouns had no word group at all, so "ma petite sœur" had no noun to modify.
+  // nouns had no word group or lexical info at all.
   for (const [word, sentence] of [["sœur", "ma sœur"], ["cœur", "le cœur"], ["œuvre", "une œuvre d'art"], ["Œil", "un Œil"]]) {
     assert.strictEqual(french.classifyWord(word, sentence).group, "noun", `${word} is a noun`);
   }
@@ -644,15 +598,6 @@ async function testFrenchWithLoadedResources() {
   assert.strictEqual(french.lexicalInfo("armées").lemma, "armée");
   const livre = french.analyzeWord("livre", "je livre le colis");
   assert.strictEqual(livre.lemma, "livrer");
-
-  // Wiktionary files a feminine or plural adjective under its masculine
-  // singular, which Lexique does not always give as the lemma.
-  for (const [form, masculine] of [["nouvelle", "nouveau"], ["belles", "beau"], ["heureuses", "heureux"], ["active", "actif"], ["chère", "cher"], ["ancienne", "ancien"], ["bonne", "bon"], ["petite", "petit"]]) {
-    assert.strictEqual(french.adjectiveLemma(form), masculine, `${form} is a form of the adjective ${masculine}`);
-  }
-  for (const word of ["maison", "rapide", "grand", "nouveau"]) {
-    assert.strictEqual(french.adjectiveLemma(word), "", `${word} has no other masculine adjective form`);
-  }
 }
 
 // Fixture tests of each piece passed while the shipped data answered "la
@@ -712,21 +657,6 @@ async function testDictionaryWithRealData() {
     ["vous avez", "avez", "have"],
     ["je m'appelle", "m'appelle", "call"],
     ["le cœur", "cœur", "heart"],
-    // Neither the surface nor Lexique's lemma (none) has the adjective; the
-    // morphology's -ée -> -é lemma does.
-    ["la présumée victime", "présumée", "presumed"],
-    // Lexique's lemma for nouvelle is the noun (news); the adjective is filed
-    // under its masculine form.
-    ["une nouvelle voiture", "nouvelle", "new"],
-    ["un grand homme", "grand", "big"],
-    ["ma chère amie", "chère", "dear"],
-    // A word that is both noun and adjective, with no noun after it to modify,
-    // is the noun. Read as adjectives these answered "new", "affordable, cheap"
-    // and "maritime", and a learner saves what the card says.
-    ["la nouvelle est arrivée", "nouvelle", "news", "", /\bnew\b/],
-    ["une donnée", "donnée", "datum", "", /affordable/],
-    ["la marine", "marine", "navy", "", /maritime/],
-    ["la marine nationale", "marine", "navy", "", /maritime/],
     // Lexique's lemma for morte is mourir, whose only dictionary noun is "the
     // experience or process of dying". A verb-only lemma is no noun candidate.
     ["la morte", "morte", undefined, "", /process of dying/],
@@ -1147,7 +1077,6 @@ async function testTranscriptWordAnalysis() {
       analyzeWord: (word) => ({ compris: { partOfSpeech: "verb", lemma: "comprendre" }, plus: { partOfSpeech: "verb", lemma: "plaire" } })[word] || null,
       classifyWord: (word) => ({ group: word === "compris" ? "verb" : "adverb" }),
       lexicalInfo: (word) => ({ as: { lemma: "avoir" }, yeux: { lemma: "oeil" }, livre: { lemma: "livre" }, morte: { lemma: "mourir" } })[word] || null,
-      adjectiveLemma: (word) => (word === "nouvelle" ? "nouveau" : ""),
       lexicalGroups: (word) => ({ mourir: ["verb"], avoir: ["verb", "noun"], oeil: ["noun"] })[word] || [],
       lookupReading: (word) => ({
         text: word === "compris" ? "j'ai compris" : word,
@@ -1196,15 +1125,6 @@ async function testTranscriptWordAnalysis() {
   assert.deepStrictEqual(candidates("livre", null, { group: "noun" }), ["livre"], "Duplicates are removed");
   assert.deepStrictEqual(candidates("m’appelle", { partOfSpeech: "verb", lemma: "appeler", pronominalLemma: "s’appeler" }, { group: "verb" }), ["appeler"]);
   assert.deepStrictEqual(candidates("as", { partOfSpeech: "verb" }, { group: "verb" }), ["as", "avoir"], "A verb reading without an infinitive falls back to the other list");
-  // The morphology's own lemma comes last, reaching what Lexique does not list.
-  assert.deepStrictEqual(candidates("présumée", { partOfSpeech: "nominal", lemma: "présumé" }, { group: "adjective" }), ["présumée", "présumé"]);
-  assert.deepStrictEqual(candidates("yeux", { partOfSpeech: "nominal", lemma: "yeux" }, { group: "noun" }), ["yeux", "oeil"], "...de-duplicated");
-  assert.deepStrictEqual(candidates("plus", { partOfSpeech: "verb", lemma: "plaire" }, { group: "adverb" }), ["plus"],
-    "A word not read as a verb does not send the verb it could be a form of");
-  assert.deepStrictEqual(candidates("nouvelle", { partOfSpeech: "nominal", lemma: "nouvelle" }, { group: "adjective" }), ["nouvelle", "nouveau"],
-    "An adjective reading tries the masculine form last");
-  assert.deepStrictEqual(candidates("nouvelle", { partOfSpeech: "nominal", lemma: "nouvelle" }, { group: "noun" }), ["nouvelle"],
-    "...and only an adjective reading: la nouvelle is news");
   // A lemma Lexique knows only as a verb has no noun or adjective to offer.
   assert.deepStrictEqual(candidates("morte", { partOfSpeech: "nominal", lemma: "morte" }, { group: "noun" }), ["morte"],
     "morte does not reach the noun sense of mourir");
