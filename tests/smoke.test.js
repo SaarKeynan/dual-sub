@@ -873,6 +873,50 @@ async function testVocabularyStorage() {
   assert(removed.ok && removed.removed);
 }
 
+// A dictionary answer is several short senses joined with " · ", not one
+// translated phrase. Treated as one phrase, its tokens "to", "or" and "the"
+// fuzzy-matched whatever English word happened to be nearby.
+async function testDictionaryAlignmentEvidence() {
+  const source = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  const marker = extract(source, "  function markAlignedWord", "  function applyPreciseProviderAlignment");
+  const wordMatching = extract(source, "  function normalizeLookupWord", "  function handleWordPointerOver");
+  const makeWord = (text) => {
+    const names = new Set();
+    return { textContent: text, dataset: {}, classList: { add: (name) => names.add(name), remove: (name) => names.delete(name), contains: (name) => names.has(name) } };
+  };
+  let targetWords = [];
+  const context = {
+    console,
+    settings: { wordAlignment: true, translationProvider: "google" },
+    currentSourceText: "je veux être là",
+    sourceLine: { querySelector: () => null },
+    targetLine: { querySelectorAll: () => targetWords }
+  };
+  vm.createContext(context);
+  vm.runInContext(`${marker}\n${wordMatching}`, context);
+  const aligned = (english, evidence) => {
+    targetWords = english.split(" ").map(makeWord);
+    context.refineAlignedTargetWords(evidence, { sentence: context.currentSourceText, alignmentRatio: Number.NaN });
+    return targetWords.filter((word) => word.classList.contains("is-aligned")).map((word) => word.textContent);
+  };
+  const gloss = { provider: "dictionary", translatedText: "to be · to be located; to be situated" };
+
+  assert.deepStrictEqual(Array.from(context.alignmentEvidence(gloss)), ["be", "be located", "be situated"],
+    "Each sense is its own phrase, split on ; and , with the infinitive's to removed");
+  assert.deepStrictEqual(Array.from(context.alignmentEvidence({ provider: "dictionary", translatedText: "her, it (direct object) · la, the note 'A'" })),
+    ["her", "it", "la", "the note 'A'"], "Parentheticals are removed");
+  assert.deepStrictEqual(Array.from(context.alignmentEvidence({ provider: "google", translatedText: "to be" })), ["to be"],
+    "An engine translation is still one phrase");
+
+  assert.deepStrictEqual(aligned("I want to go home", context.alignmentEvidence(gloss)), [],
+    "A dictionary gloss must not highlight a lone \"to\"");
+  assert.deepStrictEqual(aligned("I want to be there", context.alignmentEvidence(gloss)), ["be"],
+    "...and still finds the sense word itself");
+  // A function word is no evidence for a single-token fuzzy match, whoever answered.
+  assert.deepStrictEqual(aligned("I want to go home", ["to the army"]), [],
+    "Function words in an engine's answer do not fuzzy-match on their own");
+}
+
 // The sidebar word list is built from these two functions. Each row needs the
 // line the word came from, so a count alone is not enough.
 async function testTranscriptWordAnalysis() {
@@ -1095,6 +1139,7 @@ async function testDictionaryDataVersion() {
 Promise.resolve()
   .then(testCaptionProcessing)
   .then(testTranscriptWordAnalysis)
+  .then(testDictionaryAlignmentEvidence)
   .then(testFrenchConjugation)
   .then(testAblautMorphology)
   .then(testFrenchWithLoadedResources)

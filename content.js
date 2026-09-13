@@ -1792,6 +1792,26 @@
     return 1 - editDistance(normalizedLeft, normalizedRight) / Math.max(normalizedLeft.length, normalizedRight.length);
   }
 
+  // A dictionary answer is short senses joined with " · " ("to be · to be
+  // located; to be situated"), not a translated phrase. Each sense becomes its
+  // own evidence phrase, without parentheticals, split on ";" and ",", and
+  // without the infinitive's "to", which would otherwise match any "to".
+  function alignmentEvidence(response) {
+    const text = String(response?.translatedText || "");
+    if (response?.provider !== "dictionary") return text ? [text] : [];
+    return text.split(" · ")
+      .map((sense) => sense.replace(/\([^)]*\)/g, " "))
+      .flatMap((sense) => sense.split(/[;,]/))
+      .map((phrase) => phrase.replace(/\s+/g, " ").trim().replace(/^to\s+/i, ""))
+      .filter((phrase, index, phrases) => phrase && phrases.indexOf(phrase) === index);
+  }
+
+  // Too common in any English line to count as evidence on their own.
+  const ENGLISH_FUNCTION_WORDS = new Set([
+    "a", "an", "the", "to", "of", "in", "on", "at", "by", "for", "with", "from",
+    "and", "or", "but", "as", "than", "so", "if"
+  ]);
+
   function refineAlignedTargetWords(translatedText, alignmentContext = lookupContext) {
     if (!settings.wordAlignment || alignmentContext?.sentence !== currentSourceText) return;
     const hoveredSourceWord = sourceLine?.querySelector(".dualsub-word.is-hovered");
@@ -1823,10 +1843,11 @@
       matches.sort((left, right) => left.distance - right.distance);
       best = matches[0];
     } else {
-      const fuzzyMatches = targetValues.map((targetWord, index) => ({
+      const fuzzyEvidence = translatedWords.filter((word) => !ENGLISH_FUNCTION_WORDS.has(word));
+      const fuzzyMatches = !fuzzyEvidence.length ? [] : targetValues.map((targetWord, index) => ({
         start: index,
         length: 1,
-        score: Math.max(...translatedWords.map((translatedWord) => wordSimilarity(targetWord, translatedWord))),
+        score: Math.max(...fuzzyEvidence.map((translatedWord) => wordSimilarity(targetWord, translatedWord))),
         distance: Math.abs(index - estimatedCenter)
       })).filter((match) => match.score >= 0.86);
       fuzzyMatches.sort((left, right) => right.score - left.score || left.distance - right.distance);
@@ -1876,7 +1897,7 @@
         })));
         const translations = results
           .filter((result) => result.status === "fulfilled" && result.value?.ok)
-          .map((result) => result.value.translatedText);
+          .flatMap((result) => alignmentEvidence(result.value));
         const surfaceResponse = results[0]?.status === "fulfilled" ? results[0].value : null;
         if (surfaceResponse?.ok) {
           const cacheKey = lookupTranslationKey(wordText, reading?.key);
@@ -2132,12 +2153,12 @@
         }
         lookupContext.translatedText = response.translatedText;
         saveButton.disabled = false;
-        refineAlignedTargetWords(response.translatedText);
+        refineAlignedTargetWords(alignmentEvidence(response));
         const lemmaResponses = await Promise.allSettled(lemmaPromises);
         if (sequence !== lookupSequence || !selectionCard.classList.contains("is-visible")) return;
-        const evidence = [response.translatedText];
+        const evidence = alignmentEvidence(response);
         lemmaResponses.forEach((result) => {
-          if (result.status === "fulfilled" && result.value?.ok) evidence.push(result.value.translatedText);
+          if (result.status === "fulfilled" && result.value?.ok) evidence.push(...alignmentEvidence(result.value));
         });
         refineAlignedTargetWords(evidence);
       }
