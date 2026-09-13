@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 const { JSDOM, VirtualConsole } = require("jsdom");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -510,6 +511,7 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
   let captureFailed = false;
   let captures = 0;
   let batchFailure = options.batchFailure || null;
+  const sent = [];
   const video = w.document.querySelector("video");
   video.getBoundingClientRect = () => ({ left: 0, top: 0, right: 640, bottom: 360 });
   w.HTMLElement.prototype.setPointerCapture = function () {};
@@ -520,6 +522,7 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
     runtime: { getURL: (value) => "https://extension.test/" + value, onMessage: { addListener(fn) { listener = fn; } },
       getManifest: () => ({ version: "0.0.0-test" }),
       async sendMessage(message) {
+        sent.push(message);
         if (message.type === "complete-video-ocr-selection") {
           captures++;
           assert(w.document.documentElement.classList.contains("dualsub-ocr-active"), "Subtitles stay hidden through screenshot capture");
@@ -551,6 +554,19 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
     storage: { onChanged: event, sync: { async get() { return { settings: { preloadVideoWords: false, ...options.settings } }; } } }
   };
   w.fetch = async () => ({ ok: true, json: async () => ({ as: "nv" }) });
+  if (options.realFrench) {
+    // The morphology engine, Lefff lemmas and Lexique indexes every user runs.
+    // Without them tu, lui and plus have no verb homograph to misread.
+    const engine = { TextDecoder, TextEncoder, WebAssembly, wasmBytes: fs.readFileSync(path.join(root, "vendor/ablaut/ablaut_bg.wasm")) };
+    vm.createContext(engine);
+    vm.runInContext(read("vendor/ablaut/ablaut.js"), engine);
+    const reverseFrench = vm.runInContext("wasm_bindgen.initSync({ module: wasmBytes }); wasm_bindgen.reverseFrench", engine);
+    w.wasm_bindgen = Object.assign(async () => {}, { reverseFrench });
+    w.fetch = async (url) => {
+      const file = String(url).replace("https://extension.test/", "");
+      return { ok: true, json: async () => JSON.parse(read(file)), text: async () => read(file) };
+    };
+  }
   try {
     w.eval(read("language/french.js"));
     await w.DualSubFrench.ready;
@@ -588,6 +604,39 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
       await settle();
       assert.equal(w.document.querySelector(".dualsub-selection-card").classList.contains("is-visible"), false,
         "Escape closes the lookup card from anywhere on the page");
+    }
+    if (options.verbEvidence) {
+      // tu, lui and plus are also attested participles of taire, luire and
+      // plaire. Read as a pronoun or adverb, the card must not name that verb,
+      // save it as the lemma, or spend requests translating it as evidence.
+      const { token, infinitive } = options.verbEvidence;
+      video.currentTime = 1.1;
+      await video.play();
+      await new Promise((resolve) => w.requestAnimationFrame(resolve));
+      const word = w.document.querySelector(`.dualsub-source .dualsub-word[data-word="${token}"]`);
+      assert(word, `${token} is a lookup token`);
+      sent.length = 0;
+      // Hovering runs the evidence prefetch, then opens the card.
+      word.dispatchEvent(new w.MouseEvent("pointerover", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await settle(); await settle();
+      assert.equal(w.document.querySelector(".dualsub-selection-card").classList.contains("is-visible"), true);
+      const infinitiveNode = w.document.querySelector(".dualsub-card-infinitive");
+      assert.equal(infinitiveNode.textContent, infinitive ? `Infinitive: ${infinitive}` : "", `The card's infinitive line for ${token}`);
+      assert.equal(infinitiveNode.hidden, !infinitive);
+      assert(w.document.querySelector(".dualsub-card-wiktionary").href.endsWith(`/wiki/${encodeURIComponent(infinitive || token)}`),
+        `Wiktionary opens ${infinitive || token}, not a verb the word is not read as`);
+      const lookups = sent.filter((message) => message.type === "translate-selection");
+      assert(lookups.length, "The hover and the card look the word up");
+      assert(lookups.every((message) => message.text === token || message.text === infinitive),
+        `Only ${token} and its infinitive are requested: ${JSON.stringify(lookups.map((message) => message.text))}`);
+      w.document.querySelector('.dualsub-selection-card [data-action="save"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+      await settle(); await settle();
+      const saved = sent.find((message) => message.type === "add-vocabulary");
+      assert(saved, "The word is saved");
+      assert.equal(saved.entry.lemma, infinitive, `${token} is saved with its verb lemma, or none`);
+      if (infinitive) assert(lookups.some((message) => message.text === infinitive), "A verb's infinitive is requested as alignment evidence");
+      video.pause();
     }
     if (options.overlayScale) {
       const player = w.document.querySelector(".html5-video-player");
@@ -777,6 +826,9 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
   await content(snapshot, "Je vais bien", { pauseOnLookup: true, settings: { pauseOnLookup: true, hoverLookup: false } });
   await content(snapshot, "Je vais bien", { overlayScale: true });
   await content(snapshot, "Je vais bien", { dictionaryLookup: true });
+  await content(null, "plus tard", { realFrench: true, verbEvidence: { token: "plus", infinitive: "" } });
+  await content(null, "tu es là", { realFrench: true, verbEvidence: { token: "tu", infinitive: "" } });
+  await content(null, "il mange", { realFrench: true, verbEvidence: { token: "mange", infinitive: "manger" } });
   console.log("DualSub UI tests passed");
 })()
   .catch((error) => { console.error(error); process.exitCode = 1; });

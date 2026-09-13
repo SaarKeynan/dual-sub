@@ -1064,7 +1064,9 @@
         const analysis = globalThis.DualSubFrench?.analyzeWord(item.word, sentence) || null;
         const reading = globalThis.DualSubFrench?.lookupReading(item.word, sentence, analysis);
         const group = globalThis.DualSubFrench?.classifyWord(item.word, sentence, analysis)?.group || "";
-        const lemma = analysis?.lemma || globalThis.DualSubFrench?.lexicalInfo(item.word)?.lemma || "";
+        // A verb analysis names its infinitive only for a word read as a verb.
+        const analysisLemma = analysis?.partOfSpeech === "verb" && group !== "verb" ? "" : analysis?.lemma;
+        const lemma = analysisLemma || globalThis.DualSubFrench?.lexicalInfo(item.word)?.lemma || "";
         return {
           ...item,
           lookupText: reading?.text || item.word,
@@ -1882,7 +1884,12 @@
         const wordText = lookupTextForWord(word);
         const conjugation = globalThis.DualSubFrench?.analyzeWord(wordText, currentSourceText);
         const reading = globalThis.DualSubFrench?.lookupReading(wordText, currentSourceText, conjugation);
-        const evidenceTexts = [wordText, settings.wordAlignment ? conjugation?.pronominalLemma || conjugation?.lemma : ""]
+        // Only a word read as a verb has an infinitive worth translating: plus
+        // and tu are also forms of plaire and taire, which are no evidence.
+        const verbLemma = reading?.group === "verb" && conjugation?.partOfSpeech === "verb"
+          ? conjugation.pronominalLemma || conjugation.lemma
+          : "";
+        const evidenceTexts = [wordText, settings.wordAlignment ? verbLemma : ""]
           .filter((text, index, values) => text && values.indexOf(text) === index);
         const results = await Promise.allSettled(evidenceTexts.map((text) => browser.runtime.sendMessage({
           type: "translate-selection", text,
@@ -2034,9 +2041,14 @@
           : globalThis.DualSubFrench?.classifyWord(cleanText, currentSourceText, conjugation))
       : null;
     const reading = kind === "word" ? globalThis.DualSubFrench?.lookupReading(cleanText, sentence, conjugation) : null;
+    // The infinitive, the saved lemma and the evidence requests follow the group
+    // the card shows, not the raw morphology: tu, lui and plus are attested
+    // participles of taire, luire and plaire, but read as a pronoun or adverb.
+    const verbLemma = wordGroup?.group === "verb" && conjugation?.partOfSpeech === "verb"
+      ? (conjugation.pronominalLemma || conjugation.lemma || "") : "";
     lookupContext = {
       readingKey: reading?.key || "",
-      lemma: conjugation?.partOfSpeech === "verb" ? (conjugation.pronominalLemma || conjugation.lemma || "") : "",
+      lemma: verbLemma,
       kind,
       sourceText: cleanText,
       translatedText: "",
@@ -2074,11 +2086,8 @@
           lexicalInfo.number
         ].filter(Boolean).join(" · ")
       : "";
-    const infinitive = conjugation?.partOfSpeech === "verb"
-      ? (conjugation.pronominalLemma || conjugation.lemma || "")
-      : "";
-    infinitiveNode.hidden = !infinitive;
-    infinitiveNode.textContent = infinitive ? `Infinitive: ${infinitive}` : "";
+    infinitiveNode.hidden = !verbLemma;
+    infinitiveNode.textContent = verbLemma ? `Infinitive: ${verbLemma}` : "";
     saveButton.disabled = true;
     saveButton.textContent = "+ Vocabulary";
     phraseButton.disabled = kind !== "word" || hoveredWordIndex < 0;
@@ -2094,7 +2103,7 @@
     pinButton.textContent = lookupPinned ? "Pinned" : "Pin";
     pinButton.classList.toggle("is-active", lookupPinned);
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(reading?.text || cleanText)}&op=translate`;
-    const dictionaryWord = conjugation?.pronominalLemma || conjugation?.lemma || cleanText;
+    const dictionaryWord = verbLemma || (conjugation?.partOfSpeech === "nominal" ? conjugation.lemma : "") || cleanText;
     wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
     selectionCard.classList.add("is-visible");
     cancelLookupDismiss();
@@ -2128,8 +2137,8 @@
     // The infinitive is only ever used as evidence for highlighting the English
     // word, so requesting it when that is switched off spends a request on a
     // result nothing reads.
-    const lemmaTexts = settings.wordAlignment && conjugation?.partOfSpeech === "verb"
-      ? [conjugation?.pronominalLemma || conjugation?.lemma]
+    const lemmaTexts = settings.wordAlignment && verbLemma
+      ? [verbLemma]
       .filter((lemma, index, values) => lemma && values.indexOf(lemma) === index)
       .filter((lemma) => normalizeLookupWord(lemma) !== normalizeLookupWord(cleanText))
       .slice(0, 3)

@@ -1016,7 +1016,8 @@ async function testTranscriptWordAnalysis() {
   const context = {
     console,
     DualSubFrench: {
-      analyzeWord: (word) => (word === "compris" ? { partOfSpeech: "verb", lemma: "comprendre" } : null),
+      // plus is also an attested participle of plaire, but reads as an adverb.
+      analyzeWord: (word) => ({ compris: { partOfSpeech: "verb", lemma: "comprendre" }, plus: { partOfSpeech: "verb", lemma: "plaire" } })[word] || null,
       classifyWord: (word) => ({ group: word === "compris" ? "verb" : "adverb" }),
       lexicalInfo: (word) => ({ as: { lemma: "avoir" }, yeux: { lemma: "oeil" }, livre: { lemma: "livre" } })[word] || null,
       lookupReading: (word) => ({
@@ -1054,6 +1055,8 @@ async function testTranscriptWordAnalysis() {
   assert.strictEqual(adverb.label, "adverb");
   assert.deepStrictEqual(Array.from(adverb.lemmas), ["pourtant"], "With no Lexique entry the word itself is the only candidate");
   assert.strictEqual(adverb.group, "adverb");
+  const [plus] = context.describeStudyWords([{ word: "plus", count: 1, cueIndex: 0, state: "unknown" }], [{ text: "plus tard" }]);
+  assert.strictEqual(plus.label, "adverb", "A word not read as a verb is not labelled with a verb's infinitive");
 
   // Every reading other than a verb tries the surface word before Lexique's
   // lemma, which for as/été/est is the verb. A verb reading sends the plain
