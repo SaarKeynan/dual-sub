@@ -35,7 +35,10 @@
       if (typeof indexedDB === "undefined") { resolve(null); return; }
       // A failed or blocked open answers null for the lookups waiting on it,
       // but is not remembered: the event page outlives it, so the next lookup
-      // tries the open again instead of answering null until a restart.
+      // tries the open again instead of answering null until a restart. In a
+      // real IndexedDB a retry after a blocked open queues behind the request
+      // still pending and waits rather than answering null. Blocking needs a
+      // version change, which cannot happen while DB_VERSION is 1.
       const giveUp = () => {
         if (databasePromise === attempt) databasePromise = null;
         resolve(null);
