@@ -1067,7 +1067,7 @@ async function dictionaryOpenFailureRecoveryTests() {
   c.fetch = async () => ({ ok: true, text: async () => index });
   const open = c.indexedDB.open.bind(c.indexedDB);
   const outcomes = ["error", "blocked", "throw"];
-  const abandoned = [];
+  let lateSuccess = null;
   let opens = 0;
   c.indexedDB.open = (...args) => {
     opens++;
@@ -1078,10 +1078,13 @@ async function dictionaryOpenFailureRecoveryTests() {
     setTimeout(() => {
       request[`on${outcome}`]();
       // A blocked open can still succeed once the other connection goes away.
+      // The test fires that success itself, after a newer open owns the store.
       if (outcome === "blocked") {
-        const database = { closed: false, close() { this.closed = true; } };
-        abandoned.push(database);
-        setTimeout(() => { request.result = database; request.onsuccess(); }, 0);
+        lateSuccess = () => {
+          request.result = { closed: false, close() { this.closed = true; } };
+          request.onsuccess();
+          return request.result;
+        };
       }
     }, 0);
     return request;
@@ -1098,7 +1101,8 @@ async function dictionaryOpenFailureRecoveryTests() {
   assert.equal(answered?.senses[0], "army", "A later lookup opens successfully and answers");
   assert.equal(opens, 4);
   assert.equal(c.DualSubDictionary.state, "ready");
-  assert.equal(abandoned[0].closed, true, "A blocked open that succeeds after it was given up is closed, not adopted");
+  const late = lateSuccess();
+  assert.equal(late.closed, true, "A blocked open that succeeds after it was given up is closed, not adopted");
   assert.equal((await c.DualSubDictionary.lookup("armée"))?.senses[0], "army");
   assert.equal(opens, 4, "A working connection is still reused");
 }
