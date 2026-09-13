@@ -370,6 +370,21 @@ async function popup() {
     // be offerable: a control that silently does nothing is worse than none.
     assert.equal(w.document.querySelector('#fallbackOrder li[data-provider="google"] [data-move="up"]').disabled, true);
     assert.equal(w.document.querySelector('#fallbackOrder li[data-provider="azure"] [data-move="down"]').disabled, true);
+
+    // Registered in all three places, or it cannot be found: the ids list, the
+    // defaults, and the search index.
+    const dictionary = w.document.getElementById("dictionaryLookup");
+    assert.equal(dictionary.checked, true, "The dictionary answers by default");
+    dictionary.checked = false;
+    dictionary.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(writes[writes.length - 1].dictionaryLookup, false);
+
+    const dictionarySearch = w.document.getElementById("settingsSearch");
+    dictionarySearch.value = "dictionary";
+    dictionarySearch.dispatchEvent(new w.Event("input", { bubbles: true }));
+    await settle();
+    assert(w.document.querySelector("#settingsSearchResults button"), "The dictionary setting is findable");
   } finally { w.close(); }
 }
 

@@ -59,6 +59,9 @@ const DEFAULT_SETTINGS = {
   // engine absorbs an overflow before a paid key is spent. The reader reorders
   // this in settings; the selected engine is always tried before any of it.
   translationFallbackOrder: ["google", "mymemory", "libretranslate", "azure", "deepl"],
+  // Word meanings come from the bundled dictionary before any engine is asked.
+  // Off means always ask the engine.
+  dictionaryLookup: true,
   bottomOffset: 72,
   maxWidth: 88,
   mymemoryEmail: "",
