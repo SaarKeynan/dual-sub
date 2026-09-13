@@ -94,13 +94,13 @@
             <label>Buffer ahead (seconds)<input id="translationBufferSeconds" type="number" min="15" max="300" step="5"></label>
             <label>Batch size<input id="translationBatchSize" type="number" min="1" max="100" step="1"></label>
           </div>
+          <div class="check-line">
+            <label class="check-row"><input id="dictionaryLookup" type="checkbox"> Look words up in the bundled dictionary first</label>
+            <button class="info" type="button" aria-describedby="dictionaryLookupInfo" aria-label="What the bundled dictionary affects">i</button>
+            <p class="info-bubble" id="dictionaryLookupInfo" role="note">Affects word lookups: the hover card, the sidebar word list, and preloaded words. A word in the dictionary is answered instantly and costs no request. Words it does not have still go to your translation engine.</p>
+          </div>
           <fieldset class="fallback-group">
             <legend>When the engine runs out of requests</legend>
-            <div class="check-line">
-              <label class="check-row"><input id="dictionaryLookup" type="checkbox"> Look words up in the bundled dictionary first</label>
-              <button class="info" type="button" aria-describedby="dictionaryLookupInfo" aria-label="What the bundled dictionary affects">i</button>
-              <p class="info-bubble" id="dictionaryLookupInfo" role="note">Affects word lookups: the hover card, the sidebar word list, and preloaded words. A word in the dictionary is answered instantly and costs no request. Words it does not have still go to your translation engine.</p>
-            </div>
             <p class="fallback-order-label" id="fallbackOrderLabel">Order engines are tried <span>your selected engine goes first</span></p>
             <ol id="fallbackOrder" class="fallback-order" aria-labelledby="fallbackOrderLabel"></ol>
             <div class="check-line">

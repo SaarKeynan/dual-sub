@@ -375,6 +375,8 @@ async function popup() {
     // defaults, and the search index.
     const dictionary = w.document.getElementById("dictionaryLookup");
     assert.equal(dictionary.checked, true, "The dictionary answers by default");
+    assert(!dictionary.closest("fieldset.fallback-group"), "The dictionary switch is not announced under the out-of-requests legend");
+    assert.equal(dictionary.closest(".settings-group")?.querySelector("summary span")?.textContent, "Translation service");
     dictionary.checked = false;
     dictionary.dispatchEvent(new w.Event("change", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 200));

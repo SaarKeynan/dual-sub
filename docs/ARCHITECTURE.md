@@ -190,15 +190,23 @@ correction, or a live provider request.
 ### Bundled dictionary
 
 `dictionary.js` is loaded before `background.js`, exposing `DualSubDictionary`
-with `lookup(lemma, group)`, `clear()`, and `state`. On the first lookup it
+with `lookup(candidates, group)`, `clear()`, and `state`. On the first lookup it
 fetches the shipped `vendor/wiktionary/french-english.txt` and imports it into
 IndexedDB database `dualsub-dictionary` (store `entries`, keyPath `lemma`;
 store `meta` holds a version record written last and only once the import
-finishes, compared against a `DATA_VERSION` constant so a stale or partial
-store is reimported rather than trusted). A lookup is one keyed `get`; nothing
-is held in memory between lookups, since the background is an event page that
-can be unloaded between messages. `group` selects which part of speech
-answers; otherwise the first one does.
+finishes, compared against `DATA_VERSION`, the first 16 hex characters of the
+shipped file's SHA-256, so a stale or partial store is reimported rather than
+trusted). An import clears both stores first, so a lemma the new file removed
+does not survive from the old one. A lookup is one keyed `get` per candidate;
+nothing is held in memory between lookups, since the background is an event
+page that can be unloaded between messages. A connection Firefox closes, or
+that another context asks to close for a version change, is dropped so the next
+lookup reopens it, and a read that throws answers `null`. `candidates` is one
+headword or an ordered list, folded to lowercase with `œ`/`æ` written `oe`/`ae`
+as the build writes keys; the first candidate with a part of speech equal to
+`group` answers. When `group` is a real part of speech that no candidate has,
+the lookup returns `null` so an engine answers; only with no group, or
+`unknown`, does the first candidate with an entry answer with its first part.
 
 `background.js` checks this store for single-word lookups before the
 in-flight-request check and the provider cache, on all three word-meaning

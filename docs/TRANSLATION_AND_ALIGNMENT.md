@@ -122,11 +122,21 @@ The bundled dictionary is checked before the in-flight request and before the
 provider cache is even keyed, not after them: a cache entry can hold a junk
 provider answer the dictionary would answer correctly, so the dictionary goes
 first. It only answers single words, and only while `dictionaryLookup` is on;
-phrases and caption lines never consult it. `content.js` sends a `lemma` and a
-`group` alongside the surface word, because the background script has no
-morphology of its own — a verb reading sends the morphology's infinitive,
-everything else sends the Lexique lemma (`lookupLemmaFor()` in `content.js`).
-A dictionary answer is never written to the translation cache and never runs
+phrases and caption lines never consult it. `content.js` sends an ordered list
+of candidate headwords, `lemmas`, and the reading's `group` alongside the
+surface word, because the background script has no morphology of its own
+(`dictionaryCandidatesFor()` in `content.js`). A verb reading sends the
+morphology's plain infinitive (`appeler`, never `s’appeler`). Every other
+reading sends the surface word and then the Lexique lemma: Lexique keeps one
+lemma per form, and for `été`, `est` and `as` that lemma is the verb, so `cet
+été` must try `été` before `être`, while `armées` and `yeux` only reach an entry
+through their lemma. The dictionary answers from the first candidate with a part
+of speech matching the group. When the group is a real part of speech that no
+candidate has, the dictionary does not answer and the engine does: `la maison`
+is a determiner, and the only `la` entries are the pronoun and the musical
+note. Only a word with no reading (`unknown`) takes the first candidate's first
+part. Without candidates the background looks up the word itself. A dictionary
+answer is never written to the translation cache and never runs
 the short-word quality checks below, since those checks exist to catch a bad
 provider answer and a dictionary entry is not one. The same check answers all
 three word-meaning paths — the hover lookup card (`translate-selection` →
@@ -362,6 +372,12 @@ lookup for:
 Only the surface-form answer is shown as the lookup definition. Both answers can
 be used privately as matching evidence.
 
+A bundled-dictionary answer is several short senses joined with ` · `, not a
+translated phrase, so each sense becomes its own evidence phrase: parentheticals
+are removed, it is split on `;` and `,`, and a leading `to ` is dropped. Taken as
+one phrase, `to be · to be located; to be situated` offered `to` as evidence and
+highlighted any `to` in the English line.
+
 DualSub tokenizes those English results and searches the displayed English line
 for an exact contiguous occurrence. If the same phrase appears more than once,
 it estimates the expected target position using the selected French word's
@@ -382,8 +398,11 @@ the evidence words. The comparison:
 - strips common `-ing`, `-ied`, `-ed`, `-es`, and plural `-s` endings;
 - otherwise uses normalized Levenshtein similarity.
 
-An exact match scores `1.0`, a matching English stem scores `0.9`, and a fuzzy
-match must score at least `0.86`. Highest score wins, with proximity to the
+English function words (`a`, `an`, `the`, `to`, `of`, `in`, `on`, `at`, `by`,
+`for`, `with`, `from`, `and`, `or`, `but`, `as`, `than`, `so`, `if`) are not
+evidence for this single-word comparison; they can still match as part of an
+exact phrase. An exact match scores `1.0`, a matching English stem scores `0.9`,
+and a fuzzy match must score at least `0.86`. Highest score wins, with proximity to the
 estimated position breaking ties.
 
 ### Worked examples
