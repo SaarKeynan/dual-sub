@@ -532,7 +532,13 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
           if (batchFailure) { const failure = batchFailure; batchFailure = null; return failure; }
           return { ok: true, results: (message.items || []).map((item) => ({ translatedText: `${item.text} [en]`, provider: "google" })) };
         }
-        if (message.type === "translate-selection") return { ok: true, translatedText: message.lookupText === "tu l'as" ? "you have it" : "the ace", provider: "google" };
+        if (message.type === "translate-selection") {
+          if (options.dictionaryLookup) {
+            return { ok: true, translatedText: "army · armed forces", provider: "dictionary",
+              provenance: "Dictionary", partOfSpeech: "noun", gender: "f" };
+          }
+          return { ok: true, translatedText: message.lookupText === "tu l'as" ? "you have it" : "the ace", provider: "google" };
+        }
         if (message.type === "fetch-captions") {
           captionRequests++;
           return { ok: true, text: JSON.stringify({ events: [{ tStartMs: 1000, dDurationMs: 1500, segs: [{ utf8: message.url.includes("lang=fr") ? frenchText : "I am well" }] }] }) };
@@ -651,6 +657,30 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
       assert(spoken, "The word is pronounced once the voice list arrives");
       assert.equal(spoken.voice.lang, "fr-FR");
     }
+    if (options.dictionaryLookup) {
+      video.currentTime = 1.1;
+      await video.play();
+      await new Promise((resolve) => w.requestAnimationFrame(resolve));
+      const word = w.document.querySelector(".dualsub-source .dualsub-word");
+      const provenanceRow = () => w.document.querySelector(".dualsub-card-provenance span");
+      word.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+      await settle(); await settle();
+      assert.equal(provenanceRow().textContent, "Source: bundled dictionary");
+      assert(!/cache/i.test(provenanceRow().textContent), "and does not claim a cache answered");
+
+      // A preloaded or previously-looked-up word is replayed from the
+      // in-session memory cache (memoryCache: true, cacheHit: true) rather
+      // than asking the background again. That replay must still name the
+      // dictionary, not describe it as a cache.
+      w.document.querySelector('.dualsub-selection-card [data-action="close"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+      await settle();
+      word.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+      await settle(); await settle();
+      assert.equal(provenanceRow().textContent, "Source: bundled dictionary",
+        "a memory-cache replay of a dictionary answer must still be named as the dictionary");
+      assert(!/cache/i.test(provenanceRow().textContent), "and must not describe the dictionary as a cache");
+      video.pause();
+    }
     if (options.aheadTranslation) {
       const lineText = (selector) => w.document.querySelector(`${selector} .dualsub-line-text`).textContent;
       const isVisible = (selector) => w.document.querySelector(selector).classList.contains("is-visible");
@@ -744,6 +774,7 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
   await content(null, "Tu l'as");
   await content(snapshot, "Je vais bien", { pauseOnLookup: true, settings: { pauseOnLookup: true, hoverLookup: false } });
   await content(snapshot, "Je vais bien", { overlayScale: true });
+  await content(snapshot, "Je vais bien", { dictionaryLookup: true });
   console.log("DualSub UI tests passed");
 })()
   .catch((error) => { console.error(error); process.exitCode = 1; });
