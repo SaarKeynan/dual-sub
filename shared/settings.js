@@ -62,6 +62,12 @@ const DEFAULT_SETTINGS = {
   bottomOffset: 72,
   maxWidth: 88,
   mymemoryEmail: "",
+  // MyMemory is a translation memory, so a single word returns a stored segment
+  // containing it rather than its meaning: measured over ten common words it was
+  // right four times, and its match score does not separate the good answers
+  // from the bad. Off by default, but it is the reader's engine and the reader's
+  // call, so the switch is theirs.
+  mymemoryWordLookup: false,
   sourceStyle: {
     fontSize: 30,
     textColor: "#ffffff",

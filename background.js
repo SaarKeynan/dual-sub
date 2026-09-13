@@ -426,32 +426,6 @@ async function fetchCaptions(url) {
   return response.text();
 }
 
-async function translateWordsIndividually(items, message) {
-  const results = new Array(items.length);
-  let cursor = 0;
-  let cancelled = null;
-  const worker = async () => {
-    while (cursor < items.length && !cancelled) {
-      const index = cursor++;
-      try {
-        results[index] = await translateSelectionWithEngine({
-          text: items[index].text, cacheMode: "word", provider: message.provider,
-          sourceLanguage: message.sourceLanguage, targetLanguage: message.targetLanguage,
-          context: message.context, sessionId: message.sessionId
-        });
-      } catch (error) {
-        // Navigation cancellation ends the whole batch; a single unusable or
-        // low-quality word must not discard the words that did translate.
-        if (error.code === "TRANSLATION_CANCELLED") cancelled = error;
-        else results[index] = null;
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker));
-  if (cancelled) throw cancelled;
-  return { results, health: DualSubTranslation.health() };
-}
-
 // Preloading a video's frequent words used to translate them one at a time,
 // which cost one provider request per word even on engines that accept a
 // hundred texts at once. Translate them together, then apply exactly the same
@@ -479,10 +453,11 @@ async function translateWordBatch(items, message, settings, fallbackProviders = 
     pending.push({ index, text });
   });
   if (!pending.length) return { results, health: DualSubTranslation.health() };
+  const provider = wordLookupProvider(pending[0].text, settings);
   const batch = await DualSubTranslation.translateBatch(
     pending.map(({ text }) => ({ text, cacheId: `word:${text.normalize("NFC").toLocaleLowerCase()}` })),
     {
-      provider: settings.translationProvider,
+      provider,
       sourceLanguage,
       targetLanguage,
       context: message.context,
@@ -499,7 +474,7 @@ async function translateWordBatch(items, message, settings, fallbackProviders = 
       return;
     }
     // Google produced the suspect answer, so asking it again would not help.
-    if (settings.translationProvider === "google") return;
+    if (provider === "google") return;
     try {
       const fallback = await translateConciseWordFallback(message, settings, text);
       results[index] = { ...fallback, sourceText: text, lookupText: text };
@@ -542,11 +517,7 @@ async function translateBatchMessage(message) {
     // switch: the card and the sidebar read preloaded and hovered words from the
     // same cache, and two switches could only drift apart.
     const fallbackProviders = await fallbackProvidersFor("lookups", settings);
-    // MyMemory sends one request per text and rejects the whole call when a
-    // single answer looks unreliable, so batching it would only waste requests.
-    return settings.translationProvider === "mymemory"
-      ? translateWordsIndividually(items, message)
-      : translateWordBatch(items, message, settings, fallbackProviders);
+    return translateWordBatch(items, message, settings, fallbackProviders);
   }
   return DualSubTranslation.translateBatch(message.items, {
     provider: message.provider || settings.translationProvider,
@@ -610,11 +581,36 @@ async function translateConciseWordFallback(message, settings, normalizedText) {
 
 // The batch item and its options decide the cache key, and both the interactive
 // lookup and the word list's cache-only peek have to derive them the same way.
+// MyMemory is a translation memory: it answers with stored segments, so asking
+// it for one word returns a segment that happens to contain it rather than that
+// word's meaning. Measured over ten common words it was right four times, wrong
+// four ("armées" → "10 + 4 Armed", a numbered segment leaking its numbering),
+// and its match score does not separate the two: the junk scored 0.99 and a
+// plainly wrong "as" → "as" scored a perfect 1.
+//
+// So mymemoryWordLookup is off by default and single words take the concise
+// word path instead. It is a default, not a rule: the reader chose this engine,
+// and the switch that overrides this sits with the engine's own settings.
+//
+// Only single words are affected. A phrase is a segment, which is what the
+// store is for, and caption lines are what it is good at.
+function singleWordLookup(value) {
+  return (String(value || "").match(/[\p{L}\p{N}]+(?:['’][\p{L}]+)*/gu) || []).length === 1;
+}
+
+function wordLookupProvider(text, settings) {
+  const substituted = settings.translationProvider === "mymemory"
+    && singleWordLookup(text)
+    && !settings.mymemoryWordLookup;
+  return substituted ? "google" : settings.translationProvider;
+}
+
 // Built in one place so a peek cannot miss an entry the lookup would have hit.
 function lookupBatchItem(message, settings) {
   const normalizedText = String(message.text || "").trim();
   const lookupText = cleanVocabularyText(message.lookupText, 1000) || normalizedText;
   const readingKey = cleanVocabularyText(message.readingKey, 1000);
+  const provider = wordLookupProvider(normalizedText, settings);
   return {
     normalizedText,
     lookupText,
@@ -626,11 +622,11 @@ function lookupBatchItem(message, settings) {
         : ""
     },
     options: {
-      provider: settings.translationProvider,
+      provider,
       sourceLanguage: message.sourceLanguage || settings.sourceLanguage,
       targetLanguage: message.targetLanguage || settings.targetLanguage,
       context: message.context,
-      providerVersion: settings.translationProvider === "mymemory" && message.cacheMode === "word" ? "mymemory-word-v2" : ""
+      providerVersion: provider === "mymemory" && message.cacheMode === "word" ? "mymemory-word-v2" : ""
     }
   };
 }
@@ -668,7 +664,7 @@ async function translateSelectionWithEngine(message) {
   const settings = await getSettings();
   const { normalizedText, lookupText, readingKey, item, options } = lookupBatchItem(message, settings);
   const pendingKey = [
-    settings.translationProvider,
+    options.provider,
     readingKey,
     lookupText,
     message.sourceLanguage || settings.sourceLanguage,
@@ -705,21 +701,21 @@ async function translateSelectionWithEngine(message) {
         fallbackProviders: await fallbackProvidersFor(message.purpose || "lookups", settings)
       }, settings);
     } catch (error) {
-      if (settings.translationProvider !== "mymemory" || message.cacheMode !== "word" || error.code !== "MYMEMORY_UNRELIABLE_RESULT") throw error;
+      if (options.provider !== "mymemory" || message.cacheMode !== "word" || error.code !== "MYMEMORY_UNRELIABLE_RESULT") throw error;
       const fallback = await translateConciseWordFallback(message, settings, lookupText);
       return { ...fallback, sourceText: normalizedText, lookupText };
     }
     const result = batch.results[0];
-    const wrongLanguage = message.cacheMode === "word" && settings.translationProvider === "mymemory"
+    const wrongLanguage = message.cacheMode === "word" && options.provider === "mymemory"
       ? await wrongLanguageWordTranslation(
           result?.translatedText,
           message.targetLanguage || settings.targetLanguage,
           message.sourceLanguage || settings.sourceLanguage
         )
       : false;
-    const suspiciousMemory = settings.translationProvider === "mymemory" && DualSubTranslation.suspiciousMyMemoryWordResult(lookupText, result?.translatedText);
+    const suspiciousMemory = options.provider === "mymemory" && DualSubTranslation.suspiciousMyMemoryWordResult(lookupText, result?.translatedText);
     if (message.cacheMode === "word" && (suspiciousWordTranslation(normalizedText, result?.translatedText) || wrongLanguage || suspiciousMemory)) {
-      if (settings.translationProvider === "google") {
+      if (options.provider === "google") {
         const error = new Error("The translation service returned an unreliable word meaning.");
         error.code = "WORD_TRANSLATION_LOW_QUALITY";
         throw error;

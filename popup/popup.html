@@ -86,7 +86,7 @@
               <option value="azure">Azure Translator · alignment + batching</option>
               <option value="deepl">DeepL API Free · contextual</option>
               <option value="google">Google web translation · unofficial</option>
-              <option value="mymemory">MyMemory · manual legacy fallback</option>
+              <option value="mymemory">MyMemory · caption lines, not single words</option>
               <option value="libretranslate">LibreTranslate · custom endpoint</option>
             </select>
           </label>
@@ -140,6 +140,11 @@
             <label class="field-label">Optional MyMemory contact email
               <input id="mymemoryEmail" type="email" placeholder="you@example.com" autocomplete="email">
             </label>
+            <div class="check-line">
+              <label class="check-row"><input id="mymemoryWordLookup" type="checkbox"> Use MyMemory for single-word meanings</label>
+              <button class="info" type="button" aria-describedby="mymemoryWordLookupInfo" aria-label="What single-word meanings affects">i</button>
+              <p class="info-bubble" id="mymemoryWordLookupInfo" role="note">MyMemory stores whole sentences. Asked for one word it often returns an unrelated stored sentence, so single words use the concise word path instead. Caption lines and phrases always use MyMemory.</p>
+            </div>
           </div>
           <div class="service-actions"><button id="saveProvider" type="button">Save provider access</button><button id="clearProvider" type="button">Forget saved keys</button><span id="providerStatus" class="inline-status" role="status"></span></div>
           <div class="service-actions"><button id="clearTranslationCache" type="button" title="Clear saved video captions and individual translations">Clear subtitle caches</button><span id="cacheStatus" class="inline-status"></span></div>

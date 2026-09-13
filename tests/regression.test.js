@@ -315,17 +315,24 @@ async function correctionKeyTests() {
 async function translationTests() {
   const memory = background({ settings: { translationProvider: "mymemory" } }).context;
   let fallbackCalls = 0;
+  let memoryCalls = 0;
   memory.fetch = async (url) => {
-    if (String(url).includes("mymemory")) return { ok: true, json: async () => ({
-      responseStatus: 200, responseData: { translatedText: "her name is Anna", match: 0.99 },
-      matches: [{ segment: "avez", translation: "her name is Anna", quality: "100", match: 0.99 }]
-    }) };
+    if (String(url).includes("mymemory")) {
+      memoryCalls++;
+      return { ok: true, json: async () => ({
+        responseStatus: 200, responseData: { translatedText: "her name is Anna", match: 0.99 },
+        matches: [{ segment: "avez", translation: "her name is Anna", quality: "100", match: 0.99 }]
+      }) };
+    }
     fallbackCalls++;
     return { ok: true, json: async () => [[["have", "avez"]]] };
   };
   const repaired = await memory.translateSelectionWithEngine({ text: "avez", cacheMode: "word" });
   assert.equal(repaired.translatedText, "have");
-  assert.equal(repaired.qualityFallback, true);
+  // This answer used to be fetched, rejected by the quality checks and replaced.
+  // The store is now not asked for a single word at all, so the quality=100
+  // segment never arrives and no request is spent learning that it is wrong.
+  assert.equal(memoryCalls, 0, "A single word never reaches the segment store");
   const preloaded = await memory.translateBatchMessage({ items: [{ text: "avez", cacheId: "word:avez" }] });
   assert.equal(preloaded.results[0].translatedText, "have", "Preloading applies the same quality checks as clicking");
   assert.equal(fallbackCalls, 1, "The validated fallback is cached");
@@ -609,10 +616,65 @@ async function providerFallbackTests() {
     "and a value that is not a list falls back to the default order");
 }
 
+// MyMemory is a translation memory: it answers with stored segments, so asking
+// it for one word returns a segment that happens to contain it. The observed
+// "armées" answer was "10 + 4 Armed" — a numbered segment leaking its numbering
+// — and it is short enough that every length-based quality check passed it. It
+// is no longer asked for single words at all, only for the lines it is good at.
+async function memoryWordLookupTests() {
+  const c = background({ settings: { translationProvider: "mymemory" } }).context;
+  const asked = [];
+  c.fetch = async (url) => {
+    const target = new URL(url);
+    asked.push(target.host);
+    if (target.host === "api.mymemory.translated.net") {
+      return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: "10 + 4 Armed" } }) };
+    }
+    const query = target.searchParams.get("q");
+    return { ok: true, json: async () => [[[query === "armées" ? "armies" : "The armies are there", query]]] };
+  };
+
+  const word = await c.translateSelectionWithEngine({ text: "armées", cacheMode: "word", sessionId: "one-word" });
+  assert.equal(word.translatedText, "armies", "A single word gets a word answer, not a stored segment");
+  assert.deepEqual(asked, ["translate.googleapis.com"], "and the segment store is never asked for it");
+
+  // Preloading feeds the same card and list, so it must not reach the segment
+  // store either. It also stops costing one request per word.
+  asked.length = 0;
+  const preloaded = await c.translateBatchMessage({
+    items: [{ text: "armées", cacheId: "word:armées" }, { text: "pourtant", cacheId: "word:pourtant" }],
+    sessionId: "warmup"
+  });
+  assert.equal(preloaded.results[0].translatedText, "armies");
+  assert(!asked.includes("api.mymemory.translated.net"), "Preloaded words avoid it for the same reason");
+
+  // What it is actually built for is unchanged.
+  asked.length = 0;
+  const line = await c.translateBatchMessage({ items: [{ text: "Les armées sont là", cacheId: "line:1" }], sessionId: "lines" });
+  assert.equal(line.results[0].provider, "mymemory", "Caption lines still use the selected engine");
+  assert.deepEqual(asked, ["api.mymemory.translated.net"]);
+  // Disabled by default, not removed. A reader who disagrees can switch it back
+  // on for single words and gets the store's answer, quality checks and all.
+  const allowed = background({ settings: { translationProvider: "mymemory", mymemoryWordLookup: true } }).context;
+  const allowedHosts = [];
+  allowed.fetch = async (url) => {
+    const target = new URL(url);
+    allowedHosts.push(target.host);
+    if (target.host === "api.mymemory.translated.net") {
+      return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: "dog" } }) };
+    }
+    const query = target.searchParams.get("q");
+    return { ok: true, json: async () => [[["dog", query]]] };
+  };
+  const chosen = await allowed.translateSelectionWithEngine({ text: "chien", cacheMode: "word", sessionId: "opted-in" });
+  assert.equal(chosen.translatedText, "dog");
+  assert.deepEqual(allowedHosts, ["api.mymemory.translated.net"], "Switching it on sends single words to the store again");
+}
+
 (async () => {
   await storageTests(); await backupMergeTests(); await palettePaletteTests();
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
-  await translationTests(); await providerFallbackTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
+  await translationTests(); await providerFallbackTests(); await memoryWordLookupTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

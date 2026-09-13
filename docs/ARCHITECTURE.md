@@ -153,7 +153,7 @@ pass through this service.
 | Google | Keyless web endpoint | Default; inexpensive but unofficial and rate-limited |
 | Azure | Translator API | Official; returns character alignment when available |
 | DeepL | DeepL API Free | Official contextual translation; requires a key |
-| MyMemory | Public API | Manual compatibility; small free quota |
+| MyMemory | Public API | Segment store; lines and phrases only, never single words |
 | LibreTranslate | User-supplied endpoint | Can be self-hosted; optional API key |
 
 The engine:

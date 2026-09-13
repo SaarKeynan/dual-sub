@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — better word meanings
+
+- MyMemory no longer answers single words by default. It is a translation memory:
+  it answers with stored segments, so asking it for one word returns a segment
+  that happens to contain it. Over ten common words it was right four times and
+  wrong four — `armées` came back as `10 + 4 Armed`, a numbered segment leaking
+  its numbering — and its match score does not tell the two apart, scoring that
+  junk 0.99 while a plainly wrong `as` → `as` scored a perfect 1. Those answers
+  are short, so every quality check, which measured only length, let them through.
+  Single words now take the concise word path, and MyMemory keeps the caption
+  lines and phrases it is built for. It is a default, not a rule: a switch in the
+  MyMemory settings gives single words back to it.
+- That also spends fewer requests, not more: MyMemory is the one engine that
+  cannot translate words in a batch, so preloading a video's words was throttled
+  to twelve and cost one request each. They are now batched like every other
+  engine's.
+- Word-quality checks follow the engine that answered rather than the one
+  selected, so a meaning supplied by a substitute is judged as what it is.
+- Meanings already saved from MyMemory are not re-read: cache keys carry the
+  engine, so the old entries are simply never consulted again.
+
 ## Unreleased — finishing the line when an engine runs out
 
 - A translation engine that has run out of requests no longer stops English for

@@ -20,7 +20,7 @@ const ids = [
   "enabled", "showSource", "showTranslation", "hideNativeCaptions", "wholeLiveLines", "selectionTranslation", "preloadVideoWords",
   "hoverLookup", "wordAlignment", "colorFrenchWordGroups", "pauseOnLookup", "recallMode", "autoPause", "smartPauseUnknownOnly", "skipCaptionGaps", "hoverDelay", "studyMode",
   "captionHoldMs", "translationBufferSeconds", "translationBatchSize",
-  "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "translationProvider", "lookupCardPosition",
+  "bottomOffset", "maxWidth", "captionOffsetMs", "mymemoryEmail", "mymemoryWordLookup", "translationProvider", "lookupCardPosition",
   "pronunciationVoiceURI", "pronunciationRate",
   "fallbackSubtitles", "fallbackTranslator", "fallbackLookups",
   "wordGroupColorUnknown", "wordGroupColorNoun", "wordGroupColorVerb", "wordGroupColorAdjective",
@@ -41,6 +41,7 @@ const settingDestinations = [
   ["Hold captions between lines", "duration disappear hold lines", "captionHoldMs", "general"],
   ["Translation engine", "provider azure deepl google mymemory libretranslate api key", "translationProvider", "general"],
   ["Translation preload", "buffer ahead batch loading speed", "translationBufferSeconds", "general"],
+  ["MyMemory single-word meanings", "mymemory word lookup single stored sentence segment meaning", "mymemoryWordLookup", "general"],
   ["Engine fallback and order", "fallback order drag chain rate limit runs out of requests another engine subtitles word meanings cheapest paid key", "fallbackOrder", "general"],
   ["French subtitle style", "French font size text color background opacity italic", "sourceFontSize", "appearance", "source"],
   ["English subtitle style", "English translation font size text color background opacity italic", "targetFontSize", "appearance", "target"],
@@ -221,6 +222,7 @@ function setFormValues() {
   element("maxWidth").value = settings.maxWidth;
   element("captionOffsetMs").value = settings.captionOffsetMs;
   element("mymemoryEmail").value = settings.mymemoryEmail || "";
+  element("mymemoryWordLookup").checked = Boolean(settings.mymemoryWordLookup);
   element("translationProvider").value = settings.translationProvider || "google";
   element("lookupCardPosition").value = settings.lookupCardPosition || "smart";
   element("pronunciationVoiceURI").value = settings.pronunciationVoiceURI || "";
@@ -355,6 +357,7 @@ function readFormValues() {
   settings.maxWidth = Number(element("maxWidth").value);
   settings.captionOffsetMs = Number(element("captionOffsetMs").value);
   settings.mymemoryEmail = element("mymemoryEmail").value.trim();
+  settings.mymemoryWordLookup = element("mymemoryWordLookup").checked;
   settings.translationProvider = element("translationProvider").value;
   settings.lookupCardPosition = element("lookupCardPosition").value;
   settings.pronunciationVoiceURI = element("pronunciationVoiceURI").value;

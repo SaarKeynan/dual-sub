@@ -111,10 +111,17 @@ whether a live Firefox check was performed.
 - Keep grammatical labels and translations consistent. Ambiguous elisions such
   as `l'as` need a prepared query and reading-specific cache key; retain explicit
   noun contexts such as `l'as de pique`.
-- MyMemory match/quality scores do not guarantee a correct meaning. The observed
-  `avez` result `her name is Anna` is rejected by word-quality validation and
-  uses the concise Google fallback. Preloading must apply the same checks as
-  interactive lookup.
+- MyMemory is a translation memory: it answers with stored segments, so a single
+  word returns a segment containing it rather than its meaning. Measured over ten
+  common words it was right four times and wrong four. `mymemoryWordLookup` is
+  therefore off by default, sending single words to the concise Google path, but
+  it is a default the reader can override, not a hardcoded substitution. Caption
+  lines and phrases always use it, because those are segments. Its match/quality scores do not
+  guarantee a correct meaning: the observed `avez` result `her name is Anna`
+  carries quality=100, and `armées` returned `10 + 4 Armed`, a numbered segment
+  leaking its numbering that every length-based check passed. Word-quality checks
+  must follow the engine that actually answered, not the selected one, and
+  preloading must apply the same checks as interactive lookup.
 - A rate limit may continue on another engine only where `translationFallback`
   allows it, one switch per translation location. Subtitles and the translator
   page default to on; word lookups and preloading default to off, because those

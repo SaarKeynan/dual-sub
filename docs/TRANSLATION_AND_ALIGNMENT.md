@@ -82,10 +82,21 @@ Because cache keys carry the provider, lines translated by a substitute stay as
 that engine translated them once the selected engine recovers. Mixed-provider
 subtitles within one video are the expected result, not a fault.
 
+MyMemory is excluded from single-word lookups regardless of the chain. It is a
+translation memory, so it answers with stored segments: asked for one word it
+returns a segment that contains it, such as `armées` → `10 + 4 Armed`, a
+numbered segment leaking its own numbering. Those answers are short, so the
+length-based quality checks below cannot see them, and the store has no lexicon
+to ask instead. Single words therefore go to the concise Google path directly,
+which also stops costing one request per word, since MyMemory is the one engine
+that cannot batch them. Phrases and caption lines are segments and still use it.
+
 A separate exception is a short word lookup that appears clearly unreliable. A
-bad result from MyMemory, Azure, DeepL, or LibreTranslate may be retried through
-the Google concise-word path. An unreliable result already produced by Google is
-rejected instead of repeatedly calling the same service.
+bad result from Azure, DeepL, or LibreTranslate may be retried through the
+Google concise-word path. An unreliable result already produced by Google is
+rejected instead of repeatedly calling the same service. These checks follow the
+engine that answered, not the one selected, so a substituted result is judged as
+what it is.
 
 ### Lookup decision order
 
@@ -98,7 +109,7 @@ identical request already in flight
         ↓ absent
 persistent provider-specific cache
         ↓ absent
-selected translation provider
+selected translation provider, except MyMemory for one word
         ↓ out of requests, and lookups may change engine
 next eligible engine, cheapest first
         ↓ suspicious short-word result

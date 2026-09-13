@@ -723,15 +723,14 @@ async function testVocabularyStorage() {
   assert.strictEqual(fetchCount, 2);
 
   stores.sync.settings = { ...defaultSettings.settings, translationProvider: "mymemory" };
+  // The store answered this single word with "creada", which is Spanish. That
+  // used to be fetched and then rejected by the word checks; it is no longer
+  // asked for a single word, so no request is spent discovering it is wrong.
   context.fetch = async (url) => {
     fetchCount += 1;
-    if (String(url).startsWith("https://api.mymemory.translated.net/get")) {
-      return { ok: true, status: 200, async json() { return {
-        responseStatus: 200,
-        responseData: { translatedText: "creada" }
-      }; } };
-    }
-    assert(String(url).startsWith("https://translate.googleapis.com/"), "A bad word result should use the concise fallback");
+    assert(!String(url).startsWith("https://api.mymemory.translated.net/get"),
+      "A single word must not be sent to the segment store");
+    assert(String(url).startsWith("https://translate.googleapis.com/"), "A word lookup goes to the concise word path");
     return { ok: true, status: 200, async json() { return [[ ["created", "créées"] ]]; } };
   };
   const conciseFallback = await messageListener({
@@ -742,7 +741,6 @@ async function testVocabularyStorage() {
     cacheMode: "word"
   });
   assert(conciseFallback.ok && conciseFallback.translatedText === "created");
-  assert.strictEqual(conciseFallback.qualityFallback, true);
 
   context.fetch = async (url) => {
     fetchCount += 1;
