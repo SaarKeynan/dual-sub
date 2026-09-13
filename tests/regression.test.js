@@ -1058,6 +1058,51 @@ async function dictionaryImportFailureRecoveryTests() {
   assert.equal(c.DualSubDictionary.state, "ready");
 }
 
+// An open that fails or is blocked must degrade that lookup to null without
+// being remembered: the event page lives on, and every later lookup would
+// otherwise answer null until it restarted.
+async function dictionaryOpenFailureRecoveryTests() {
+  const index = 'armée\t[{"pos":"noun","gender":"f","senses":["army"]}]';
+  const { context: c } = background({}, { indexedDB: true });
+  c.fetch = async () => ({ ok: true, text: async () => index });
+  const open = c.indexedDB.open.bind(c.indexedDB);
+  const outcomes = ["error", "blocked", "throw"];
+  const abandoned = [];
+  let opens = 0;
+  c.indexedDB.open = (...args) => {
+    opens++;
+    const outcome = outcomes.shift();
+    if (!outcome) return open(...args);
+    if (outcome === "throw") throw new Error("The operation is insecure.");
+    const request = {};
+    setTimeout(() => {
+      request[`on${outcome}`]();
+      // A blocked open can still succeed once the other connection goes away.
+      if (outcome === "blocked") {
+        const database = { closed: false, close() { this.closed = true; } };
+        abandoned.push(database);
+        setTimeout(() => { request.result = database; request.onsuccess(); }, 0);
+      }
+    }, 0);
+    return request;
+  };
+  vm.runInContext(source("dictionary.js"), c);
+
+  assert.equal(await c.DualSubDictionary.lookup("armée"), null, "A failed open degrades the lookup to null");
+  assert.equal(c.DualSubDictionary.state, "unavailable");
+  assert.equal(await c.DualSubDictionary.lookup("armée"), null, "A blocked open degrades the lookup to null");
+  assert.equal(opens, 2, "The failed open was retried rather than remembered");
+  assert.equal(await c.DualSubDictionary.lookup("armée"), null, "An open that throws degrades the lookup to null");
+  assert.equal(opens, 3);
+  const answered = await c.DualSubDictionary.lookup("armée");
+  assert.equal(answered?.senses[0], "army", "A later lookup opens successfully and answers");
+  assert.equal(opens, 4);
+  assert.equal(c.DualSubDictionary.state, "ready");
+  assert.equal(abandoned[0].closed, true, "A blocked open that succeeds after it was given up is closed, not adopted");
+  assert.equal((await c.DualSubDictionary.lookup("armée"))?.senses[0], "army");
+  assert.equal(opens, 4, "A working connection is still reused");
+}
+
 // clear() must not let an import already writing against the same database
 // hand it stale-but-"complete" data. Without the fix, clear() wipes both
 // stores immediately while the import keeps writing obliviously, then the
@@ -1103,6 +1148,6 @@ async function dictionaryClearDuringImportTests() {
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
   await translationTests(); await providerFallbackTests(); await memoryWordLookupTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
-  await dictionaryStoreTests(); await dictionaryConnectionTests(); await dictionaryUpgradeTests(); await dictionaryLookupTests(); await dictionaryBatchAndPeekTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
+  await dictionaryStoreTests(); await dictionaryConnectionTests(); await dictionaryUpgradeTests(); await dictionaryLookupTests(); await dictionaryBatchAndPeekTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryOpenFailureRecoveryTests(); await dictionaryClearDuringImportTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

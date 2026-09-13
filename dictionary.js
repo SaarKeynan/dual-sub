@@ -31,9 +31,23 @@
 
   function openDatabase() {
     if (databasePromise) return databasePromise;
-    databasePromise = new Promise((resolve) => {
+    const attempt = new Promise((resolve) => {
       if (typeof indexedDB === "undefined") { resolve(null); return; }
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      // A failed or blocked open answers null for the lookups waiting on it,
+      // but is not remembered: the event page outlives it, so the next lookup
+      // tries the open again instead of answering null until a restart.
+      const giveUp = () => {
+        if (databasePromise === attempt) databasePromise = null;
+        resolve(null);
+      };
+      let request;
+      try {
+        request = indexedDB.open(DB_NAME, DB_VERSION);
+      } catch (_error) {
+        // Not yet assigned while the executor runs, so reset after it returns.
+        Promise.resolve().then(giveUp);
+        return;
+      }
       request.onupgradeneeded = () => {
         const database = request.result;
         if (!database.objectStoreNames.contains(ENTRIES)) database.createObjectStore(ENTRIES, { keyPath: "lemma" });
@@ -41,6 +55,9 @@
       };
       request.onsuccess = () => {
         const database = request.result;
+        // A blocked open can still succeed later. Its callers already have
+        // null and a newer open may own the connection, so close this one.
+        if (databasePromise !== attempt) { database.close(); return; }
         connection = database;
         // Firefox closes the connection itself when site data is cleared or
         // storage fails; another context upgrading the database asks it to go.
@@ -51,10 +68,11 @@
         };
         resolve(database);
       };
-      request.onerror = () => resolve(null);
-      request.onblocked = () => resolve(null);
+      request.onerror = giveUp;
+      request.onblocked = giveUp;
     });
-    return databasePromise;
+    databasePromise = attempt;
+    return attempt;
   }
 
   function readOne(database, store, key) {
