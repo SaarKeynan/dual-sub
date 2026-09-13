@@ -504,6 +504,26 @@ async function testFrenchWithLoadedResources() {
   for (const [word, sentence] of [["très", "très bien"], ["trop", "trop tard"], ["ne", "je ne sais pas"], ["jamais", "jamais de la vie"]]) {
     assert.strictEqual(french.classifyWord(word, sentence).group, "adverb", `${word} is a closed-class adverb`);
   }
+  // After a determiner plus read as the noun (the symbol +), so "le plus grand"
+  // answered "plus, the symbol +". Modifying the next word, it is the adverb of
+  // the superlative; with nothing to modify it stays the noun "un plus".
+  for (const sentence of ["le plus grand", "la plus belle", "les plus grands", "c'est le plus beau", "le plus souvent", "au plus tard"]) {
+    const classification = french.classifyWord("plus", sentence);
+    assert.strictEqual(classification.group, "adverb", `plus in "${sentence}" modifies the next word`);
+    assert(classification.alternatives.includes("noun"), `plus in "${sentence}" keeps the noun as an alternative`);
+    assert.strictEqual(french.lookupReading("plus", sentence).group, "adverb");
+  }
+  for (const sentence of ["c'est un plus", "le plus", "un plus pour l'équipe", "c'est un plus, vraiment", "un plus en termes de coût"]) {
+    const classification = french.classifyWord("plus", sentence);
+    assert.strictEqual(classification.group, "noun", `plus in "${sentence}" modifies nothing, so it is the noun`);
+    assert(classification.alternatives.includes("adverb"), `plus in "${sentence}" keeps the adverb as an alternative`);
+  }
+  // moins has the same superlative, but is no closed-class word: it is also the
+  // preposition of "dix moins deux" and the noun "un moins".
+  assert.strictEqual(french.classifyWord("moins", "le moins cher").group, "adverb");
+  assert(french.classifyWord("moins", "le moins cher").alternatives.includes("noun"));
+  assert.strictEqual(french.classifyWord("moins", "un moins").group, "noun");
+  assert.strictEqual(french.classifyWord("moins", "dix moins deux").group, "adverb");
 
   // Lexique's schwa and yod codes reached the card unconverted.
   assert.strictEqual(french.lexicalInfo("je").pronunciation, "ʒə");
@@ -581,6 +601,7 @@ async function testDictionaryWithRealData() {
     ["à l'est", "l'est", "east"],
     ["les yeux", "yeux", "eye"],
     ["plus tard", "plus", "more"],
+    ["le plus grand", "plus", "more"],
     ["les armées", "armées", "army"],
     ["un livre", "livre", "book"],
     ["je livre le colis", "livre", "deliver"],

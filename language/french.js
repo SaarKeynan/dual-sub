@@ -638,6 +638,30 @@
     });
   }
 
+  // "le plus grand", "la moins chère": after a determiner, a degree adverb that
+  // modifies the next word is the superlative, not the noun "un plus". Only a
+  // following adjective, adverb or participle counts; "un plus pour l'équipe",
+  // "c'est un plus" and "un plus, vraiment" keep the noun. moins is no
+  // closed-class word (it is also the preposition of "dix moins deux"), so it
+  // is named here rather than added to the closed adverbs.
+  function modifiesFollowingWord(rawWord, sentence) {
+    const word = splitElidedClitic(rawWord).base;
+    if (word !== "moins" && closedWordGroup(word) !== "adverb") return false;
+    // Punctuation is kept as its own token so a clause boundary ends the phrase.
+    const tokens = normalize(sentence).replace(/’/gu, "'").match(/[\p{L}]+|[^\p{L}\s']/gu) || [];
+    return tokens.some((token, index) => {
+      if (token !== word) return false;
+      const preceding = tokens[index - 1];
+      if (!strongNominalDeterminers.has(preceding) && !articleDeterminers.has(preceding)) return false;
+      const next = tokens[index + 1];
+      if (!next || !/^\p{L}/u.test(next)) return false;
+      // Lexique also lists en as an adverb; a function word starts a new phrase.
+      if (["determiner", "preposition", "conjunction", "pronoun"].includes(closedWordGroup(next))) return false;
+      if (lexicalGroups(next).some((group) => group === "adjective" || group === "adverb")) return true;
+      return (analyzeWithMorphology(next) || fallbackAnalysis(next))?.mood === "participle";
+    });
+  }
+
   function analyzeWord(rawWord, sentence = "") {
     const analysis = analyzeWithMorphology(rawWord, sentence) || fallbackAnalysis(rawWord, sentence);
     const parts = splitElidedClitic(rawWord);
@@ -649,6 +673,7 @@
       nominalLemma !== parts.base;
     if (
       hasNominalDeterminer(rawWord, sentence) &&
+      !modifiesFollowingWord(rawWord, sentence) &&
       (analysis ? analysis.mood === "participle" || hasNominalLexiconReading : hasNominalLexiconReading)
     ) {
       const readings = analysis ? [analysis, ...(analysis.alternatives || [])] : [];
