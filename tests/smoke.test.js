@@ -518,6 +518,15 @@ async function testFrenchWithLoadedResources() {
     assert.strictEqual(classification.group, "noun", `plus in "${sentence}" modifies nothing, so it is the noun`);
     assert(classification.alternatives.includes("adverb"), `plus in "${sentence}" keeps the adverb as an alternative`);
   }
+  // Fixed adverbial expressions: "au moins" is the commonest moins of all, and
+  // read as the noun it answered "the minus sign".
+  for (const [word, sentence] of [
+    ["moins", "au moins"], ["moins", "au moins ça"], ["moins", "du moins"], ["moins", "le moins du monde"],
+    ["moins", "c'est le moins qu'on puisse dire"], ["plus", "deux au plus"], ["plus", "au plus"],
+    ["plus", "de plus"], ["plus", "en plus"], ["plus", "non plus"], ["plus", "c'est le plus que je puisse faire"]
+  ]) {
+    assert.strictEqual(french.classifyWord(word, sentence).group, "adverb", `${word} in "${sentence}" is adverbial`);
+  }
   // moins has the same superlative, but is no closed-class word: it is also the
   // preposition of "dix moins deux" and the noun "un moins".
   assert.strictEqual(french.classifyWord("moins", "le moins cher").group, "adverb");
@@ -734,7 +743,9 @@ async function testDictionaryWithRealData() {
     // Lexique's lemma for morte is mourir, whose only dictionary noun is "the
     // experience or process of dying". A verb-only lemma is no noun candidate.
     ["la morte", "morte", undefined, "", /process of dying/],
-    ["une morte", "morte", undefined, "", /process of dying/]
+    ["une morte", "morte", undefined, "", /process of dying/],
+    ["au moins", "moins", undefined, "", /minus sign/],
+    ["c'est un plus", "plus", "plus, the symbol", "the noun, with nothing it modifies"]
   ];
   for (const [sentence, token, expected, reason, forbidden] of cases) {
     const result = await resolve(token, sentence);

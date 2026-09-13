@@ -670,8 +670,12 @@
   // The token after each occurrence of word that directly follows a nominal
   // determiner, or undefined at the end. Punctuation is kept as its own token
   // so a clause boundary ends the phrase.
+  function sentenceTokens(sentence) {
+    return normalize(sentence).replace(/’/gu, "'").match(/[\p{L}]+|[^\p{L}\s']/gu) || [];
+  }
+
   function tokensAfterDeterminer(word, sentence) {
-    const tokens = normalize(sentence).replace(/’/gu, "'").match(/[\p{L}]+|[^\p{L}\s']/gu) || [];
+    const tokens = sentenceTokens(sentence);
     return tokens.flatMap((token, index) => (
       token === word && (strongNominalDeterminers.has(tokens[index - 1]) || articleDeterminers.has(tokens[index - 1]))
         ? [tokens[index + 1]]
@@ -680,6 +684,24 @@
   }
 
   const functionWordGroups = new Set(["determiner", "preposition", "conjunction", "pronoun"]);
+
+  // Adverbial expressions built on an article: "au moins", "du moins", "deux
+  // au plus", "le moins du monde", "c'est le moins qu'on puisse dire". "au
+  // moins" is the commonest moins there is, and read as the noun it answered
+  // "the minus sign". An indefinite article is left alone: "c'est un plus que
+  // d'avoir" is the noun.
+  function fixedAdverbialExpression(word, sentence) {
+    if (word !== "plus" && word !== "moins") return false;
+    const tokens = sentenceTokens(sentence);
+    return tokens.some((token, index) => {
+      if (token !== word) return false;
+      const preceding = tokens[index - 1];
+      const next = tokens[index + 1];
+      if (preceding === "au" || preceding === "du") return true;
+      if (!["le", "la", "les", "l"].includes(preceding)) return false;
+      return next === "que" || next === "qu" || (next === "du" && tokens[index + 2] === "monde");
+    });
+  }
 
   // "le plus grand", "la moins chère": after a determiner, a degree adverb that
   // modifies the next word is the superlative, not the noun "un plus". Only a
@@ -690,6 +712,7 @@
   function modifiesFollowingWord(rawWord, sentence) {
     const word = splitElidedClitic(rawWord).base;
     if (word !== "moins" && closedWordGroup(word) !== "adverb") return false;
+    if (fixedAdverbialExpression(word, sentence)) return true;
     return tokensAfterDeterminer(word, sentence).some((next) => {
       if (!next || !/^\p{L}/u.test(next)) return false;
       // Lexique also lists en as an adverb; a function word starts a new phrase.
