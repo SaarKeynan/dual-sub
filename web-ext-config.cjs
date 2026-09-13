@@ -22,6 +22,7 @@ module.exports = {
     ".shots",
     ".shots/**",
     "vendor/lexique/Lexique383.tsv",
+    "vendor/wiktionary/kaikki-french.jsonl",
     "package.json",
     "package-lock.json",
     "web-ext-config.cjs",
