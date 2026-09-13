@@ -151,8 +151,8 @@ shape in section 1:
 
 | What | File | Heap | Ratio |
 | --- | --- | --- | --- |
-| `french-lexical-info.json` as loaded today | 2.3 MB | **10.7 MB** | x4.6 |
-| `french-word-groups.json` as loaded today | 2.0 MB | **9.4 MB** | x4.8 |
+| Both Lexique indexes, as JSON objects (before this was fixed) | 3.8 MB | **19.1 MB** | x5.0 |
+| Both Lexique indexes, as text plus offsets (shipping now) | 3.8 MB | **3.6 MB** | x1.0 |
 | Dictionary, plain object from `JSON.parse` | 13.2 MB | 28.9 MB | x2.2 |
 | Dictionary, `Map` of parsed objects | 13.2 MB | 27.6 MB | x2.1 |
 | Dictionary, `Map` of unparsed JSON strings | 13.2 MB | 15.0 MB | x1.1 |
@@ -202,18 +202,23 @@ The rejected `Map`-of-strings design is recorded here because it is the right
 answer if IndexedDB proves unworkable: x1.1, one copy, and simple. It would
 need the background kept alive, which this manifest does not do.
 
-### 3a. The cost already being paid
+### 3a. The cost that was already being paid — now fixed
 
-The table above shows something outside this feature's scope but larger than it:
+Measuring for this design turned up a larger cost outside it.
 `language/french.js` is a content script (`manifest.json` `content_scripts[0]`),
-so Lexique's two files cost **about 20 MB of heap in every YouTube tab**, at
-x4.6 their file size. Four tabs is 80 MB before this feature adds anything.
+so Lexique's two indexes were parsed into objects in **every** YouTube tab, at
+about 19 MB of heap per tab for 3.8 MB of data.
 
-This design does not change that, and must not be blamed for it — but the same
-two techniques apply, and a follow-up should consider them: keep the Lexique
-values as unparsed strings, or move the lookups behind the same background
-store. Deliberately out of scope here so that the dictionary is not held up by
-a refactor of working code.
+That is fixed ahead of this work and is no longer a risk this design carries.
+The indexes now ship as sorted `key<TAB>value` lines, and the runtime holds each
+as one string with a `Uint32Array` of line offsets, binary-searching it: 3.6 MB
+per tab, with lookups at about 1 microsecond.
+
+Two things follow for this design. The per-tab budget is no longer under
+pressure, so a content-script dictionary is not ruled out by the *existing*
+load — it is ruled out only by its own size and by the reasons in section 3.
+And the text-plus-offsets format is proven in this codebase, which makes it the
+ready alternative if IndexedDB disappoints.
 
 ### 4. Where it sits in the lookup order
 
