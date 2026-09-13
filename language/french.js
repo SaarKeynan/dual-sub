@@ -68,9 +68,12 @@
     return { text, offsets, count: lines };
   }
 
-  // Binary search, comparing with < exactly as the build sorted.
-  function indexValue(index, word) {
-    if (!index || !word) return "";
+  // Binary search, comparing with < exactly as the build sorted. Lexique spells
+  // coeur and soeur where captions write cœur and sœur, so the ligatures are
+  // folded here, at the one place every Lexique lookup passes through.
+  function indexValue(index, rawWord) {
+    if (!index || !rawWord) return "";
+    const word = rawWord.replace(/œ/gu, "oe").replace(/æ/gu, "ae");
     let low = 0;
     let high = index.count - 1;
     while (low <= high) {

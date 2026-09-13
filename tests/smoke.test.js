@@ -566,6 +566,15 @@ async function testFrenchWithLoadedResources() {
   assert(french.lexicalInfo("aujourd’hui"), "A curly apostrophe must resolve like a straight one");
   assert.strictEqual(french.lexicalInfo("aujourd’hui").lemma, french.lexicalInfo("aujourd'hui").lemma);
 
+  // Lexique spells coeur, soeur, oeuvre; captions spell cœur. Unfolded, those
+  // nouns had no word group at all, so "ma petite sœur" had no noun to modify.
+  for (const [word, sentence] of [["sœur", "ma sœur"], ["cœur", "le cœur"], ["œuvre", "une œuvre d'art"], ["Œil", "un Œil"]]) {
+    assert.strictEqual(french.classifyWord(word, sentence).group, "noun", `${word} is a noun`);
+  }
+  assert.strictEqual(french.lexicalInfo("sœur").lemma, "soeur", "Lexical info folds œ too");
+  assert.strictEqual(french.lexicalInfo("sœur").surface, "sœur", "...but reports the word as written");
+  assert.strictEqual(french.classifyWord("petite", "ma petite sœur").group, "adjective");
+
   // s' before il is si, not the reflexive pronoun se.
   const reflexive = french.analyzeElisionParticle("s’", "s’appelle");
   assert.strictEqual(reflexive.expanded, "se");
