@@ -531,6 +531,72 @@ async function testFrenchWithLoadedResources() {
   assert.strictEqual(livre.lemma, "livrer");
 }
 
+// Fixture tests of each piece passed while the shipped data answered "la
+// maison" with "her, it" and "cet été" with "to be". This runs the whole path on
+// the real resources: the real morphology reads the word in its sentence, the
+// real content.js helper builds the candidates, and the real dictionary.js
+// answers from the shipped french-english.txt imported into IndexedDB.
+async function testDictionaryWithRealData() {
+  const { IDBFactory } = require("fake-indexeddb");
+  const context = { console, TextDecoder, TextEncoder, WebAssembly, URL, indexedDB: new IDBFactory() };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "vendor", "ablaut", "ablaut.js"), "utf8"), context);
+  const readVendor = (relativePath) => fs.readFileSync(path.join(projectRoot, relativePath));
+  context.browser = { runtime: { getURL: (relativePath) => relativePath.endsWith(".wasm") ? readVendor(relativePath) : relativePath } };
+  context.fetch = async (relativePath) => ({
+    ok: true,
+    json: async () => JSON.parse(readVendor(relativePath).toString("utf8")),
+    text: async () => readVendor(relativePath).toString("utf8")
+  });
+  const content = fs.readFileSync(path.join(projectRoot, "content.js"), "utf8");
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "dictionary.js"), "utf8"), context);
+  vm.runInContext([
+    extract(content, "  function splitFrenchElision", "  function lookupTextForWord"),
+    extract(content, "  function dictionaryCandidatesFor", "  function stemEnglishWord")
+  ].join("\n"), context);
+  const french = context.DualSubFrench;
+  await french.ready;
+  assert.strictEqual(french.lexicalInfoState, "ready");
+
+  // What the hover lookup and the card send for a caption token. An elided
+  // token is looked up as its compound when that is a verb (tagFrenchWord's
+  // lookupWord), otherwise as its base.
+  async function resolve(token, sentence) {
+    const elision = context.splitFrenchElision(token);
+    const compound = elision ? french.analyzeWord(elision.compound, sentence) : null;
+    const wordText = elision ? (compound?.partOfSpeech === "verb" ? elision.compound : elision.base) : token;
+    const conjugation = french.analyzeWord(wordText, sentence);
+    const reading = french.lookupReading(wordText, sentence, conjugation);
+    const lemmas = Array.from(context.dictionaryCandidatesFor(wordText, conjugation, reading));
+    const entry = await context.DualSubDictionary.lookup(lemmas, reading?.group || "");
+    return { wordText, group: reading?.group, lemmas, meaning: entry ? entry.senses.join(" · ") : null };
+  }
+
+  const cases = [
+    ["la maison", "la", null, "la is a determiner here, and the only la entries are the pronoun and the note"],
+    ["une femme", "une", null, "une as a determiner has no entry, and must never read front page"],
+    ["l'as de pique", "l'as", "ace"],
+    ["cet été", "été", "summer"],
+    ["à l'est", "l'est", "east"],
+    ["les yeux", "yeux", "eye"],
+    ["plus tard", "plus", "more"],
+    ["les armées", "armées", "army"],
+    ["un livre", "livre", "book"],
+    ["je livre le colis", "livre", "deliver"],
+    ["vous avez", "avez", "have"],
+    ["je m'appelle", "m'appelle", "call"],
+    ["le cœur", "cœur", "heart"]
+  ];
+  for (const [sentence, token, expected, reason] of cases) {
+    const result = await resolve(token, sentence);
+    const described = `${token} in "${sentence}" (${result.group}, ${JSON.stringify(result.lemmas)}) -> ${JSON.stringify(result.meaning)}`;
+    if (expected === null) assert.strictEqual(result.meaning, null, `${described}: ${reason}`);
+    else assert(result.meaning?.includes(expected), `${described} should contain "${expected}"`);
+    assert(!/front page|nonstandard spelling|to please/.test(result.meaning || ""), `${described} is a known wrong meaning`);
+  }
+}
+
 async function testWordGroupResource() {
   // Shipped as sorted "key\tvalue" lines, not JSON. Parsed into objects the two
   // indexes cost about 15MB of heap in every YouTube tab, at four to five times
@@ -1143,6 +1209,7 @@ Promise.resolve()
   .then(testFrenchConjugation)
   .then(testAblautMorphology)
   .then(testFrenchWithLoadedResources)
+  .then(testDictionaryWithRealData)
   .then(testWordGroupResource)
   .then(testDictionaryBuild)
   .then(testDictionaryDataVersion)
