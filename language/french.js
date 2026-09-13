@@ -732,6 +732,18 @@
     });
   }
 
+  // Adverbial phrases ending in a word that is otherwise a verb form: "en
+  // fait" and "tout à fait" are not faire ("to do"), and "à peine" is not
+  // peiner ("to struggle").
+  const adverbialPhrases = [["en", "fait"], ["tout", "à", "fait"], ["à", "peine"]];
+  function inAdverbialPhrase(rawWord, sentence) {
+    const word = splitElidedClitic(rawWord).base;
+    const tokens = sentenceTokens(sentence);
+    return adverbialPhrases.some((phrase) => phrase[phrase.length - 1] === word && tokens.some((token, index) => (
+      token === word && phrase.every((part, offset) => tokens[index - phrase.length + 1 + offset] === part)
+    )));
+  }
+
   // "le plus grand", "la moins chère": after a determiner, a degree adverb that
   // modifies the next word is the superlative, not the noun "un plus". Only a
   // following adjective, adverb or participle counts; "un plus pour l'équipe",
@@ -896,6 +908,14 @@
   function classifyWord(rawWord, sentence = "", suppliedAnalysis = null) {
     const analysis = suppliedAnalysis || analyzeWord(rawWord, sentence);
     const groups = lexicalGroups(rawWord);
+    if (inAdverbialPhrase(rawWord, sentence)) {
+      const alternatives = analysis?.partOfSpeech === "verb" ? [...groups, "verb"] : groups;
+      return {
+        group: "adverb",
+        alternatives: Array.from(new Set(alternatives)).filter((group) => group !== "adverb"),
+        confidence: "expression"
+      };
+    }
     if (analysis?.partOfSpeech === "nominal") {
       const contextualGroup = groups.includes("noun") && groups.includes("adjective")
         ? nounOrAdjectiveInContext(rawWord, sentence, groups)
@@ -939,7 +959,7 @@
     const parts = splitElidedClitic(rawWord);
     const ambiguous = lexicalGroups(parts.base).some((value) => value === "noun" || value === "adjective") || parts.prefix === "l";
     let text = rawWord;
-    if (analysis?.partOfSpeech === "verb" && ambiguous && ["indicative", "conditional", "subjunctive"].includes(analysis.mood)) {
+    if (group === "verb" && analysis?.partOfSpeech === "verb" && ambiguous && ["indicative", "conditional", "subjunctive"].includes(analysis.mood)) {
       const pronouns = { "1st:singular": "je", "2nd:singular": "tu", "3rd:singular": "il", "1st:plural": "nous", "2nd:plural": "vous", "3rd:plural": "ils" };
       const subject = pronouns[`${analysis.person}:${analysis.number}`];
       if (subject) {

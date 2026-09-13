@@ -549,6 +549,20 @@ async function testFrenchWithLoadedResources() {
     assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
   }
   assert(french.classifyWord("entre", "il entre dans la salle").alternatives.includes("preposition"));
+  // "en fait", "tout à fait" and "à peine" are adverbial expressions, not forms
+  // of faire ("to do") and peiner ("to struggle").
+  for (const [word, sentence, group] of [
+    ["fait", "en fait", "adverb"], ["fait", "tout à fait", "adverb"], ["peine", "à peine", "adverb"],
+    ["fait", "c'est un fait", "noun"], ["fait", "il a fait", "verb"], ["peine", "la peine", "noun"]
+  ]) {
+    assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
+    assert.strictEqual(french.lookupReading(word, sentence).group, group);
+  }
+  // Only a verb reading is looked up with a subject: "à peine" is not "il peine",
+  // and the preposition of "contre le mur" is not "il contre".
+  assert.strictEqual(french.lookupReading("peine", "à peine").text, "peine");
+  assert.strictEqual(french.lookupReading("contre", "contre le mur").text, "contre");
+  assert.strictEqual(french.lookupReading("as", "Tu as").text, "tu as", "A verb reading still gets its subject");
   // Fixed adverbial expressions: "au moins" is the commonest moins of all, and
   // read as the noun it answered "the minus sign".
   for (const [word, sentence] of [
@@ -810,6 +824,8 @@ async function testDictionaryWithRealData() {
     ["une morte", "morte", undefined, "", /process of dying/],
     ["au moins", "moins", undefined, "", /minus sign/],
     ["il entre dans la salle", "entre", "enter", "", /between/],
+    ["en fait", "fait", undefined, "", /to do|to make/],
+    ["à peine", "peine", undefined, "", /struggle/],
     ["c'est un plus", "plus", "plus, the symbol", "the noun, with nothing it modifies"]
   ];
   for (const [sentence, token, expected, reason, forbidden] of cases) {
