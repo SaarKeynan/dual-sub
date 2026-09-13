@@ -344,28 +344,51 @@ looks like a participle follows a nominal determiner, DualSub prefers a noun or
 adjective reading and retains the verb as an alternative. This is why context
 such as `une ...` can prevent a misleading verb-first explanation.
 
-When the lexicon lists the word as both noun and adjective, the next word
-decides (`nounOrAdjectiveInContext()` in `language/french.js`). A following
-noun makes it a pre-posed adjective (`une nouvelle voiture`, `une bonne
-excuse`). This holds even when Lexique's lemma for that noun is a verb; only a
-form of `être` or `avoir` (`est`, `a`, `été`) counts as the verb. Anything else
-makes it the noun: a verb, a function word, punctuation, or the end of the
-line (`la nouvelle est arrivée`, `une donnée`, `la marine`, `les jeunes`). Two
-exceptions apply. Selecting and ordinal adjectives (`bon`, `prochain`,
-`dernier`, `premier`, `seul`, `autre`, `même`, `meilleur`) stand for a noun left
-unsaid and stay adjectives (`c'est le bon`, `à la prochaine`), and `drôle de` is
-the adjective. A following word that is itself noun or adjective is resolved by
-a short list of adjectives that normally stand before their noun (`ma chère
-amie` is an adjective, `les armées ennemies` a noun). The other reading stays
-as an alternative. Lexique keys spell `oe` and `ae`, so `œ` and `æ` are folded
-before every Lexique lookup.
+When the lexicon lists the word as both noun and adjective, the phrase decides
+(`nounOrAdjectiveInContext()` in `language/french.js`), and the lexicon's own
+order (for these words nearly always the adjective) stands unless the phrase
+shows a noun use. The evidence is any of these:
 
-Degree adverbs and closed prepositions have two context rules of their own.
-After a determiner, `plus` or `moins` is the adverb when it modifies the next
-word (`le plus grand`) or sits in a fixed expression (`au moins`, `du moins`,
-`le moins du monde`, `deux au plus`); otherwise it is the noun `un plus`.
-`entre` and `contre` straight after a subject are the verbs `entrer` and
-`contrer` (`il entre dans la salle`), and otherwise the prepositions.
+- the end of the clause or punctuation (`la nouvelle`, `une donnée`);
+- a third-person finite verb (`la nouvelle est arrivée`, `la petite dort`);
+- `qui`, `que` or `dont`;
+- a preposition (`un jeune de banlieue`);
+- a clitic or subject pronoun (`l'important c'est`);
+- `et` or `ou` before another determiner or pronoun (`la belle et la bête`).
+
+A word Lexique does not know (`un petit tuto`), a capitalised word (`le petit
+Nicolas`), a digit, `et` before an adjective, and a noun spelled like a form of
+`être` or `avoir` (`les grands avions`, `un long été`) are no evidence.
+Rules that defaulted to the noun instead turned all of those into "small one"
+or "grown-up".
+
+Selecting and ordinal adjectives (`bon`, `prochain`, `dernier`, `premier`,
+`seul`, `autre`, `même`, `meilleur`) stand for a noun left unsaid and stay
+adjectives even at the end of a clause (`c'est le bon`, `à la prochaine`), and
+`drôle de` is the adjective. A following noun makes the word an adjective (`une
+nouvelle voiture`, `une bonne excuse`). A following word that is itself noun or
+adjective is decided by a short list of adjectives that normally stand before
+their noun (`ma chère amie`), then by that word's own lexicon order (`les armées
+ennemies` and `la marine nationale` are noun and adjective, `un excellent ami`
+adjective and noun). The other reading stays as an alternative. Lexique keys
+spell `oe` and `ae`, so `œ` and `æ` are folded before every Lexique lookup.
+
+Degree adverbs, closed prepositions and a few fixed phrases have context rules
+of their own:
+
+- After a determiner, `plus` or `moins` is the adverb when it modifies the next
+  word (`le plus grand`) or sits in a fixed expression (`au moins`, `du moins`,
+  `le moins du monde`, `deux au plus`); otherwise it is the noun `un plus`.
+- `entre` and `contre` are the verbs `entrer` and `contrer` only straight after
+  `je`, `tu`, `il` or `on` (`il y entre`, `qu'il entre`), or after `elle` when
+  no preposition or `c'est` governs it and no stressed pronoun follows. In `nous
+  contre eux` and `elle contre lui` they stay prepositions.
+- `en fait`, `tout à fait` and `à peine` are adverbial phrases, not forms of
+  `faire` or `peiner`.
+
+`tests/fixtures/french-context-cases.json` holds every phrase these rules have
+been measured against, and the smoke suite checks each one against the shipped
+data.
 
 Local analysis selects labels and infinitives; it does not invent the displayed
 English meaning. The displayed meaning still comes from correction, cache, or
