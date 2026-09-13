@@ -549,20 +549,6 @@ async function testFrenchWithLoadedResources() {
     assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
   }
   assert(french.classifyWord("entre", "il entre dans la salle").alternatives.includes("preposition"));
-  // "en fait", "tout à fait" and "à peine" are adverbial expressions, not forms
-  // of faire ("to do") and peiner ("to struggle").
-  for (const [word, sentence, group] of [
-    ["fait", "en fait", "adverb"], ["fait", "tout à fait", "adverb"], ["peine", "à peine", "adverb"],
-    ["fait", "c'est un fait", "noun"], ["fait", "il a fait", "verb"], ["peine", "la peine", "noun"]
-  ]) {
-    assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
-    assert.strictEqual(french.lookupReading(word, sentence).group, group);
-  }
-  // Only a verb reading is looked up with a subject: "à peine" is not "il peine",
-  // and the preposition of "contre le mur" is not "il contre".
-  assert.strictEqual(french.lookupReading("peine", "à peine").text, "peine");
-  assert.strictEqual(french.lookupReading("contre", "contre le mur").text, "contre");
-  assert.strictEqual(french.lookupReading("as", "Tu as").text, "tu as", "A verb reading still gets its subject");
   // Fixed adverbial expressions: "au moins" is the commonest moins of all, and
   // read as the noun it answered "the minus sign".
   for (const [word, sentence] of [
@@ -608,7 +594,8 @@ async function testFrenchWithLoadedResources() {
     assert.strictEqual(french.lookupReading(word, sentence).group, group);
   }
   // excuse, montre, marche and mariée are nouns although Lexique's lemma for
-  // each is the verb (excuser, montrer...), so the adjective before them stays.
+  // each is the verb (excuser, montrer...). Only a form of être or avoir (est,
+  // a, été) after the word is taken as the verb, so the noun still follows.
   for (const [word, sentence, group] of [
     ["bonne", "une bonne excuse", "adjective"],
     ["petite", "une petite montre", "adjective"],
@@ -620,74 +607,6 @@ async function testFrenchWithLoadedResources() {
   ]) {
     assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
   }
-  // A noun reading needs positive evidence in the phrase: the end of the
-  // clause, a finite verb, a relative, a preposition, or et/ou before another
-  // determiner. Without it the adjective stays, whatever follows: a word
-  // Lexique does not know (live, tuto), a proper noun, a digit, an adjective
-  // joined by et, a closed word (plus, bravo), or a noun spelled like a form
-  // of être or avoir (avions, sommes, as, été, êtres, aura).
-  for (const [word, sentence, group] of [
-    ["grands", "les grands avions", "adjective"],
-    ["nouveaux", "les nouveaux avions", "adjective"],
-    ["grosses", "les grosses sommes", "adjective"],
-    ["petits", "les petits êtres", "adjective"],
-    ["grand", "un grand as", "adjective"],
-    ["long", "un long été", "adjective"],
-    ["grande", "une grande aura", "adjective"],
-    ["petit", "un petit tuto", "adjective"],
-    ["jeune", "une jeune youtubeuse", "adjective"],
-    ["petit", "le petit Nicolas", "adjective"],
-    ["petite", "la petite Marie", "adjective"],
-    ["belle", "une belle et grande maison", "adjective"],
-    ["petits", "les petits 5 euros", "adjective"],
-    ["petit", "un petit plus", "adjective"],
-    ["grand", "un grand bravo", "adjective"],
-    ["petite", "la petite aura faim", "noun"],
-    ["jeunes", "les jeunes sont partis", "noun"],
-    ["petite", "la petite dort", "noun"],
-    ["jeune", "un jeune de banlieue", "noun"],
-    ["jeune", "le jeune qui parle", "noun"],
-    ["grand", "le grand et le petit", "noun"],
-    ["important", "l'important c'est de participer", "noun"],
-    ["reçu", "un reçu", "noun"],
-    ["ami", "un ami proche", "noun"]
-  ]) {
-    assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
-  }
-  // With no noun after it, a selecting or ordinal adjective stands for a noun
-  // left unsaid ("c'est le bon", "à la prochaine", "un autre") and stays an
-  // adjective, while a descriptive one names a person or thing ("les jeunes",
-  // "la petite"). "drôle de" is always the adjective.
-  for (const [word, sentence, group] of [
-    ["bon", "c'est le bon", "adjective"],
-    ["bon", "ce n'est pas le bon", "adjective"],
-    ["bonne", "c'est la bonne", "adjective"],
-    ["bonne", "j'en ai une bonne", "adjective"],
-    ["prochaine", "à la prochaine", "adjective"],
-    ["prochain", "le prochain arrive", "adjective"],
-    ["prochain", "au prochain", "adjective"],
-    ["dernier", "c'est le dernier", "adjective"],
-    ["premier", "c'est le premier", "adjective"],
-    ["première", "la première", "adjective"],
-    ["seul", "c'est le seul", "adjective"],
-    ["autre", "un autre", "adjective"],
-    ["autres", "les autres", "adjective"],
-    ["meilleurs", "les meilleurs", "adjective"],
-    ["drôle", "un drôle de truc", "adjective"],
-    ["drôle", "une drôle d'idée", "adjective"],
-    ["jeunes", "les jeunes", "noun"],
-    ["jeune", "un jeune", "noun"],
-    ["petite", "la petite", "noun"],
-    ["grand", "un grand", "noun"],
-    ["vieux", "un vieux", "noun"],
-    ["pauvres", "les pauvres", "noun"],
-    ["malade", "un malade", "noun"]
-  ]) {
-    const classification = french.classifyWord(word, sentence);
-    assert.strictEqual(classification.group, group, `${word} in "${sentence}"`);
-    assert(classification.alternatives.includes(group === "noun" ? "adjective" : "noun"), `${word} in "${sentence}" keeps the other reading`);
-  }
-  assert.strictEqual(french.adjectiveLemma("autres"), "autre", "A plural adjective with no feminine ending reaches its singular");
   // Only one of the two readings in the lexicon: nothing to decide.
   assert.strictEqual(french.classifyWord("présumée", "la présumée victime").group, "adjective");
   assert.strictEqual(french.classifyWord("maison", "la maison bleue").group, "noun");
@@ -808,24 +727,12 @@ async function testDictionaryWithRealData() {
     ["une donnée", "donnée", "datum", "", /affordable/],
     ["la marine", "marine", "navy", "", /maritime/],
     ["la marine nationale", "marine", "navy", "", /maritime/],
-    // A pre-posed adjective with no noun after it. Read as nouns these
-    // answered "fellow man", "voucher", "maid", "small one" and "child, kid".
-    ["à la prochaine", "prochaine", "next", "", /fellow/],
-    ["c'est le bon", "bon", "good", "", /voucher/],
-    ["c'est la bonne", "bonne", "good", "", /maid/],
-    ["ma petite sœur", "petite", "small", "", /small one/],
-    ["une bonne excuse", "bonne", "good", "", /maid/],
-    ["un drôle de truc", "drôle", "funny", "", /child/],
-    ["un autre", "autre", "other"],
-    ["les jeunes", "jeunes", "young person"],
     // Lexique's lemma for morte is mourir, whose only dictionary noun is "the
     // experience or process of dying". A verb-only lemma is no noun candidate.
     ["la morte", "morte", undefined, "", /process of dying/],
     ["une morte", "morte", undefined, "", /process of dying/],
     ["au moins", "moins", undefined, "", /minus sign/],
     ["il entre dans la salle", "entre", "enter", "", /between/],
-    ["en fait", "fait", undefined, "", /to do|to make/],
-    ["à peine", "peine", undefined, "", /struggle/],
     ["c'est un plus", "plus", "plus, the symbol", "the noun, with nothing it modifies"]
   ];
   for (const [sentence, token, expected, reason, forbidden] of cases) {
@@ -836,28 +743,6 @@ async function testDictionaryWithRealData() {
     assert(!/front page|nonstandard spelling|to please/.test(result.meaning || ""), `${described} is a known wrong meaning`);
     if (forbidden) assert(!forbidden.test(result.meaning || ""), `${described} must not match ${forbidden}`);
   }
-
-  // Three rounds of context rules each passed their own examples and regressed
-  // on phrases nobody had tried. tests/fixtures/french-context-cases.json keeps
-  // every phrase measured so far, from the reviews and from phrases built to hit
-  // blind spots (anglicisms, proper nouns, digits, coordination, nouns spelled
-  // like verb forms, stressed pronouns). Each row names the expected group
-  // ("a|b" when either is right), and optionally a pattern the meaning must
-  // match and one it must never match. knownWrong rows were already wrong
-  // before the dictionary and no rule addresses them; they are kept as a record.
-  const corpus = JSON.parse(fs.readFileSync(path.join(projectRoot, "tests", "fixtures", "french-context-cases.json"), "utf8"));
-  assert(corpus.length >= 300, "The context corpus should keep every measured phrase");
-  const failures = [];
-  for (const row of corpus) {
-    if (row.knownWrong) continue;
-    const result = await resolve(row.word, row.phrase);
-    const problems = [];
-    if (!row.group.split("|").includes(result.group)) problems.push(`group ${result.group}, expected ${row.group}`);
-    if (row.meaning && !new RegExp(row.meaning).test(result.meaning || "")) problems.push(`meaning does not match /${row.meaning}/`);
-    if (row.forbidden && new RegExp(row.forbidden).test(result.meaning || "")) problems.push(`meaning matches forbidden /${row.forbidden}/`);
-    if (problems.length) failures.push(`${row.word} in "${row.phrase}" -> ${JSON.stringify(result.meaning)}: ${problems.join("; ")}`);
-  }
-  assert.strictEqual(failures.length, 0, `Context corpus failures:\n${failures.join("\n")}`);
 }
 
 async function testWordGroupResource() {

@@ -671,8 +671,6 @@
       const candidate = singular.slice(0, -feminine.length) + masculine;
       if (candidate && candidate !== word && lexicalGroups(candidate).includes("adjective")) return candidate;
     }
-    // A plural with no feminine ending of its own: autres -> autre.
-    if (singular !== word && lexicalGroups(singular).includes("adjective")) return singular;
     return "";
   }
 
@@ -732,18 +730,6 @@
     });
   }
 
-  // Adverbial phrases ending in a word that is otherwise a verb form: "en
-  // fait" and "tout à fait" are not faire ("to do"), and "à peine" is not
-  // peiner ("to struggle").
-  const adverbialPhrases = [["en", "fait"], ["tout", "à", "fait"], ["à", "peine"]];
-  function inAdverbialPhrase(rawWord, sentence) {
-    const word = splitElidedClitic(rawWord).base;
-    const tokens = sentenceTokens(sentence);
-    return adverbialPhrases.some((phrase) => phrase[phrase.length - 1] === word && tokens.some((token, index) => (
-      token === word && phrase.every((part, offset) => tokens[index - phrase.length + 1 + offset] === part)
-    )));
-  }
-
   // "le plus grand", "la moins chère": after a determiner, a degree adverb that
   // modifies the next word is the superlative, not the noun "un plus". Only a
   // following adjective, adverb or participle counts; "un plus pour l'équipe",
@@ -764,65 +750,19 @@
   }
 
   // How the word after a determiner-led word reads: "noun", "ambiguous" when
-  // the lexicon also has it as an adjective, or "" for anything else. A noun
-  // spelled like a verb form counts as a noun here (avions, sommes, as, été,
-  // excuse, montre); a verb straight after the word is judged, before this, by
-  // nounUseFollows.
+  // the lexicon also has it as an adjective, or "" for anything else. Lexique
+  // lists est, a, as and été as nouns (east, the letter, ace, summer), but as
+  // forms of être and avoir they are overwhelmingly the verb: "la nouvelle est
+  // arrivée". Any other noun counts, even when Lexique's lemma for the form is
+  // a verb, because excuse, montre and marche are ordinary nouns too.
+  const auxiliaryLemmas = new Set(["être", "avoir"]);
   function followingNounReading(token) {
     if (!token || !/^\p{L}/u.test(token) || closedWordGroup(token)) return "";
     const groups = lexicalGroups(token);
     if (!groups.includes("noun")) return "";
+    const lemma = lexicalInfo(token)?.lemma;
+    if (lemma && lemma !== token && auxiliaryLemmas.has(lemma)) return "";
     return groups.includes("adjective") ? "ambiguous" : "noun";
-  }
-
-  // Where word first follows a nominal determiner: the lowercased tokens, the
-  // same tokens as written (for capitals), and the word's index; or null.
-  function determinerPhrase(word, sentence) {
-    const tokens = sentenceTokens(sentence);
-    const written = String(sentence || "").trim().normalize("NFC").replace(/’/gu, "'").match(/[\p{L}]+|[^\p{L}\s']/gu) || [];
-    const index = tokens.findIndex((token, position) => (
-      token === word && (strongNominalDeterminers.has(tokens[position - 1]) || articleDeterminers.has(tokens[position - 1]))
-    ));
-    return index < 0 ? null : { tokens, written: written.length === tokens.length ? written : tokens, index };
-  }
-
-  // Only third-person forms: a determiner phrase is a third-person subject.
-  // avions, sommes, as and été are left out because they are nouns too, and
-  // aura is the verb only when more of the clause follows it.
-  const thirdPersonAuxiliaries = new Set([
-    "est", "sont", "a", "ont", "était", "étaient", "avait", "avaient", "sera", "seront", "auront", "fut", "furent"
-  ]);
-  const nounPhraseClosers = new Set(["qui", "que", "qu", "dont"]);
-  // A clitic or subject pronoun starts the verb group of a new clause: "le
-  // rouge te va bien", "le petit ne sait pas", "l'important c'est".
-  const clauseStarters = new Set([
-    "me", "m", "te", "t", "se", "s", "lui", "leur", "y", "ne", "n", "c", "ce", "ça",
-    "je", "j", "tu", "il", "ils", "elle", "elles", "on", "nous", "vous"
-  ]);
-  const clausePunctuation = /^[.,;:!?…"«»()[\]–—-]$/u;
-  const finiteMoods = new Set(["indicative", "conditional", "subjunctive"]);
-
-  // Positive evidence that a noun/adjective homograph after a determiner is used
-  // as a noun: nothing follows it in the clause, or a finite verb, a relative, a
-  // preposition, a clitic, or et/ou before another determiner or pronoun does.
-  // A digit, a capitalised word, a word Lexique does not know, and "et" before
-  // an adjective are no evidence.
-  function nounUseFollows({ tokens, written, index }) {
-    const next = tokens[index + 1];
-    const after = tokens[index + 2];
-    if (next === undefined || clausePunctuation.test(next)) return true;
-    if (!/^\p{L}/u.test(next) || written[index + 1] !== next) return false;
-    if (thirdPersonAuxiliaries.has(next)) return true;
-    if (next === "aura") return after !== undefined && !clausePunctuation.test(after);
-    if (nounPhraseClosers.has(next) || clauseStarters.has(next)) return true;
-    if (next === "et" || next === "ou") {
-      return Boolean(after) && (strongNominalDeterminers.has(after) || articleDeterminers.has(after) || closedWordGroups.get("pronoun").has(after));
-    }
-    if (closedWordGroups.get("preposition").has(next) || ["d", "au", "aux", "du"].includes(next)) return true;
-    const groups = lexicalGroups(next);
-    if (!groups.includes("verb") || groups.some((group) => group === "noun" || group === "adjective")) return false;
-    const analysis = analyzeWithMorphology(next) || fallbackAnalysis(next);
-    return [analysis, ...(analysis?.alternatives || [])].some((reading) => finiteMoods.has(reading?.mood));
   }
 
   // Adjectives that ordinarily stand before their noun (the BANGS class and a
@@ -835,42 +775,20 @@
     "présumé", "prétendu", "soi-disant", "sacré", "moindre", "double"
   ]);
 
-  // Selecting and ordinal adjectives that stand for a noun left unsaid: "c'est
-  // le bon", "à la prochaine", "c'est le dernier", "un autre". Their noun
-  // entries are other words entirely (bon, a voucher; prochain, a fellow man;
-  // bonne, a maid), so with no noun after them they stay adjectives. The
-  // descriptive pre-posed adjectives (jeune, petit, grand, vieux, pauvre) are
-  // left out on purpose: "les jeunes" and "la petite" name a person.
-  const ellipticalAdjectives = new Set([
-    "bon", "prochain", "dernier", "premier", "seul", "autre", "même", "meilleur"
-  ]);
-
-  // After a determiner, a word the lexicon lists as both noun and adjective
-  // keeps the lexicon's order (for these, nearly always the adjective) unless
-  // the phrase shows it used as a noun: "la nouvelle est arrivée", "une
-  // donnée", "les jeunes qui parlent". Rules that instead defaulted to the noun
-  // turned "un petit tuto", "le petit Nicolas" and "les grands avions" into
-  // "small one" and "grown-up". An elliptical adjective ("c'est le bon", "à la
-  // prochaine") is an adjective even then, and "drôle de" always is. A
-  // following noun makes it an adjective ("une nouvelle voiture"); a following
-  // noun-or-adjective is decided by the pre-posed adjectives ("ma chère amie"),
-  // then by that word's own lexicon order ("les armées ennemies", "la marine
-  // nationale" are noun + adjective; "un excellent ami" adjective + noun).
-  function nounOrAdjectiveInContext(rawWord, sentence, groups) {
+  // After a determiner, a word the lexicon lists as both noun and adjective is
+  // an adjective only when a noun follows for it to modify: "une nouvelle
+  // voiture", but "la nouvelle est arrivée", "une donnée", "la marine". When the
+  // next word is itself noun or adjective ("les armées ennemies", "ma chère
+  // amie"), a pre-posed adjective keeps the adjective and anything else is the
+  // noun, followed by its own adjective.
+  function nounOrAdjectiveInContext(rawWord, sentence) {
     const word = splitElidedClitic(rawWord).base;
-    const lemmas = [word, adjectiveLemma(word), lexicalInfo(word)?.lemma].filter(Boolean);
-    if (lemmas.some((lemma) => ellipticalAdjectives.has(lemma))) return "adjective";
-    const lexiconOrder = groups.find((group) => group === "noun" || group === "adjective") || "noun";
-    const phrase = determinerPhrase(word, sentence);
-    if (!phrase) return lexiconOrder;
-    const next = phrase.tokens[phrase.index + 1];
-    if (lemmas.includes("drôle") && (next === "de" || next === "d")) return "adjective";
-    if (nounUseFollows(phrase)) return "noun";
+    const next = tokensAfterDeterminer(word, sentence)[0];
     const reading = followingNounReading(next);
     if (reading === "noun") return "adjective";
-    if (reading !== "ambiguous") return lexiconOrder;
-    if (lemmas.some((lemma) => preposedAdjectives.has(lemma))) return "adjective";
-    return lexicalGroups(next).find((group) => group === "noun" || group === "adjective") === "adjective" ? "noun" : "adjective";
+    if (reading !== "ambiguous") return "noun";
+    const lemmas = [word, adjectiveLemma(word), lexicalInfo(word)?.lemma];
+    return lemmas.some((lemma) => lemma && preposedAdjectives.has(lemma)) ? "adjective" : "noun";
   }
 
   function analyzeWord(rawWord, sentence = "") {
@@ -908,17 +826,9 @@
   function classifyWord(rawWord, sentence = "", suppliedAnalysis = null) {
     const analysis = suppliedAnalysis || analyzeWord(rawWord, sentence);
     const groups = lexicalGroups(rawWord);
-    if (inAdverbialPhrase(rawWord, sentence)) {
-      const alternatives = analysis?.partOfSpeech === "verb" ? [...groups, "verb"] : groups;
-      return {
-        group: "adverb",
-        alternatives: Array.from(new Set(alternatives)).filter((group) => group !== "adverb"),
-        confidence: "expression"
-      };
-    }
     if (analysis?.partOfSpeech === "nominal") {
       const contextualGroup = groups.includes("noun") && groups.includes("adjective")
-        ? nounOrAdjectiveInContext(rawWord, sentence, groups)
+        ? nounOrAdjectiveInContext(rawWord, sentence)
         : groups.find((group) => group === "noun" || group === "adjective") || "noun";
       // Only offer a verb alternative when a verb reading was actually found.
       const candidates = analysis.verbReadings?.length ? [...groups, "verb"] : groups;
@@ -959,7 +869,7 @@
     const parts = splitElidedClitic(rawWord);
     const ambiguous = lexicalGroups(parts.base).some((value) => value === "noun" || value === "adjective") || parts.prefix === "l";
     let text = rawWord;
-    if (group === "verb" && analysis?.partOfSpeech === "verb" && ambiguous && ["indicative", "conditional", "subjunctive"].includes(analysis.mood)) {
+    if (analysis?.partOfSpeech === "verb" && ambiguous && ["indicative", "conditional", "subjunctive"].includes(analysis.mood)) {
       const pronouns = { "1st:singular": "je", "2nd:singular": "tu", "3rd:singular": "il", "1st:plural": "nous", "2nd:plural": "vous", "3rd:plural": "ils" };
       const subject = pronouns[`${analysis.person}:${analysis.number}`];
       if (subject) {
