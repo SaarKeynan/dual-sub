@@ -689,6 +689,25 @@ async function translateSelectionWithEngine(message) {
       };
     }
   }
+  // Before any engine and before the provider cache is even keyed: a dictionary
+  // answer is local, instant, and costs no request. Single words only — a phrase
+  // is not a headword.
+  if (message.cacheMode === "word" && settings.dictionaryLookup !== false && singleWordLookup(normalizedText)) {
+    const entry = await DualSubDictionary.lookup(message.lemma || normalizedText, message.group || "");
+    if (entry?.senses?.length) {
+      return {
+        sourceText: normalizedText,
+        lookupText,
+        translatedText: entry.senses.join(" · "),
+        provider: "dictionary",
+        provenance: "Dictionary",
+        partOfSpeech: entry.pos,
+        gender: entry.gender,
+        alignment: [],
+        cacheHit: false
+      };
+    }
+  }
   if (translationPending.has(pendingKey)) return translationPending.get(pendingKey);
   const request = (async () => {
     let batch;

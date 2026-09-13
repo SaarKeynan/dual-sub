@@ -22,7 +22,16 @@ function background(initial = {}, options = {}) {
       tabs: { async query() { return [{ id: 1 }]; }, async sendMessage() { return { ok: true }; } } },
     ...(options.indexedDB ? { indexedDB: new IDBFactory() } : {})
   });
-  for (const file of ["shared/settings.js", "video-cache.js", "background.js", "translation-engine.js"]) vm.runInContext(source(file), context);
+  // dictionary.js loads here too, matching manifest.json's background scripts,
+  // so translateSelectionWithEngine always finds DualSubDictionary defined. A
+  // context created without { indexedDB: true } has no indexedDB global, so the
+  // module degrades to state "unavailable" and every lookup answers null,
+  // exactly as it would on a browser without IndexedDB -- it fetches nothing,
+  // so it does not disturb fetch-call counters in tests that never touch the
+  // dictionary. Tests of the dictionary store itself reload dictionary.js a
+  // second time once fake-indexeddb is wired in, which simply replaces this
+  // module-scoped instance with a fresh one.
+  for (const file of ["shared/settings.js", "video-cache.js", "background.js", "translation-engine.js", "dictionary.js"]) vm.runInContext(source(file), context);
   return { data, context };
 }
 
@@ -703,6 +712,69 @@ async function dictionaryStoreTests() {
   assert.equal(c.DualSubDictionary.state, "ready");
 }
 
+// A dictionary hit answers without a request, and must not be written into the
+// provider cache, where it would occupy a provider-keyed slot.
+async function dictionaryLookupTests() {
+  const index = 'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]';
+  const { context: c } = background({}, { indexedDB: true });
+  let providerCalls = 0;
+  c.fetch = async (url) => {
+    if (String(url).includes("french-english")) return { ok: true, text: async () => index };
+    providerCalls++;
+    return { ok: true, json: async () => [[["armies", "armées"]]] };
+  };
+  vm.runInContext(source("dictionary.js"), c);
+
+  const hit = await c.translateSelectionWithEngine({
+    text: "armées", cacheMode: "word", lemma: "armée", group: "noun", sessionId: "d1"
+  });
+  assert.equal(hit.translatedText, "army · armed forces");
+  assert.equal(hit.provider, "dictionary");
+  assert.equal(hit.provenance, "Dictionary");
+  assert.equal(providerCalls, 0, "A dictionary hit spends no request");
+
+  const miss = await c.translateSelectionWithEngine({
+    text: "zzzz", cacheMode: "word", lemma: "zzzz", group: "noun", sessionId: "d2"
+  });
+  assert.equal(miss.translatedText, "armies");
+  assert.equal(providerCalls, 1, "A miss falls through to the engine");
+
+  // A phrase is not a headword.
+  await c.translateSelectionWithEngine({ text: "les armées", cacheMode: "phrase", sessionId: "d3" });
+  assert.equal(providerCalls, 2, "A phrase never consults the dictionary");
+
+  // A saved correction still wins.
+  await c.saveTranslationCorrection("armées", "my own word");
+  const corrected = await c.translateSelectionWithEngine({
+    text: "armées", cacheMode: "word", lemma: "armée", group: "noun", sessionId: "d4"
+  });
+  assert.equal(corrected.translatedText, "my own word");
+
+  // A dictionary answer must not occupy a provider-keyed cache slot, or the
+  // engine path would later read it back as though an engine had produced it.
+  const keyed = c.DualSubTranslation.cacheKeyFor(
+    { text: "armée", cacheId: "word:armées" },
+    { provider: "google", sourceLanguage: "fr", targetLanguage: "en" }
+  );
+  const cached = await c.DualSubTranslation.cachedResults([keyed]);
+  assert.equal(cached[0], null, "The dictionary does not write into the translation cache");
+
+  // Switched off, the same word goes to the engine.
+  const off = background({ settings: { dictionaryLookup: false } }, { indexedDB: true }).context;
+  let offCalls = 0;
+  off.fetch = async (url) => {
+    if (String(url).includes("french-english")) return { ok: true, text: async () => index };
+    offCalls++;
+    return { ok: true, json: async () => [[["armies", "armées"]]] };
+  };
+  vm.runInContext(source("dictionary.js"), off);
+  const asked = await off.translateSelectionWithEngine({
+    text: "armées", cacheMode: "word", lemma: "armée", group: "noun", sessionId: "d5"
+  });
+  assert.equal(asked.translatedText, "armies");
+  assert.equal(offCalls, 1, "With the setting off the engine answers");
+}
+
 // The sidebar word list looks up many words at once, so several lookups
 // racing the same first-ever import is the real access pattern, not a
 // hypothetical. They must all share the one import rather than each starting
@@ -819,6 +891,6 @@ async function dictionaryClearDuringImportTests() {
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
   await translationTests(); await providerFallbackTests(); await memoryWordLookupTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
-  await dictionaryStoreTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
+  await dictionaryStoreTests(); await dictionaryLookupTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

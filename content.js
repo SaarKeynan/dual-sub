@@ -1715,6 +1715,17 @@
     return `${settings.translationProvider}|${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(value)}${readingKey ? `|reading:${readingKey}` : ""}`;
   }
 
+  // The lemma sent to the background for a dictionary lookup: the background
+  // has no morphology of its own. A verb reading needs the morphology's lemma
+  // (`livre` -> `livrer`), because only the morphology conjugates; every other
+  // reading needs Lexique's lemma, which disambiguates homographs the
+  // morphology cannot (`armées` -> `armée`, not the adjective `armé`).
+  function lookupLemmaFor(word, conjugation, reading) {
+    return (reading?.group === "verb"
+      ? conjugation?.pronominalLemma || conjugation?.lemma
+      : globalThis.DualSubFrench?.lexicalInfo(word)?.lemma) || word;
+  }
+
   function stemEnglishWord(value) {
     const word = normalizeLookupWord(value);
     const irregular = {
@@ -1837,6 +1848,8 @@
           type: "translate-selection", text,
           lookupText: text === wordText ? reading?.text || text : text,
           readingKey: text === wordText ? reading?.key || "" : "",
+          lemma: lookupLemmaFor(wordText, conjugation, reading),
+          group: reading?.group || "",
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
           cacheMode: "word",
@@ -2065,6 +2078,8 @@
         text: cleanText,
         lookupText: reading?.text || cleanText,
         readingKey: reading?.key || "",
+        lemma: lookupLemmaFor(cleanText, conjugation, reading),
+        group: reading?.group || "",
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
         cacheMode: kind === "word" ? "word" : "phrase",

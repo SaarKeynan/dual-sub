@@ -500,6 +500,15 @@ async function testFrenchWithLoadedResources() {
   const conditional = french.analyzeElisionParticle("s’", "s’il");
   assert.strictEqual(conditional.expanded, "si", "s’il is si + il, not a reflexive pronoun");
   assert.strictEqual(conditional.group, "conjunction");
+
+  // The background has no morphology, so the content script sends the lemma. The
+  // right source depends on the reading: Lexique has the noun lemma armée where
+  // the morphology gives the adjective armé, and only the morphology has livrer.
+  const armees = french.lookupReading("armées", "les armées sont là");
+  assert.strictEqual(armees.group, "noun");
+  assert.strictEqual(french.lexicalInfo("armées").lemma, "armée");
+  const livre = french.analyzeWord("livre", "je livre le colis");
+  assert.strictEqual(livre.lemma, "livrer");
 }
 
 async function testWordGroupResource() {
@@ -680,6 +689,11 @@ async function testVocabularyStorage() {
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "translation-engine.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "shared/settings.js"), "utf8"), context);
+  // Matches manifest.json's background scripts, so translateSelectionWithEngine
+  // finds DualSubDictionary defined. This context has no indexedDB global, so
+  // the module degrades to state "unavailable" and every lookup answers null
+  // without fetching, same as a browser without IndexedDB.
+  vm.runInContext(fs.readFileSync(path.join(projectRoot, "dictionary.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "background.js"), "utf8"), context);
   assert(messageListener, "Background message listener was not registered");
   assert.strictEqual(context.suspiciousWordTranslation("créées", "created"), false);
