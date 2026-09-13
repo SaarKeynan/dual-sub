@@ -376,7 +376,10 @@ element("groupLemmas").addEventListener("change", async () => {
     for (const entry of entries) {
       if (entry.lemma || entry.sourceLanguage !== "fr") continue;
       const analysis = DualSubFrench.analyzeWord(entry.sourceText, entry.sentence);
-      if (analysis?.partOfSpeech === "verb") entry.lemma = analysis.pronominalLemma || analysis.lemma || "";
+      // Follow the word's reading, not the raw morphology: plus is an attested
+      // participle of plaire but reads as an adverb.
+      const group = DualSubFrench.classifyWord(entry.sourceText, entry.sentence, analysis)?.group;
+      if (analysis?.partOfSpeech === "verb" && group === "verb") entry.lemma = analysis.pronominalLemma || analysis.lemma || "";
     }
   }
   render();

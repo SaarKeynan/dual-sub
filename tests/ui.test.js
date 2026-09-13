@@ -391,6 +391,46 @@ async function popup() {
   } finally { w.close(); }
 }
 
+// The morphology engine, Lefff lemmas and Lexique indexes every user runs,
+// served to a window whose browser.runtime.getURL prefixes extension.test.
+// Without them tu, lui and plus have no verb homograph to misread.
+function useRealFrench(w) {
+  const engine = { TextDecoder, TextEncoder, WebAssembly, wasmBytes: fs.readFileSync(path.join(root, "vendor/ablaut/ablaut_bg.wasm")) };
+  vm.createContext(engine);
+  vm.runInContext(read("vendor/ablaut/ablaut.js"), engine);
+  const reverseFrench = vm.runInContext("wasm_bindgen.initSync({ module: wasmBytes }); wasm_bindgen.reverseFrench", engine);
+  w.wasm_bindgen = Object.assign(async () => {}, { reverseFrench });
+  w.fetch = async (url) => {
+    const file = String(url).replace("https://extension.test/", "");
+    return { ok: true, json: async () => JSON.parse(read(file)), text: async () => read(file) };
+  };
+}
+
+// Grouping by lemma fills in a missing lemma from the morphology. plus is an
+// attested participle of plaire but reads as an adverb, so it must not be
+// filed under plaire; a real verb still is.
+async function vocabularyLemmaGrouping() {
+  const dom = page("vocabulary/vocabulary.html"), w = dom.window;
+  const entries = [["plus", "plus tard"], ["mange", "il mange"]].map(([word, sentence], index) => ({
+    id: String(index), sourceText: word, translatedText: "", normalized: word, sourceLanguage: "fr", targetLanguage: "en",
+    lemma: "", sentence, contexts: [{ videoId: "first", sentence, timeMs: 1000 }]
+  }));
+  w.browser = {
+    runtime: { getURL: (value) => "https://extension.test/" + value, async sendMessage() { return { ok: true, entries }; } },
+    storage: { sync: { async get() { return { settings: {} }; } } }
+  };
+  useRealFrench(w);
+  try {
+    w.eval(read("language/french.js"));
+    await w.DualSubFrench.ready;
+    w.eval(read("vocabulary/vocabulary.js")); await settle();
+    const group = w.document.getElementById("groupLemmas"); group.checked = true; group.dispatchEvent(new w.Event("change"));
+    await settle(); await settle();
+    const headings = Array.from(w.document.querySelectorAll("#wordList h2"), (heading) => heading.textContent).sort();
+    assert.deepEqual(headings, ["manger", "plus"], "plus is not grouped under plaire; mange is grouped under manger");
+  } finally { w.close(); }
+}
+
 async function vocabulary() {
   const dom = page("vocabulary/vocabulary.html"), w = dom.window;
   const entries = ["vais", "allait"].map((word, index) => ({ id: String(index), sourceText: word, translatedText: "go", normalized: word,
@@ -554,19 +594,7 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
     storage: { onChanged: event, sync: { async get() { return { settings: { preloadVideoWords: false, ...options.settings } }; } } }
   };
   w.fetch = async () => ({ ok: true, json: async () => ({ as: "nv" }) });
-  if (options.realFrench) {
-    // The morphology engine, Lefff lemmas and Lexique indexes every user runs.
-    // Without them tu, lui and plus have no verb homograph to misread.
-    const engine = { TextDecoder, TextEncoder, WebAssembly, wasmBytes: fs.readFileSync(path.join(root, "vendor/ablaut/ablaut_bg.wasm")) };
-    vm.createContext(engine);
-    vm.runInContext(read("vendor/ablaut/ablaut.js"), engine);
-    const reverseFrench = vm.runInContext("wasm_bindgen.initSync({ module: wasmBytes }); wasm_bindgen.reverseFrench", engine);
-    w.wasm_bindgen = Object.assign(async () => {}, { reverseFrench });
-    w.fetch = async (url) => {
-      const file = String(url).replace("https://extension.test/", "");
-      return { ok: true, json: async () => JSON.parse(read(file)), text: async () => read(file) };
-    };
-  }
+  if (options.realFrench) useRealFrench(w);
   try {
     w.eval(read("language/french.js"));
     await w.DualSubFrench.ready;
@@ -814,7 +842,7 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
 }
 
 (async () => {
-  await sidebar(); await wordList(); await wordListSaveFailure(); await sidebarTabMode(); await popup(); await vocabulary(); await loader();
+  await sidebar(); await wordList(); await wordListSaveFailure(); await sidebarTabMode(); await popup(); await vocabulary(); await vocabularyLemmaGrouping(); await loader();
   const snapshot = await content();
   await content(snapshot);
   await content({ ...snapshot, targetCues: [], translations: [{ index: 0, text: "I am well" }] });
