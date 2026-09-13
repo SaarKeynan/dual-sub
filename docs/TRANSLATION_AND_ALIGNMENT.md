@@ -105,6 +105,8 @@ For a selected word or phrase, `background.js` uses this order:
 ```text
 exact saved correction
         ↓ absent
+bundled dictionary, single words only, setting on
+        ↓ absent, not a single word, or setting off
 identical request already in flight
         ↓ absent
 persistent provider-specific cache
@@ -116,6 +118,23 @@ next eligible engine, cheapest first
 Google concise-word fallback, unless Google was already selected
 ```
 
+The bundled dictionary is checked before the in-flight request and before the
+provider cache is even keyed, not after them: a cache entry can hold a junk
+provider answer the dictionary would answer correctly, so the dictionary goes
+first. It only answers single words, and only while `dictionaryLookup` is on;
+phrases and caption lines never consult it. `content.js` sends a `lemma` and a
+`group` alongside the surface word, because the background script has no
+morphology of its own — a verb reading sends the morphology's infinitive,
+everything else sends the Lexique lemma (`lookupLemmaFor()` in `content.js`).
+A dictionary answer is never written to the translation cache and never runs
+the short-word quality checks below, since those checks exist to catch a bad
+provider answer and a dictionary entry is not one. The same check answers all
+three word-meaning paths — the hover lookup card (`translate-selection` →
+`translateSelectionWithEngine()`), preloaded video words (`translate-batch` →
+`translateWordBatch()`), and the sidebar word list's cache-only peek
+(`peek-word-meanings` → `peekWordMeanings()`) — so a word gets the same answer
+no matter which of the three asked.
+
 The content script has an additional session cache in front of this path. It is
 populated by previous hovers and optional video-word warmup. This is why a
 frequently used word can appear immediately without another runtime message.
@@ -123,7 +142,12 @@ frequently used word can appear immediately without another runtime message.
 The source row in the lookup card exposes the outcome:
 
 - **your saved correction** means an exact local correction won;
-- **instant session cache** means the page already held the result in memory;
+- **bundled dictionary** means the bundled Wiktionary derivative answered
+  locally, without a cache entry or a provider request — this label also shows
+  when a dictionary answer is replayed from the session cache, so a hover
+  reads the same way every time it hits the same word;
+- **instant session cache** means the page already held a non-dictionary
+  result in memory;
 - **local translation cache** means the persistent 180-day cache won;
 - a provider provenance such as **Azure aligned**, **DeepL contextual**,
   **Google web**, or **MyMemory** means an engine request supplied the result;

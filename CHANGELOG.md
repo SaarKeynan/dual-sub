@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — a bundled dictionary for word meanings
+
+- Word meanings are now answered from a bundled French-English dictionary
+  before any translation engine is asked. It covers the hover lookup card,
+  preloaded video words, and the sidebar word list, and it works offline: a
+  known word is answered instantly and costs no request. Words it does not
+  cover still go to your chosen engine as before.
+- The lookup card names the source as **bundled dictionary** so it is never
+  mistaken for a provider or cached answer.
+- **Look words up in the bundled dictionary first**, under Translation
+  service, turns this off; it is on by default.
+
 ## Unreleased — less memory per tab
 
 - The two Lexique indexes are read as text and searched in place rather than
