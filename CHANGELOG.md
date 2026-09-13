@@ -9,6 +9,9 @@
   the next one. That ending now rejoins the line it belongs to, and a line that
   was nothing else is folded into it. The same repair applies to the French
   track (`?`, `! Et à ce moment-là`) and to captions already saved for a video.
+- The lookup card's Wiktionary link opens English Wiktionary at the word's
+  French entry, with meanings in English, instead of French Wiktionary's
+  French-language definitions.
 
 ## Unreleased — a bundled dictionary for word meanings
 

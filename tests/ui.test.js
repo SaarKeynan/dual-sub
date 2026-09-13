@@ -654,8 +654,9 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
       const infinitiveNode = w.document.querySelector(".dualsub-card-infinitive");
       assert.equal(infinitiveNode.textContent, infinitive ? `Infinitive: ${infinitive}` : "", `The card's infinitive line for ${token}`);
       assert.equal(infinitiveNode.hidden, !infinitive);
-      assert(w.document.querySelector(".dualsub-card-wiktionary").href.endsWith(`/wiki/${encodeURIComponent(infinitive || token)}`),
-        `Wiktionary opens ${infinitive || token}, not a verb the word is not read as`);
+      assert.equal(w.document.querySelector(".dualsub-card-wiktionary").href,
+        `https://en.wiktionary.org/wiki/${encodeURIComponent(infinitive || token)}#French`,
+        `English Wiktionary's French entry opens ${infinitive || token}, not a verb the word is not read as`);
       const lookups = sent.filter((message) => message.type === "translate-selection");
       assert(lookups.length, "The hover and the card look the word up");
       assert(lookups.every((message) => message.text === token || message.text === infinitive),

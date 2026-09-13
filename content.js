@@ -2115,7 +2115,9 @@
     pinButton.classList.toggle("is-active", lookupPinned);
     linkNode.href = `https://translate.google.com/?sl=${encodeURIComponent(settings.sourceLanguage)}&tl=${encodeURIComponent(settings.targetLanguage)}&text=${encodeURIComponent(reading?.text || cleanText)}&op=translate`;
     const dictionaryWord = verbLemma || (conjugation?.partOfSpeech === "nominal" ? conjugation.lemma : "") || cleanText;
-    wiktionaryNode.href = `https://fr.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}`;
+    // English Wiktionary defines French words in English, the same source the
+    // bundled dictionary is built from; #French skips any English entry.
+    wiktionaryNode.href = `https://en.wiktionary.org/wiki/${encodeURIComponent(dictionaryWord)}#French`;
     selectionCard.classList.add("is-visible");
     cancelLookupDismiss();
     root.classList.add("dualsub-learning-open");
