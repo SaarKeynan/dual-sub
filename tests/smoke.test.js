@@ -567,6 +567,40 @@ async function testFrenchWithLoadedResources() {
   ]) {
     assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
   }
+  // With no noun after it, a selecting or ordinal adjective stands for a noun
+  // left unsaid ("c'est le bon", "à la prochaine", "un autre") and stays an
+  // adjective, while a descriptive one names a person or thing ("les jeunes",
+  // "la petite"). "drôle de" is always the adjective.
+  for (const [word, sentence, group] of [
+    ["bon", "c'est le bon", "adjective"],
+    ["bon", "ce n'est pas le bon", "adjective"],
+    ["bonne", "c'est la bonne", "adjective"],
+    ["bonne", "j'en ai une bonne", "adjective"],
+    ["prochaine", "à la prochaine", "adjective"],
+    ["prochain", "le prochain arrive", "adjective"],
+    ["prochain", "au prochain", "adjective"],
+    ["dernier", "c'est le dernier", "adjective"],
+    ["premier", "c'est le premier", "adjective"],
+    ["première", "la première", "adjective"],
+    ["seul", "c'est le seul", "adjective"],
+    ["autre", "un autre", "adjective"],
+    ["autres", "les autres", "adjective"],
+    ["meilleurs", "les meilleurs", "adjective"],
+    ["drôle", "un drôle de truc", "adjective"],
+    ["drôle", "une drôle d'idée", "adjective"],
+    ["jeunes", "les jeunes", "noun"],
+    ["jeune", "un jeune", "noun"],
+    ["petite", "la petite", "noun"],
+    ["grand", "un grand", "noun"],
+    ["vieux", "un vieux", "noun"],
+    ["pauvres", "les pauvres", "noun"],
+    ["malade", "un malade", "noun"]
+  ]) {
+    const classification = french.classifyWord(word, sentence);
+    assert.strictEqual(classification.group, group, `${word} in "${sentence}"`);
+    assert(classification.alternatives.includes(group === "noun" ? "adjective" : "noun"), `${word} in "${sentence}" keeps the other reading`);
+  }
+  assert.strictEqual(french.adjectiveLemma("autres"), "autre", "A plural adjective with no feminine ending reaches its singular");
   // Only one of the two readings in the lexicon: nothing to decide.
   assert.strictEqual(french.classifyWord("présumée", "la présumée victime").group, "adjective");
   assert.strictEqual(french.classifyWord("maison", "la maison bleue").group, "noun");
@@ -686,7 +720,17 @@ async function testDictionaryWithRealData() {
     ["la nouvelle est arrivée", "nouvelle", "news", "", /\bnew\b/],
     ["une donnée", "donnée", "datum", "", /affordable/],
     ["la marine", "marine", "navy", "", /maritime/],
-    ["la marine nationale", "marine", "navy", "", /maritime/]
+    ["la marine nationale", "marine", "navy", "", /maritime/],
+    // A pre-posed adjective with no noun after it. Read as nouns these
+    // answered "fellow man", "voucher", "maid", "small one" and "child, kid".
+    ["à la prochaine", "prochaine", "next", "", /fellow/],
+    ["c'est le bon", "bon", "good", "", /voucher/],
+    ["c'est la bonne", "bonne", "good", "", /maid/],
+    ["ma petite sœur", "petite", "small", "", /small one/],
+    ["une bonne excuse", "bonne", "good", "", /maid/],
+    ["un drôle de truc", "drôle", "funny", "", /child/],
+    ["un autre", "autre", "other"],
+    ["les jeunes", "jeunes", "young person"]
   ];
   for (const [sentence, token, expected, reason, forbidden] of cases) {
     const result = await resolve(token, sentence);

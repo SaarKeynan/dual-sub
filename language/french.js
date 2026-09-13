@@ -642,6 +642,8 @@
       const candidate = singular.slice(0, -feminine.length) + masculine;
       if (candidate && candidate !== word && lexicalGroups(candidate).includes("adjective")) return candidate;
     }
+    // A plural with no feminine ending of its own: autres -> autre.
+    if (singular !== word && lexicalGroups(singular).includes("adjective")) return singular;
     return "";
   }
 
@@ -723,20 +725,33 @@
     "présumé", "prétendu", "soi-disant", "sacré", "moindre", "double"
   ]);
 
+  // Selecting and ordinal adjectives that stand for a noun left unsaid: "c'est
+  // le bon", "à la prochaine", "c'est le dernier", "un autre". Their noun
+  // entries are other words entirely (bon, a voucher; prochain, a fellow man;
+  // bonne, a maid), so with no noun after them they stay adjectives. The
+  // descriptive pre-posed adjectives (jeune, petit, grand, vieux, pauvre) are
+  // left out on purpose: "les jeunes" and "la petite" name a person.
+  const ellipticalAdjectives = new Set([
+    "bon", "prochain", "dernier", "premier", "seul", "autre", "même", "meilleur"
+  ]);
+
   // After a determiner, a word the lexicon lists as both noun and adjective is
   // an adjective only when a noun follows for it to modify: "une nouvelle
   // voiture", but "la nouvelle est arrivée", "une donnée", "la marine". When the
   // next word is itself noun or adjective ("les armées ennemies", "ma chère
   // amie"), a pre-posed adjective keeps the adjective and anything else is the
-  // noun, followed by its own adjective.
+  // noun, followed by its own adjective. An elliptical adjective never needs a
+  // noun, and "drôle de" is the adjective of "un drôle de truc".
   function nounOrAdjectiveInContext(rawWord, sentence) {
     const word = splitElidedClitic(rawWord).base;
     const next = tokensAfterDeterminer(word, sentence)[0];
+    const lemmas = [word, adjectiveLemma(word), lexicalInfo(word)?.lemma].filter(Boolean);
+    if (lemmas.some((lemma) => ellipticalAdjectives.has(lemma))) return "adjective";
+    if (lemmas.includes("drôle") && (next === "de" || next === "d")) return "adjective";
     const reading = followingNounReading(next);
     if (reading === "noun") return "adjective";
     if (reading !== "ambiguous") return "noun";
-    const lemmas = [word, adjectiveLemma(word), lexicalInfo(word)?.lemma];
-    return lemmas.some((lemma) => lemma && preposedAdjectives.has(lemma)) ? "adjective" : "noun";
+    return lemmas.some((lemma) => preposedAdjectives.has(lemma)) ? "adjective" : "noun";
   }
 
   function analyzeWord(rawWord, sentence = "") {
