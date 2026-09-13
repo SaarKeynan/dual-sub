@@ -3,3 +3,4 @@
 # would rewrite them to CRLF on checkout, leaving a stray carriage return on
 # every value and breaking both the hashes and the offsets. Keep them verbatim.
 vendor/lexique/*.txt -text
+vendor/wiktionary/*.txt -text

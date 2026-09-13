@@ -2,6 +2,8 @@ const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
 const path = require("path");
+const os = require("os");
+const { execFileSync } = require("child_process");
 
 const parentRoot = path.resolve(__dirname, "..");
 const projectRoot = fs.existsSync(path.join(parentRoot, "content.js")) ? parentRoot : process.cwd();
@@ -884,6 +886,70 @@ async function testTranscriptWordAnalysis() {
     "The replaced word surfaces are gone from the transcript state");
 }
 
+// The build is run by hand against a 550MB extract, so the test drives it with
+// a fixture instead. It exists to pin the filtering rules, not the data.
+async function testDictionaryBuild() {
+  const fixture = path.join(projectRoot, "tests", "fixtures", "kaikki-sample.jsonl");
+  const output = path.join(os.tmpdir(), `dualsub-dictionary-${process.pid}.txt`);
+  // Fourth argument is the lexicon to intersect with. Empty means none, so this
+  // run isolates the language, part-of-speech and tag filters. "Paris" and "dog"
+  // are both absent from Lexique, so with the intersection on they would be
+  // dropped before those filters were reached and the assertions below would
+  // pass for the wrong reason.
+  execFileSync(process.execPath, [
+    path.join(projectRoot, "scripts", "build-dictionary.js"), fixture, output, ""
+  ], { encoding: "utf8" });
+
+  const lines = fs.readFileSync(output, "utf8").split("\n");
+  const entries = new Map(lines.map((line) => {
+    const tab = line.indexOf("\t");
+    return [line.slice(0, tab), JSON.parse(line.slice(tab + 1))];
+  }));
+
+  // Sorted in code-unit order, because the consumer compares with <.
+  const keys = lines.map((line) => line.slice(0, line.indexOf("\t")));
+  for (let position = 1; position < keys.length; position++) {
+    assert(keys[position - 1] < keys[position], `not sorted at ${keys[position]}`);
+  }
+
+  assert.deepStrictEqual(entries.get("armée"), [
+    { pos: "noun", gender: "f", senses: ["army", "armed forces", "a great multitude"] }
+  ], "Senses are capped at three, and a feminine noun keeps its gender");
+
+  // Same spelling, two parts of speech, and a gender that separates nothing is
+  // still carried on the noun because the other reading is a verb.
+  assert.deepStrictEqual(entries.get("livre"), [
+    { pos: "noun", gender: "m", senses: ["book"] },
+    { pos: "verb", senses: ["to deliver", "to hand over"] }
+  ]);
+
+  assert.deepStrictEqual(entries.get("chien"), [
+    { pos: "noun", gender: "m", senses: ["dog"] }
+  ], "An obsolete sense is dropped");
+
+  assert(!entries.has("Paris"), "Proper nouns are not dictionary lookups");
+  assert(!entries.has("dog"), "Only French entries are kept");
+  fs.unlinkSync(output);
+
+  // And with a lexicon, only lemmas it knows survive. "chien" is in Lexique and
+  // "zzzznotaword" is not, so this proves the intersection rather than assuming it.
+  const lexicon = path.join(os.tmpdir(), `dualsub-lexicon-${process.pid}.txt`);
+  fs.writeFileSync(lexicon, 'chien\t["chien","SjE~","m","s",1,100]');
+  const filteredFixture = path.join(os.tmpdir(), `dualsub-fixture-${process.pid}.jsonl`);
+  fs.writeFileSync(filteredFixture, [
+    '{"word":"chien","lang_code":"fr","pos":"noun","senses":[{"glosses":["dog"]}]}',
+    '{"word":"zzzznotaword","lang_code":"fr","pos":"noun","senses":[{"glosses":["nothing"]}]}'
+  ].join("\n"));
+  const filteredOut = path.join(os.tmpdir(), `dualsub-filtered-${process.pid}.txt`);
+  execFileSync(process.execPath, [
+    path.join(projectRoot, "scripts", "build-dictionary.js"), filteredFixture, filteredOut, lexicon
+  ], { encoding: "utf8" });
+  const filtered = fs.readFileSync(filteredOut, "utf8");
+  assert(filtered.startsWith("chien\t"), "A lemma the lexicon knows survives");
+  assert(!filtered.includes("zzzznotaword"), "A lemma it does not know is dropped");
+  for (const file of [lexicon, filteredFixture, filteredOut]) fs.unlinkSync(file);
+}
+
 Promise.resolve()
   .then(testCaptionProcessing)
   .then(testTranscriptWordAnalysis)
@@ -891,6 +957,7 @@ Promise.resolve()
   .then(testAblautMorphology)
   .then(testFrenchWithLoadedResources)
   .then(testWordGroupResource)
+  .then(testDictionaryBuild)
   .then(testTranslationEngine)
   .then(testVocabularyStorage)
   .then(() => console.log("DualSub smoke tests passed"))
