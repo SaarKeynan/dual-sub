@@ -607,7 +607,10 @@ async function testDictionaryWithRealData() {
     ["je livre le colis", "livre", "deliver"],
     ["vous avez", "avez", "have"],
     ["je m'appelle", "m'appelle", "call"],
-    ["le cœur", "cœur", "heart"]
+    ["le cœur", "cœur", "heart"],
+    // Neither the surface nor Lexique's lemma (none) has the adjective; the
+    // morphology's -ée -> -é lemma does.
+    ["la présumée victime", "présumée", "presumed"]
   ];
   for (const [sentence, token, expected, reason] of cases) {
     const result = await resolve(token, sentence);
@@ -1067,6 +1070,11 @@ async function testTranscriptWordAnalysis() {
   assert.deepStrictEqual(candidates("livre", null, { group: "noun" }), ["livre"], "Duplicates are removed");
   assert.deepStrictEqual(candidates("m’appelle", { partOfSpeech: "verb", lemma: "appeler", pronominalLemma: "s’appeler" }, { group: "verb" }), ["appeler"]);
   assert.deepStrictEqual(candidates("as", { partOfSpeech: "verb" }, { group: "verb" }), ["as", "avoir"], "A verb reading without an infinitive falls back to the other list");
+  // The morphology's own lemma comes last, reaching what Lexique does not list.
+  assert.deepStrictEqual(candidates("présumée", { partOfSpeech: "nominal", lemma: "présumé" }, { group: "adjective" }), ["présumée", "présumé"]);
+  assert.deepStrictEqual(candidates("yeux", { partOfSpeech: "nominal", lemma: "yeux" }, { group: "noun" }), ["yeux", "oeil"], "...de-duplicated");
+  assert.deepStrictEqual(candidates("plus", { partOfSpeech: "verb", lemma: "plaire" }, { group: "adverb" }), ["plus"],
+    "A word not read as a verb does not send the verb it could be a form of");
   assert.deepStrictEqual(candidates("", null, null), [], "Empty values are removed");
 
   const many = context.describeStudyWords(

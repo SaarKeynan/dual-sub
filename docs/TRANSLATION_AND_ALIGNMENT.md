@@ -130,8 +130,11 @@ morphology's plain infinitive (`appeler`, never `s’appeler`). Every other
 reading sends the surface word and then the Lexique lemma: Lexique keeps one
 lemma per form, and for `été`, `est` and `as` that lemma is the verb, so `cet
 été` must try `été` before `être`, while `armées` and `yeux` only reach an entry
-through their lemma. The dictionary answers from the first candidate with a part
-of speech matching the group. When the group is a real part of speech that no
+through their lemma. Last comes the morphology's own lemma, which reaches forms
+Lexique files under the verb or does not list (`la présumée victime` reaches
+the adjective `présumé`); a verb analysis under a non-verb reading, such as
+`plus` as a form of `plaire`, adds nothing. The dictionary answers from the
+first candidate with a part of speech matching the group. When the group is a real part of speech that no
 candidate has, the dictionary does not answer and the engine does: `la maison`
 is a determiner, and the only `la` entries are the pronoun and the musical
 note. Only a word with no reading (`unknown`) takes the first candidate's first

@@ -1740,10 +1740,14 @@
   // which is no headword). Every other reading tries the surface word first,
   // because Lexique keeps one lemma per form and for `été`, `est` and `as` that
   // lemma is the verb; then Lexique's lemma, which reaches inflected forms the
-  // morphology cannot (`armées` -> `armée`, `yeux` -> `oeil`).
+  // morphology cannot (`armées` -> `armée`, `yeux` -> `oeil`); then the
+  // morphology's own lemma, which reaches what Lexique files under the verb or
+  // not at all (`présumée` -> `présumé`). A verb analysis under another reading
+  // (`plus` as a form of `plaire`) sends no infinitive.
   function dictionaryCandidatesFor(word, conjugation, reading) {
     if (reading?.group === "verb" && conjugation?.lemma) return [conjugation.lemma];
-    return [word, globalThis.DualSubFrench?.lexicalInfo(word)?.lemma]
+    const morphologyLemma = conjugation?.partOfSpeech === "verb" ? "" : conjugation?.lemma;
+    return [word, globalThis.DualSubFrench?.lexicalInfo(word)?.lemma, morphologyLemma]
       .filter((value, index, values) => value && values.indexOf(value) === index);
   }
 
