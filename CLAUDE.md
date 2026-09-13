@@ -79,10 +79,11 @@ whether a live Firefox check was performed.
   the URL recorded in `vendor/wiktionary/SOURCE.md`. Run
   `node scripts/build-dictionary.js`; the output must stay code-unit sorted,
   same as the Lexique indexes, and `vendor/wiktionary/*.txt` is marked `-text`
-  in `.gitattributes` for the same reason. Bump `DATA_VERSION` in
-  `dictionary.js` whenever the shipped file changes, or an existing install
-  keeps importing its old IndexedDB store instead of the new one. Update the
-  SHA-256 hash in `vendor/wiktionary/SOURCE.md` after regenerating.
+  in `.gitattributes` for the same reason. After regenerating, record the new
+  SHA-256 in `vendor/wiktionary/SOURCE.md` and set `DATA_VERSION` in
+  `dictionary.js` to its first 16 hex characters, lowercase; an existing install
+  keeps its old IndexedDB store until that string changes. `npm test` hashes the
+  shipped file and fails if either is stale.
 - Google's keyless `translate_a/single` endpoint translates exactly one `q` and
   silently ignores any others, so repeating `q` does not batch and looks like a
   success. It does return one chunk per newline-separated line, and each chunk

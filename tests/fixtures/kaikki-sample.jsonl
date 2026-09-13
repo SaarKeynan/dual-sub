@@ -7,3 +7,14 @@
 {"word":"table","lang_code":"fr","pos":"noun","senses":[{"tags":["feminine"],"glosses":["table"]}]}
 {"word":"vas","lang_code":"fr","pos":"verb","senses":[{"tags":["form-of","indicative","present","second-person","singular"],"glosses":["second-person singular present indicative of aller"],"form_of":[{"word":"aller"}]}]}
 {"word":"mixe","lang_code":"fr","pos":"verb","senses":[{"tags":["form-of"],"glosses":["inflection of mixer:"],"form_of":[{"word":"mixer"}]},{"glosses":["to mix"]}]}
+{"word":"livre","lang_code":"fr","pos":"noun","senses":[{"tags":["feminine"],"glosses":["pound (unit of weight)"]}]}
+{"word":"oeil","lang_code":"fr","pos":"noun","senses":[{"tags":["alt-of","masculine","nonstandard"],"glosses":["nonstandard spelling of œil"],"alt_of":[{"word":"œil"}]}]}
+{"word":"coeur","lang_code":"fr","pos":"noun","senses":[{"tags":["alt-of","masculine","nonstandard"],"glosses":["nonstandard spelling of cœur"],"alt_of":[{"word":"cœur"}]}]}
+{"word":"cœur","lang_code":"fr","pos":"noun","senses":[{"tags":["masculine"],"glosses":["heart (organ)"]},{"tags":["masculine"],"glosses":["heart (love)"]}]}
+{"word":"chat","lang_code":"fr","pos":"noun","senses":[{"tags":["misspelling"],"glosses":["misspelling of chât"]},{"tags":["masculine"],"glosses":["cat"]}]}
+{"word":"tout","lang_code":"fr","pos":"adv","senses":[{"tags":["masculine"],"glosses":["all"]}]}
+{"word":"tout","lang_code":"fr","pos":"det","senses":[{"tags":["masculine"],"glosses":["all"]}]}
+{"word":"tout","lang_code":"fr","pos":"adv","senses":[{"tags":["masculine"],"glosses":["all"]},{"tags":["masculine"],"glosses":["totally"]}]}
+{"word":"tout","lang_code":"fr","pos":"noun","senses":[{"tags":["masculine"],"glosses":["whole"]}]}
+{"word":"tout","lang_code":"fr","pos":"pron","senses":[{"tags":["neuter"],"glosses":["everything"]}]}
+{"word":"deux","lang_code":"fr","pos":"num","senses":[{"tags":["invariable"],"glosses":["two"]}]}

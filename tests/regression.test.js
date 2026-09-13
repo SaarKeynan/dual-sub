@@ -687,12 +687,16 @@ async function memoryWordLookupTests() {
 async function dictionaryStoreTests() {
   const index = [
     'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]',
+    'coeur\t[{"pos":"noun","gender":"m","senses":["heart"]}]',
     'livre\t[{"pos":"noun","gender":"m","senses":["book"]},{"pos":"verb","senses":["to deliver"]}]'
   ].join("\n");
   const { context: c } = background({}, { indexedDB: true });
   let fetches = 0;
   c.fetch = async () => { fetches++; return { ok: true, text: async () => index }; };
   vm.runInContext(source("dictionary.js"), c);
+
+  // The build folds œ to oe in keys, so a caption spelled cœur must fold too.
+  assert.equal((await c.DualSubDictionary.lookup("Cœur"))?.senses[0], "heart", "œ folds to oe, as the build wrote the key");
 
   const noun = await c.DualSubDictionary.lookup("armée");
   assert.deepEqual([...noun.senses], ["army", "armed forces"]);

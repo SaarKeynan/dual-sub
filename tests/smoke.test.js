@@ -954,12 +954,43 @@ async function testDictionaryBuild() {
     { pos: "noun", gender: "f", senses: ["army", "armed forces", "a great multitude"] }
   ], "Senses are capped at three, and a feminine noun keeps its gender");
 
-  // Same spelling, two parts of speech, and a gender that separates nothing is
-  // still carried on the noun because the other reading is a verb.
+  // Same spelling, two parts of speech. The feminine noun (a pound) is a
+  // different word from the masculine one (a book), so same-part merging keeps
+  // two nouns whose genders differ apart.
   assert.deepStrictEqual(entries.get("livre"), [
     { pos: "noun", gender: "m", senses: ["book"] },
-    { pos: "verb", senses: ["to deliver", "to hand over"] }
+    { pos: "verb", senses: ["to deliver", "to hand over"] },
+    { pos: "noun", gender: "f", senses: ["pound (unit of weight)"] }
   ]);
+
+  // An alt-of sense is a pointer ("nonstandard spelling of œil"), not a
+  // meaning; nonstandard and misspelling senses are pointers too.
+  assert(!entries.has("oeil"), "An entry whose only sense is an alt-of pointer is dropped");
+  assert.deepStrictEqual(entries.get("chat"), [
+    { pos: "noun", gender: "m", senses: ["cat"] }
+  ], "A misspelling sense is dropped");
+
+  // Wiktionary spells œ where Lexique and most captions' keyboards spell oe.
+  // The real cœur entry lands under the folded key, and the alt-of pointer
+  // that folds to the same key contributes nothing.
+  assert(!entries.has("cœur"), "Keys are written with œ folded to oe");
+  assert.deepStrictEqual(entries.get("coeur"), [
+    { pos: "noun", gender: "m", senses: ["heart (organ)", "heart (love)"] }
+  ], "The cœur entry is kept under coeur");
+
+  // Two entries with the same part of speech and gender merge before the
+  // four-part cap, so a duplicate adverb does not push the pronoun out.
+  assert.deepStrictEqual(entries.get("tout"), [
+    { pos: "adverb", gender: "m", senses: ["all", "totally"] },
+    { pos: "determiner", gender: "m", senses: ["all"] },
+    { pos: "noun", gender: "m", senses: ["whole"] },
+    { pos: "pronoun", senses: ["everything"] }
+  ], "Same-part entries merge, deduplicating senses, before MAX_PARTS applies");
+
+  // language/french.js classifies numerals as adjectives.
+  assert.deepStrictEqual(entries.get("deux"), [
+    { pos: "adjective", senses: ["two"] }
+  ], "A numeral maps onto the adjective label the reading produces");
 
   assert.deepStrictEqual(entries.get("chien"), [
     { pos: "noun", gender: "m", senses: ["dog"] }
@@ -987,10 +1018,12 @@ async function testDictionaryBuild() {
   // And with a lexicon, only lemmas it knows survive. "chien" is in Lexique and
   // "zzzznotaword" is not, so this proves the intersection rather than assuming it.
   const lexicon = path.join(os.tmpdir(), `dualsub-lexicon-${process.pid}.txt`);
-  fs.writeFileSync(lexicon, 'chien\t["chien","SjE~","m","s",1,100]');
+  // Lexique spells coeur, so the membership test folds œ the same way.
+  fs.writeFileSync(lexicon, ['chien\t["chien","SjE~","m","s",1,100]', 'coeur\t["coeur","k9R","m","s",1,100]'].join("\n"));
   const filteredFixture = path.join(os.tmpdir(), `dualsub-fixture-${process.pid}.jsonl`);
   fs.writeFileSync(filteredFixture, [
     '{"word":"chien","lang_code":"fr","pos":"noun","senses":[{"glosses":["dog"]}]}',
+    '{"word":"cœur","lang_code":"fr","pos":"noun","senses":[{"glosses":["heart"]}]}',
     '{"word":"zzzznotaword","lang_code":"fr","pos":"noun","senses":[{"glosses":["nothing"]}]}'
   ].join("\n"));
   const filteredOut = path.join(os.tmpdir(), `dualsub-filtered-${process.pid}.txt`);
@@ -999,8 +1032,43 @@ async function testDictionaryBuild() {
   ], { encoding: "utf8" });
   const filtered = fs.readFileSync(filteredOut, "utf8");
   assert(filtered.startsWith("chien\t"), "A lemma the lexicon knows survives");
+  assert(filtered.includes("\ncoeur\t"), "A cœur entry survives a lexicon that spells it coeur");
   assert(!filtered.includes("zzzznotaword"), "A lemma it does not know is dropped");
+
+  // The size budget applies to any build that intersects with a lexicon, not
+  // only to one whose source path happens to contain "kaikki-french".
+  const bigLexicon = [];
+  const bigFixture = [];
+  const longSense = "x".repeat(60);
+  for (let index = 0; index < 12000; index++) {
+    const word = `mot${String(index).padStart(5, "0")}`;
+    bigLexicon.push(`${word}\t["${word}","","m","s",1,1]`);
+    for (const pos of ["noun", "verb", "adj"]) {
+      bigFixture.push(JSON.stringify({ word, lang_code: "fr", pos, senses: [1, 2, 3].map((n) => ({ glosses: [`${n}${longSense}`] })) }));
+    }
+  }
+  fs.writeFileSync(lexicon, bigLexicon.join("\n"));
+  fs.writeFileSync(filteredFixture, bigFixture.join("\n"));
+  assert.throws(() => execFileSync(process.execPath, [
+    path.join(projectRoot, "scripts", "build-dictionary.js"), filteredFixture, filteredOut, lexicon
+  ], { encoding: "utf8", stdio: "pipe" }), /budget/, "An oversized build against a lexicon fails");
   for (const file of [lexicon, filteredFixture, filteredOut]) fs.unlinkSync(file);
+}
+
+// An install keeps its imported IndexedDB copy until DATA_VERSION changes, so
+// the version is derived from the shipped file rather than bumped by hand.
+// Regenerating the data without updating SOURCE.md and dictionary.js fails here.
+async function testDictionaryDataVersion() {
+  const shipped = fs.readFileSync(path.join(projectRoot, "vendor", "wiktionary", "french-english.txt"));
+  const hash = require("crypto").createHash("sha256").update(shipped).digest("hex");
+  const sourceNotes = fs.readFileSync(path.join(projectRoot, "vendor", "wiktionary", "SOURCE.md"), "utf8");
+  const recorded = sourceNotes.match(/Generated derivative SHA-256: ([0-9A-Fa-f]{64})/);
+  assert(recorded, "SOURCE.md records the derivative's SHA-256");
+  assert.strictEqual(recorded[1].toLowerCase(), hash, "SOURCE.md's SHA-256 matches the shipped french-english.txt");
+  const dictionarySource = fs.readFileSync(path.join(projectRoot, "dictionary.js"), "utf8");
+  const version = dictionarySource.match(/const DATA_VERSION = "([^"]*)";/);
+  assert(version, "dictionary.js declares DATA_VERSION as a string");
+  assert.strictEqual(version[1], hash.slice(0, 16), "DATA_VERSION is the first 16 hex characters of the shipped file's SHA-256");
 }
 
 Promise.resolve()
@@ -1011,6 +1079,7 @@ Promise.resolve()
   .then(testFrenchWithLoadedResources)
   .then(testWordGroupResource)
   .then(testDictionaryBuild)
+  .then(testDictionaryDataVersion)
   .then(testTranslationEngine)
   .then(testVocabularyStorage)
   .then(() => console.log("DualSub smoke tests passed"))

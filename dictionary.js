@@ -4,8 +4,11 @@
   const ENTRIES = "entries";
   const META = "meta";
   const SOURCE = "vendor/wiktionary/french-english.txt";
-  // Bumped whenever the shipped file changes, so a stale store is replaced.
-  const DATA_VERSION = 1;
+  // The first 16 hex characters of the shipped file's SHA-256, so a changed file
+  // replaces a stale store. tests/smoke.test.js recomputes it from the file and
+  // from vendor/wiktionary/SOURCE.md, so regenerating the data without updating
+  // both fails the suite.
+  const DATA_VERSION = "f5a21d1d91f78feb";
   const BATCH = 2000;
 
   let databasePromise = null;
@@ -89,8 +92,15 @@
     return database;
   }
 
+  // Keys are written lowercased, NFC, and with œ/æ folded to oe/ae, because
+  // Wiktionary files cœur under œ where Lexique spells coeur. A caption spelled
+  // either way must reach the same key.
+  function headword(value) {
+    return String(value || "").trim().toLocaleLowerCase("fr").normalize("NFC").replace(/œ/g, "oe").replace(/æ/g, "ae");
+  }
+
   async function lookup(lemma, group = "") {
-    const word = String(lemma || "").trim().toLocaleLowerCase("fr").normalize("NFC");
+    const word = headword(lemma);
     if (!word) return null;
     let database;
     try { database = await ready(); } catch (_error) { return null; }
