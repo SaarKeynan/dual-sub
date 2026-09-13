@@ -730,13 +730,17 @@ async function testDictionaryWithRealData() {
     ["une bonne excuse", "bonne", "good", "", /maid/],
     ["un drôle de truc", "drôle", "funny", "", /child/],
     ["un autre", "autre", "other"],
-    ["les jeunes", "jeunes", "young person"]
+    ["les jeunes", "jeunes", "young person"],
+    // Lexique's lemma for morte is mourir, whose only dictionary noun is "the
+    // experience or process of dying". A verb-only lemma is no noun candidate.
+    ["la morte", "morte", undefined, "", /process of dying/],
+    ["une morte", "morte", undefined, "", /process of dying/]
   ];
   for (const [sentence, token, expected, reason, forbidden] of cases) {
     const result = await resolve(token, sentence);
     const described = `${token} in "${sentence}" (${result.group}, ${JSON.stringify(result.lemmas)}) -> ${JSON.stringify(result.meaning)}`;
     if (expected === null) assert.strictEqual(result.meaning, null, `${described}: ${reason}`);
-    else assert(result.meaning?.includes(expected), `${described} should contain "${expected}"`);
+    else if (expected !== undefined) assert(result.meaning?.includes(expected), `${described} should contain "${expected}"`);
     assert(!/front page|nonstandard spelling|to please/.test(result.meaning || ""), `${described} is a known wrong meaning`);
     if (forbidden) assert(!forbidden.test(result.meaning || ""), `${described} must not match ${forbidden}`);
   }
@@ -1143,8 +1147,9 @@ async function testTranscriptWordAnalysis() {
       // plus is also an attested participle of plaire, but reads as an adverb.
       analyzeWord: (word) => ({ compris: { partOfSpeech: "verb", lemma: "comprendre" }, plus: { partOfSpeech: "verb", lemma: "plaire" } })[word] || null,
       classifyWord: (word) => ({ group: word === "compris" ? "verb" : "adverb" }),
-      lexicalInfo: (word) => ({ as: { lemma: "avoir" }, yeux: { lemma: "oeil" }, livre: { lemma: "livre" } })[word] || null,
+      lexicalInfo: (word) => ({ as: { lemma: "avoir" }, yeux: { lemma: "oeil" }, livre: { lemma: "livre" }, morte: { lemma: "mourir" } })[word] || null,
       adjectiveLemma: (word) => (word === "nouvelle" ? "nouveau" : ""),
+      lexicalGroups: (word) => ({ mourir: ["verb"], avoir: ["verb", "noun"], oeil: ["noun"] })[word] || [],
       lookupReading: (word) => ({
         text: word === "compris" ? "j'ai compris" : word,
         key: word === "compris" ? "verb:comprendre" : "",
@@ -1201,6 +1206,11 @@ async function testTranscriptWordAnalysis() {
     "An adjective reading tries the masculine form last");
   assert.deepStrictEqual(candidates("nouvelle", { partOfSpeech: "nominal", lemma: "nouvelle" }, { group: "noun" }), ["nouvelle"],
     "...and only an adjective reading: la nouvelle is news");
+  // A lemma Lexique knows only as a verb has no noun or adjective to offer.
+  assert.deepStrictEqual(candidates("morte", { partOfSpeech: "nominal", lemma: "morte" }, { group: "noun" }), ["morte"],
+    "morte does not reach the noun sense of mourir");
+  assert.deepStrictEqual(candidates("as", { partOfSpeech: "nominal", lemma: "as" }, { group: "noun" }), ["as", "avoir"],
+    "A lemma that is also a noun stays a candidate");
   assert.deepStrictEqual(candidates("", null, null), [], "Empty values are removed");
 
   const many = context.describeStudyWords(

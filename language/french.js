@@ -853,6 +853,7 @@
     analyzeWord,
     analyzeElisionParticle,
     classifyWord,
+    lexicalGroups,
     lexicalInfo,
     lookupReading,
     ready,

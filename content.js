@@ -1746,11 +1746,19 @@
   // (`plus` as a form of `plaire`) sends no infinitive. An adjective reading
   // finally tries the masculine singular (`nouvelle` -> `nouveau`), where the
   // dictionary files the adjective; Lexique's lemma for `nouvelle` is the noun.
+  // A lemma Lexique knows only as a verb is skipped: Lexique's lemma for
+  // `morte` is `mourir`, whose one noun sense is "the process of dying".
   function dictionaryCandidatesFor(word, conjugation, reading) {
+    const french = globalThis.DualSubFrench;
     if (reading?.group === "verb" && conjugation?.lemma) return [conjugation.lemma];
-    const morphologyLemma = conjugation?.partOfSpeech === "verb" ? "" : conjugation?.lemma;
-    const masculine = reading?.group === "adjective" ? globalThis.DualSubFrench?.adjectiveLemma?.(word) : "";
-    return [word, globalThis.DualSubFrench?.lexicalInfo(word)?.lemma, morphologyLemma, masculine]
+    const verbOnly = (lemma) => {
+      const groups = french?.lexicalGroups?.(lemma) || [];
+      return groups.includes("verb") && !groups.some((group) => group === "noun" || group === "adjective");
+    };
+    const lemmas = [french?.lexicalInfo(word)?.lemma, conjugation?.partOfSpeech === "verb" ? "" : conjugation?.lemma]
+      .filter((lemma) => lemma && !verbOnly(lemma));
+    const masculine = reading?.group === "adjective" ? french?.adjectiveLemma?.(word) : "";
+    return [word, ...lemmas, masculine]
       .filter((value, index, values) => value && values.indexOf(value) === index);
   }
 
