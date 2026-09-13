@@ -139,8 +139,8 @@
         "vendor/tesseract/lang/fra.traineddata.gz",
         "vendor/ablaut/ablaut_bg.wasm",
         "vendor/lefff/french-verb-lemmas.json",
-        "vendor/lexique/french-word-groups.json",
-        "vendor/lexique/french-lexical-info.json"
+        "vendor/lexique/french-word-groups.txt",
+        "vendor/lexique/french-lexical-info.txt"
       ],
       "matches": [
         "*://www.youtube.com/*"

@@ -62,9 +62,15 @@ whether a live Firefox check was performed.
 - The runtime is French-to-English only. `sourceLanguage` and `targetLanguage`
   exist in settings but no UI exposes them, and elision splitting, morphology,
   and lookup readings assume French.
-- Regenerating `vendor/lexique/*.json` needs `vendor/lexique/Lexique383.tsv`,
+- Regenerating `vendor/lexique/*.txt` needs `vendor/lexique/Lexique383.tsv`,
   which is gitignored and must be downloaded separately. Lexique `cgram` codes
-  carry subcategories such as `PRO:per` and `ART:def`.
+  carry subcategories such as `PRO:per` and `ART:def`. Those indexes ship as
+  sorted `key<TAB>value` lines, not JSON: `language/french.js` is a content
+  script, so parsing them into objects cost about 19MB of heap in every YouTube
+  tab against 3.6MB for the text plus a `Uint32Array` of line offsets. The
+  binary search compares with `<`, so the build must sort in code-unit order and
+  not `localeCompare`, and it throws if it did not. Update both SHA-256 hashes in
+  `vendor/lexique/SOURCE.md` after regenerating.
 - `docs/ARCHITECTURE.md` and `docs/TRANSLATION_AND_ALIGNMENT.md` state the
   version they describe in their first paragraph; update both on release.
 - Google's keyless `translate_a/single` endpoint translates exactly one `q` and

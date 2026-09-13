@@ -386,12 +386,12 @@ async function testAblautMorphology() {
   assert(lemmas("maintenant").includes("maintenir"), "The engine should retain the real participle reading");
 
   context.browser = { runtime: { getURL: (value) => value } };
+  const groupFixture = { as: "nv", belle: "j", fait: "nv", maison: "n", psyché: "n", psychée: "v", rapidement: "r" };
   context.fetch = async (url) => ({
     ok: true,
-    async json() {
-      return String(url).includes("french-word-groups")
-        ? { maison: "n", belle: "j", rapidement: "r", psyché: "n", psychée: "v", fait: "nv", as: "nv" }
-        : Array.from(attested);
+    async json() { return Array.from(attested); },
+    async text() {
+      return Object.keys(groupFixture).sort().map((key) => key + "\t" + groupFixture[key]).join("\n");
     }
   });
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
@@ -449,7 +449,8 @@ async function testFrenchWithLoadedResources() {
   };
   context.fetch = async (relativePath) => ({
     ok: true,
-    json: async () => JSON.parse(readVendor(relativePath).toString("utf8"))
+    json: async () => JSON.parse(readVendor(relativePath).toString("utf8")),
+    text: async () => readVendor(relativePath).toString("utf8")
   });
   vm.runInContext(fs.readFileSync(path.join(projectRoot, "language", "french.js"), "utf8"), context);
   const french = context.DualSubFrench;
@@ -500,29 +501,49 @@ async function testFrenchWithLoadedResources() {
 }
 
 async function testWordGroupResource() {
-  const groups = JSON.parse(fs.readFileSync(
-    path.join(projectRoot, "vendor", "lexique", "french-word-groups.json"), "utf8"
-  ));
-  assert(Object.keys(groups).length > 120000, "The offline word-group index should cover common French forms");
-  assert(groups.maison?.includes("n"));
-  assert(groups.rapidement?.includes("r"));
+  // Shipped as sorted "key\tvalue" lines, not JSON. Parsed into objects the two
+  // indexes cost about 15MB of heap in every YouTube tab, at four to five times
+  // their file size, because the cost is 175,000 JavaScript strings and object
+  // slots rather than the data. As one string plus a Uint32Array of line offsets
+  // it is about 3.7MB, and a lookup is a binary search.
+  const lines = (file) => fs.readFileSync(path.join(projectRoot, "vendor", "lexique", file), "utf8").split("\n");
+  const index = (file) => new Map(lines(file).map((line) => {
+    const tab = line.indexOf("\t");
+    return [line.slice(0, tab), line.slice(tab + 1)];
+  }));
+
+  // The binary search compares with <, so the build must sort the same way.
+  // localeCompare("fr") does not order the same as code units, and a file sorted
+  // that way would lose lookups rather than fail loudly.
+  for (const file of ["french-word-groups.txt", "french-lexical-info.txt"]) {
+    const keys = lines(file).map((line) => line.slice(0, line.indexOf("\t")));
+    for (let position = 1; position < keys.length; position++) {
+      assert(keys[position - 1] < keys[position],
+        `${file} must be sorted for binary search, but ${JSON.stringify(keys[position - 1])} is not before ${JSON.stringify(keys[position])}`);
+    }
+  }
+
+  const groups = index("french-word-groups.txt");
+  assert(groups.size > 120000, "The offline word-group index should cover common French forms");
+  assert(groups.get("maison")?.includes("n"));
+  assert(groups.get("rapidement")?.includes("r"));
   // Lexique subcategorizes closed classes (ART:def, PRO:per, ADJ:dem). Those
   // rows must survive the build or the index loses every article and pronoun.
-  assert(groups.le?.includes("d"), "Definite articles must be indexed as determiners");
-  assert(groups.une?.includes("d"), "Indefinite articles must be indexed as determiners");
-  assert(groups.cette?.includes("d"), "Demonstrative determiners must be indexed");
-  assert(groups.mes?.includes("d"), "Possessive determiners must be indexed");
-  assert(groups.je?.includes("p"), "Personal pronouns must be indexed as pronouns");
-  assert(groups.celui?.includes("p"), "Demonstrative pronouns must be indexed");
-  const info = JSON.parse(fs.readFileSync(
-    path.join(projectRoot, "vendor", "lexique", "french-lexical-info.json"), "utf8"
-  ));
-  assert.strictEqual(Object.keys(info).length, 50000, "The enriched Lexique index should retain the most useful 50,000 forms");
-  assert(Array.isArray(info.maison) && info.maison[1] === "mEz§");
+  assert(groups.get("le")?.includes("d"), "Definite articles must be indexed as determiners");
+  assert(groups.get("une")?.includes("d"), "Indefinite articles must be indexed as determiners");
+  assert(groups.get("cette")?.includes("d"), "Demonstrative determiners must be indexed");
+  assert(groups.get("mes")?.includes("d"), "Possessive determiners must be indexed");
+  assert(groups.get("je")?.includes("p"), "Personal pronouns must be indexed as pronouns");
+  assert(groups.get("celui")?.includes("p"), "Demonstrative pronouns must be indexed");
+
+  const info = index("french-lexical-info.txt");
+  assert.strictEqual(info.size, 50000, "The enriched Lexique index should retain the most useful 50,000 forms");
+  const maison = JSON.parse(info.get("maison"));
+  assert(Array.isArray(maison) && maison[1] === "mEz§");
   // Dropping the subcategorized rows also let rare verb homographs win the
   // highest-frequency slot, so lui claimed the lemma luire and tu claimed taire.
-  assert.strictEqual(info.lui?.[0], "lui", "The pronoun lui must not inherit the lemma of luire");
-  assert.strictEqual(info.tu?.[0], "tu", "The pronoun tu must not inherit the lemma of taire");
+  assert.strictEqual(JSON.parse(info.get("lui"))[0], "lui", "The pronoun lui must not inherit the lemma of luire");
+  assert.strictEqual(JSON.parse(info.get("tu"))[0], "tu", "The pronoun tu must not inherit the lemma of taire");
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, "manifest.json"), "utf8"));
   assert.strictEqual(manifest.version, JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8")).version);

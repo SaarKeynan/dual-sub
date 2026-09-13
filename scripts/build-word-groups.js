@@ -3,8 +3,31 @@ const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
 const sourcePath = process.argv[2] || path.join(projectRoot, "vendor", "lexique", "Lexique383.tsv");
-const outputPath = process.argv[3] || path.join(projectRoot, "vendor", "lexique", "french-word-groups.json");
-const infoOutputPath = process.argv[4] || path.join(projectRoot, "vendor", "lexique", "french-lexical-info.json");
+const outputPath = process.argv[3] || path.join(projectRoot, "vendor", "lexique", "french-word-groups.txt");
+const infoOutputPath = process.argv[4] || path.join(projectRoot, "vendor", "lexique", "french-lexical-info.txt");
+
+// Shipped as sorted "key\tvalue" lines rather than JSON. Parsed into objects
+// these indexes cost four to five times their file size in heap, in every
+// YouTube tab, because the cost is the 175,000 JavaScript strings and object
+// slots rather than the data. The runtime holds the text as one string with a
+// Uint32Array of line offsets and binary-searches it.
+//
+// That search compares with <, so the sort here must use code-unit order too.
+// localeCompare("fr") orders differently, and a file sorted that way would lose
+// lookups quietly instead of failing.
+const byCodeUnit = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+
+function writeIndex(file, entries) {
+  const lines = entries
+    .slice()
+    .sort(([left], [right]) => byCodeUnit(left, right))
+    .map(([key, value]) => key + "\t" + value);
+  for (let position = 1; position < lines.length; position++) {
+    if (!(lines[position - 1] < lines[position])) throw new Error(`${file} is not sorted at line ${position}`);
+  }
+  fs.writeFileSync(file, lines.join("\n"));
+  return lines.length;
+}
 const groupCodes = new Map([
   ["NOM", "n"], ["VER", "v"], ["AUX", "v"], ["ADJ", "j"], ["ADV", "r"],
   ["PRO", "p"], ["DET", "d"], ["ART", "d"], ["PRE", "s"], ["CON", "c"],
@@ -61,19 +84,15 @@ for (const [word, scores] of Array.from(entries).sort(([left], [right]) => left.
     .join("");
 }
 
-fs.writeFileSync(outputPath, JSON.stringify(compact));
-const compactInfo = {};
-for (const [word, info] of Array.from(lexicalInfo)
+const wordCount = writeIndex(outputPath, Object.entries(compact));
+const infoCount = writeIndex(infoOutputPath, Array.from(lexicalInfo)
   .sort((left, right) => right[1].frequency - left[1].frequency)
   .slice(0, 50_000)
-  .sort(([left], [right]) => left.localeCompare(right, "fr"))) {
-  compactInfo[word] = [info.lemma, info.phonetic, info.gender, info.number, info.syllables, info.frequency];
-}
-fs.writeFileSync(infoOutputPath, JSON.stringify(compactInfo));
+  .map(([word, info]) => [word, JSON.stringify([info.lemma, info.phonetic, info.gender, info.number, info.syllables, info.frequency])]));
 console.log(JSON.stringify({
-  words: Object.keys(compact).length,
+  words: wordCount,
   bytes: fs.statSync(outputPath).size,
-  lexicalInfoWords: Object.keys(compactInfo).length,
+  lexicalInfoWords: infoCount,
   lexicalInfoBytes: fs.statSync(infoOutputPath).size,
   categories: Object.fromEntries(Array.from(categoryCounts).sort())
 }, null, 2));

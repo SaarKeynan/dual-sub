@@ -1,8 +1,16 @@
 # Lexique 3.83 grammatical-category derivative
 
-`french-word-groups.json` and `french-lexical-info.json` are modified, reduced
+`french-word-groups.txt` and `french-lexical-info.txt` are modified, reduced
 resources generated from Lexique 3.83's `Lexique383.tsv` with
 `scripts/build-word-groups.js`.
+
+Both are sorted `key<TAB>value` lines rather than JSON. Parsed into objects they
+cost four to five times their file size in heap, in every YouTube tab, because
+the cost is the 175,000 JavaScript strings and object slots rather than the
+data. The runtime holds each file as one string with a `Uint32Array` of line
+offsets and binary-searches it, which costs about the file size. The sort is
+code-unit order, matching the `<` comparison the search uses; the build fails if
+the output is not sorted that way.
 
 The derivative retains only normalized written word forms and their grammatical
 categories, ordered by the source database's film and book frequency fields.
@@ -30,8 +38,8 @@ Source: http://www.lexique.org/databases/Lexique383/Lexique383.tsv
 
 Source SHA-256: `637BA37A767A66679C48371D673ECE50CBF541B49A4E40E598963D4F3FBCE52B`
 
-Generated derivative SHA-256: `80B413C17EDF87E2535D21E3F17EDB112AA13BECCFAA4F46E69263CCD55E3429`
+Generated derivative SHA-256: `E6BBE2BEE951B382A894C129CE2DC51EF0F72DE0AA5FAB0880851EAA85C92069`
 
-Generated lexical-info derivative SHA-256: `E90E77123882CBBDF1D654FF432A06A436FBF0DB072059FA28161B03CA0B2F11`
+Generated lexical-info derivative SHA-256: `8FC89962C8DEB3A9429F928EE36594B71CCD03755949993B02B58300881F4819`
 
 Project and documentation: https://www.lexique.org/

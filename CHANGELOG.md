@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — less memory per tab
+
+- The two Lexique indexes are read as text and searched in place rather than
+  parsed into objects. They are loaded by a content script, so every open
+  YouTube tab held them: measured, about 19MB of heap per tab, against 3.6MB
+  now. Four tabs stop costing 76MB and cost 14MB. A lookup goes from 0.14 to
+  about 1 microsecond, which a few hundred lookups per video will not notice,
+  and the packaged extension is half a megabyte smaller.
+
 ## Unreleased — better word meanings
 
 - MyMemory no longer answers single words by default. It is a translation memory:

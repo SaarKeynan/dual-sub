@@ -22,16 +22,18 @@
       if (!lemmaResponse.ok) throw new Error(`Lemma resource returned ${lemmaResponse.status}`);
       return new Set(await lemmaResponse.json());
     })();
-    const wordGroupPromise = fetch(browser.runtime.getURL("vendor/lexique/french-word-groups.json"))
+    const wordGroupPromise = fetch(browser.runtime.getURL("vendor/lexique/french-word-groups.txt"))
       .then((response) => {
         if (!response.ok) throw new Error(`Word-group resource returned ${response.status}`);
-        return response.json();
-      });
-    const lexicalInfoPromise = fetch(browser.runtime.getURL("vendor/lexique/french-lexical-info.json"))
+        return response.text();
+      })
+      .then(buildIndex);
+    const lexicalInfoPromise = fetch(browser.runtime.getURL("vendor/lexique/french-lexical-info.txt"))
       .then((response) => {
         if (!response.ok) throw new Error(`Lexical-info resource returned ${response.status}`);
-        return response.json();
-      });
+        return response.text();
+      })
+      .then(buildIndex);
     const [morphologyResult, wordGroupResult, lexicalInfoResult] = await Promise.allSettled([morphologyPromise, wordGroupPromise, lexicalInfoPromise]);
     if (morphologyResult.status === "fulfilled") {
       attestedLemmas = morphologyResult.value;
@@ -46,6 +48,41 @@
       lexicalInfoIndex = lexicalInfoResult.value;
       lexicalInfoState = "ready";
     } else lexicalInfoState = "fallback";
+  }
+
+  // The indexes are sorted "key\tvalue" lines. Kept as one string with a
+  // Uint32Array of line starts, they cost about their file size; parsed into
+  // objects they cost four to five times it, in every YouTube tab, because the
+  // cost is 175,000 JavaScript strings and object slots rather than the data.
+  function buildIndex(text) {
+    let lines = 1;
+    for (let position = 0; position < text.length; position++) {
+      if (text.charCodeAt(position) === 10) lines++;
+    }
+    const offsets = new Uint32Array(lines + 1);
+    let line = 1;
+    let cursor = 0;
+    while ((cursor = text.indexOf("\n", cursor)) !== -1) offsets[line++] = ++cursor;
+    // One past the last line, so the last line has an end like every other.
+    offsets[lines] = text.length + 1;
+    return { text, offsets, count: lines };
+  }
+
+  // Binary search, comparing with < exactly as the build sorted.
+  function indexValue(index, word) {
+    if (!index || !word) return "";
+    let low = 0;
+    let high = index.count - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      const start = index.offsets[middle];
+      const tab = index.text.indexOf("\t", start);
+      const key = index.text.slice(start, tab);
+      if (key === word) return index.text.slice(tab + 1, index.offsets[middle + 1] - 1);
+      if (key < word) low = middle + 1;
+      else high = middle - 1;
+    }
+    return "";
   }
 
   function normalize(value) {
@@ -67,7 +104,9 @@
     // Overlay tokens keep YouTube's typographic apostrophe, but Lexique keys
     // use the straight one, so aujourd’hui missed the index entirely.
     const word = normalize(rawWord).replace(/’/gu, "'").replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
-    const value = lexicalInfoIndex?.[word];
+    const raw = indexValue(lexicalInfoIndex, word);
+    let value = null;
+    try { value = raw ? JSON.parse(raw) : null; } catch (_error) { value = null; }
     if (!Array.isArray(value)) return null;
     return {
       surface: word,
@@ -557,7 +596,7 @@
 
   function lexicalGroups(rawWord) {
     const word = splitElidedClitic(rawWord).base;
-    const indexed = Array.from(wordGroupIndex?.[word] || "", (code) => groupByCode[code]).filter(Boolean);
+    const indexed = Array.from(indexValue(wordGroupIndex, word), (code) => groupByCode[code]).filter(Boolean);
     const closed = closedWordGroup(rawWord);
     if (!closed) return indexed;
     // "or" and "car" are conjunctions but also ordinary nouns. Keep the closed

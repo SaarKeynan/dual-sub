@@ -486,6 +486,11 @@ resources and their licenses.
 French trained model from installed packages into `vendor/tesseract`. It also
 removes obsolete dynamic-function fallbacks that violate the extension CSP.
 
+The two Lexique indexes ship as sorted `key<TAB>value` text, read as one string
+with a `Uint32Array` of line offsets and binary-searched, because
+`language/french.js` is a content script and parsing them into objects cost
+about 19MB of heap per YouTube tab against 3.6MB this way.
+
 `scripts/build-word-groups.js` converts a local Lexique TSV into compact runtime
 JSON for word groups and lexical information. The large source TSV is excluded
 from releases. Sources and licenses are recorded beside each vendor resource
