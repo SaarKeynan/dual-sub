@@ -10,10 +10,24 @@
   // both fails the suite.
   const DATA_VERSION = "f5a21d1d91f78feb";
   const BATCH = 2000;
+  // The labels language/french.js gives a reading. Any other group, including
+  // "unknown", is no reading at all.
+  const GROUPS = new Set(["noun", "verb", "adjective", "adverb", "pronoun", "determiner", "preposition", "conjunction", "interjection"]);
 
   let databasePromise = null;
+  let connection = null;
   let importPromise = null;
   let state = "idle";
+
+  // Drops a connection that can no longer answer, so the next lookup opens a
+  // fresh one instead of failing until the event page restarts. An import
+  // running on it will fail too, so it is forgotten with it.
+  function forget(database) {
+    if (!database || connection !== database) return;
+    connection = null;
+    databasePromise = null;
+    importPromise = null;
+  }
 
   function openDatabase() {
     if (databasePromise) return databasePromise;
@@ -25,7 +39,18 @@
         if (!database.objectStoreNames.contains(ENTRIES)) database.createObjectStore(ENTRIES, { keyPath: "lemma" });
         if (!database.objectStoreNames.contains(META)) database.createObjectStore(META, { keyPath: "id" });
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const database = request.result;
+        connection = database;
+        // Firefox closes the connection itself when site data is cleared or
+        // storage fails; another context upgrading the database asks it to go.
+        database.onclose = () => forget(database);
+        database.onversionchange = () => {
+          database.close();
+          forget(database);
+        };
+        resolve(database);
+      };
       request.onerror = () => resolve(null);
       request.onblocked = () => resolve(null);
     });
@@ -59,6 +84,17 @@
     const response = await fetch(browser.runtime.getURL(SOURCE));
     if (!response.ok) throw new Error(`Dictionary resource returned ${response.status}`);
     const text = await response.text();
+    // Replace rather than overlay: a lemma the new file removed must not
+    // survive from the old one. The version record goes with it, so an import
+    // cut short after this point is redone.
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction([ENTRIES, META], "readwrite");
+      transaction.objectStore(ENTRIES).clear();
+      transaction.objectStore(META).clear();
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
     let rows = [];
     for (const line of text.split("\n")) {
       const tab = line.indexOf("\t");
@@ -79,14 +115,22 @@
   async function ready() {
     const database = await openDatabase();
     if (!database) { state = "unavailable"; return null; }
-    const stored = await readOne(database, META, "version");
+    let stored;
+    try {
+      stored = await readOne(database, META, "version");
+    } catch (error) {
+      forget(database);
+      throw error;
+    }
     if (stored?.value === DATA_VERSION) { state = "ready"; return database; }
     if (!importPromise) {
-      importPromise = importDictionary(database).catch((error) => {
+      const attempt = importDictionary(database).catch((error) => {
         state = "unavailable";
-        importPromise = null;
+        // A newer attempt may already have replaced this one.
+        if (importPromise === attempt) importPromise = null;
         throw error;
       });
+      importPromise = attempt;
     }
     await importPromise;
     return database;
@@ -99,21 +143,46 @@
     return String(value || "").trim().toLocaleLowerCase("fr").normalize("NFC").replace(/œ/g, "oe").replace(/æ/g, "ae");
   }
 
-  async function lookup(lemma, group = "") {
-    const word = headword(lemma);
-    if (!word) return null;
+  async function readParts(database, word) {
+    let row;
+    try {
+      row = await readOne(database, ENTRIES, word);
+    } catch (_error) {
+      forget(database);
+      return undefined;
+    }
+    if (!row) return null;
+    try {
+      const parts = JSON.parse(row.parts);
+      return Array.isArray(parts) && parts.length ? parts : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  // `candidates` is one headword or an ordered list of them: the content script
+  // sends the surface word and Lexique's lemma for most readings, and the
+  // infinitive for a verb. The first candidate with a part of speech matching
+  // the reading answers. A reading nothing matches is a miss, so an engine
+  // answers "la maison" rather than the pronoun "her, it". Only with no reading
+  // does the first candidate that has an entry answer with its first part.
+  async function lookup(candidates, group = "") {
+    const words = (Array.isArray(candidates) ? candidates : [candidates])
+      .map(headword)
+      .filter((word, index, values) => word && values.indexOf(word) === index);
+    if (!words.length) return null;
     let database;
     try { database = await ready(); } catch (_error) { return null; }
     if (!database) return null;
-    const row = await readOne(database, ENTRIES, word);
-    if (!row) return null;
-    let parts;
-    try { parts = JSON.parse(row.parts); } catch (_error) { return null; }
-    if (!Array.isArray(parts) || !parts.length) return null;
-    // The reading picks the part of speech. A reading that matches nothing here
-    // still gets an answer: a dictionary meaning is better than none.
-    const chosen = parts.find((part) => part.pos === group) || parts[0];
-    return { senses: chosen.senses || [], pos: chosen.pos || "", gender: chosen.gender || "" };
+    const labelled = GROUPS.has(group);
+    for (const word of words) {
+      const parts = await readParts(database, word);
+      if (parts === undefined) return null;
+      if (!parts) continue;
+      const chosen = labelled ? parts.find((part) => part.pos === group) : parts[0];
+      if (chosen) return { senses: chosen.senses || [], pos: chosen.pos || "", gender: chosen.gender || "" };
+    }
+    return null;
   }
 
   // Waits out any import already writing against this same database handle

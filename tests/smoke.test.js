@@ -49,13 +49,14 @@ async function testCaptionProcessing() {
   assert(/purpose: "translator"/.test(translatorSource), "The translator page identifies itself so its own switch applies");
   // The hover-prefetch handler sends up to two evidence messages: one for the
   // hovered word and, when word alignment is on, a second for its lemma (a
-  // different string). Only the first message's lemma/group may be attached
-  // to the message for the hovered word -- attaching them unconditionally
-  // would send the primary word's lemma alongside the lemma text's own
-  // message, and the background would then look up the wrong headword.
+  // different string). Only the first message's candidates/group may be
+  // attached to the message for the hovered word -- attaching them
+  // unconditionally would send the primary word's candidates alongside the
+  // lemma text's own message, and the background would then look up the wrong
+  // headword.
   const hoverPrefetch = extract(source, "  function handleWordPointerOver", "  function handleWordPointerOut");
-  assert(/lemma: text === wordText \? lookupLemmaFor\(wordText, conjugation, reading\) : ""/.test(hoverPrefetch),
-    "The lemma sent to the background must be gated to the primary word's own message, same as lookupText/readingKey");
+  assert(/lemmas: text === wordText \? dictionaryCandidatesFor\(wordText, conjugation, reading\) : \[\]/.test(hoverPrefetch),
+    "The dictionary candidates sent to the background must be gated to the primary word's own message, same as lookupText/readingKey");
   assert(/group: text === wordText \? reading\?\.group \|\| "" : ""/.test(hoverPrefetch),
     "...and so must the grammatical group that picks the dictionary entry's part of speech");
   const context = { console, scheduleVideoSnapshot() {} };
@@ -872,13 +873,13 @@ async function testTranscriptWordAnalysis() {
   // describeStudyWords calls the shared lemma helper defined much later in the
   // file (next to the hover lookup); splice it in the same way testCaptionProcessing
   // combines several extracted ranges into one isolated context.
-  const lemmaHelper = extract(source, "  function lookupLemmaFor", "  function stemEnglishWord");
+  const lemmaHelper = extract(source, "  function dictionaryCandidatesFor", "  function stemEnglishWord");
   const context = {
     console,
     DualSubFrench: {
       analyzeWord: (word) => (word === "compris" ? { partOfSpeech: "verb", lemma: "comprendre" } : null),
       classifyWord: (word) => ({ group: word === "compris" ? "verb" : "adverb" }),
-      lexicalInfo: () => null,
+      lexicalInfo: (word) => ({ as: { lemma: "avoir" }, yeux: { lemma: "oeil" }, livre: { lemma: "livre" } })[word] || null,
       lookupReading: (word) => ({
         text: word === "compris" ? "j'ai compris" : word,
         key: word === "compris" ? "verb:comprendre" : "",
@@ -907,12 +908,24 @@ async function testTranscriptWordAnalysis() {
   assert.strictEqual(verb.lookupText, "j'ai compris", "A row carries the context-aware query, not the bare word");
   assert.strictEqual(verb.readingKey, "verb:comprendre");
   assert.strictEqual(verb.label, "verb · comprendre", "A verb row names its infinitive");
-  assert.strictEqual(verb.lemma, "comprendre", "A verb row's dictionary lemma is the morphology's infinitive");
+  assert.deepStrictEqual(Array.from(verb.lemmas), ["comprendre"], "A verb row's dictionary candidate is the morphology's infinitive");
   assert.strictEqual(verb.group, "verb");
+  assert(!("lemma" in verb), "The single lemma field is replaced by the candidate list");
   const adverb = studied.find((item) => item.word === "pourtant");
   assert.strictEqual(adverb.label, "adverb");
-  assert.strictEqual(adverb.lemma, "pourtant", "With no Lexique entry the word itself is the dictionary lemma");
+  assert.deepStrictEqual(Array.from(adverb.lemmas), ["pourtant"], "With no Lexique entry the word itself is the only candidate");
   assert.strictEqual(adverb.group, "adverb");
+
+  // Every reading other than a verb tries the surface word before Lexique's
+  // lemma, which for as/été/est is the verb. A verb reading sends the plain
+  // infinitive, never the pronominal form, which is no headword.
+  const candidates = (...args) => Array.from(context.dictionaryCandidatesFor(...args));
+  assert.deepStrictEqual(candidates("as", { partOfSpeech: "nominal", lemma: "as" }, { group: "noun" }), ["as", "avoir"]);
+  assert.deepStrictEqual(candidates("yeux", null, { group: "noun" }), ["yeux", "oeil"]);
+  assert.deepStrictEqual(candidates("livre", null, { group: "noun" }), ["livre"], "Duplicates are removed");
+  assert.deepStrictEqual(candidates("m’appelle", { partOfSpeech: "verb", lemma: "appeler", pronominalLemma: "s’appeler" }, { group: "verb" }), ["appeler"]);
+  assert.deepStrictEqual(candidates("as", { partOfSpeech: "verb" }, { group: "verb" }), ["as", "avoir"], "A verb reading without an infinitive falls back to the other list");
+  assert.deepStrictEqual(candidates("", null, null), [], "Empty values are removed");
 
   const many = context.describeStudyWords(
     Array.from({ length: 90 }, (_, index) => ({ word: `mot${index}`, count: 1, cueIndex: 0, state: "unknown" })),

@@ -53,7 +53,7 @@
         text: item.word,
         lookupText: item.lookupText || item.word,
         readingKey: item.readingKey || "",
-        lemma: item.lemma || "",
+        lemmas: Array.isArray(item.lemmas) ? item.lemmas : [],
         group: item.group || "",
         context: cues[item.cueIndex]?.text || ""
       }))
@@ -94,7 +94,7 @@
       text: item.word,
       lookupText: item.lookupText || item.word,
       readingKey: item.readingKey || "",
-      lemma: item.lemma || "",
+      lemmas: Array.isArray(item.lemmas) ? item.lemmas : [],
       group: item.group || "",
       cacheMode: "word",
       context: cues[item.cueIndex]?.text || ""

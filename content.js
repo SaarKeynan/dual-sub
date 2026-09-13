@@ -1070,7 +1070,7 @@
           lookupText: reading?.text || item.word,
           readingKey: reading?.key || "",
           label: lemma && lemma.toLocaleLowerCase("fr") !== item.word ? `${group} \u00b7 ${lemma}`.trim() : group,
-          lemma: lookupLemmaFor(item.word, analysis, reading),
+          lemmas: dictionaryCandidatesFor(item.word, analysis, reading),
           group: reading?.group || ""
         };
       });
@@ -1158,7 +1158,7 @@
     const response = await browser.runtime.sendMessage({
       type: "translate-batch",
       // There is no sentence for a preloaded word, so the bare word is
-      // analysed on its own -- the same lemma rule as the hover lookup, using
+      // analysed on its own -- the same candidate rule as the hover lookup, using
       // whatever reading the morphology and Lexique agree on without context.
       items: queue.map((word) => {
         const analysis = globalThis.DualSubFrench?.analyzeWord(word, "") || null;
@@ -1166,7 +1166,7 @@
         return {
           text: word,
           cacheId: `word:${normalizeLookupWord(word)}`,
-          lemma: lookupLemmaFor(word, analysis, reading),
+          lemmas: dictionaryCandidatesFor(word, analysis, reading),
           group: reading?.group || ""
         };
       }),
@@ -1731,15 +1731,18 @@
     return `${settings.translationProvider}|${settings.sourceLanguage}|${settings.targetLanguage}|${normalizeLookupWord(value)}${readingKey ? `|reading:${readingKey}` : ""}`;
   }
 
-  // The lemma sent to the background for a dictionary lookup: the background
-  // has no morphology of its own. A verb reading needs the morphology's lemma
-  // (`livre` -> `livrer`), because only the morphology conjugates; every other
-  // reading needs Lexique's lemma, which disambiguates homographs the
-  // morphology cannot (`armées` -> `armée`, not the adjective `armé`).
-  function lookupLemmaFor(word, conjugation, reading) {
-    return (reading?.group === "verb"
-      ? conjugation?.pronominalLemma || conjugation?.lemma
-      : globalThis.DualSubFrench?.lexicalInfo(word)?.lemma) || word;
+  // The ordered headwords sent to the background for a dictionary lookup: the
+  // background has no morphology of its own, and answers from the first
+  // candidate with a part of speech matching the reading. A verb reading needs
+  // the morphology's plain infinitive (`livre` -> `livrer`; never `s’appeler`,
+  // which is no headword). Every other reading tries the surface word first,
+  // because Lexique keeps one lemma per form and for `été`, `est` and `as` that
+  // lemma is the verb; then Lexique's lemma, which reaches inflected forms the
+  // morphology cannot (`armées` -> `armée`, `yeux` -> `oeil`).
+  function dictionaryCandidatesFor(word, conjugation, reading) {
+    if (reading?.group === "verb" && conjugation?.lemma) return [conjugation.lemma];
+    return [word, globalThis.DualSubFrench?.lexicalInfo(word)?.lemma]
+      .filter((value, index, values) => value && values.indexOf(value) === index);
   }
 
   function stemEnglishWord(value) {
@@ -1864,7 +1867,7 @@
           type: "translate-selection", text,
           lookupText: text === wordText ? reading?.text || text : text,
           readingKey: text === wordText ? reading?.key || "" : "",
-          lemma: text === wordText ? lookupLemmaFor(wordText, conjugation, reading) : "",
+          lemmas: text === wordText ? dictionaryCandidatesFor(wordText, conjugation, reading) : [],
           group: text === wordText ? reading?.group || "" : "",
           sourceLanguage: settings.sourceLanguage,
           targetLanguage: settings.targetLanguage,
@@ -2094,7 +2097,7 @@
         text: cleanText,
         lookupText: reading?.text || cleanText,
         readingKey: reading?.key || "",
-        lemma: lookupLemmaFor(cleanText, conjugation, reading),
+        lemmas: dictionaryCandidatesFor(cleanText, conjugation, reading),
         group: reading?.group || "",
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,

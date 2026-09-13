@@ -688,7 +688,12 @@ async function dictionaryStoreTests() {
   const index = [
     'armée\t[{"pos":"noun","gender":"f","senses":["army","armed forces"]}]',
     'coeur\t[{"pos":"noun","gender":"m","senses":["heart"]}]',
-    'livre\t[{"pos":"noun","gender":"m","senses":["book"]},{"pos":"verb","senses":["to deliver"]}]'
+    'est\t[{"pos":"adjective","senses":["east"]},{"pos":"noun","gender":"m","senses":["east"]}]',
+    'la\t[{"pos":"pronoun","gender":"f","senses":["her, it (direct object)"]},{"pos":"noun","gender":"m","senses":["la, the note \'A\'"]}]',
+    'livre\t[{"pos":"noun","gender":"m","senses":["book"]},{"pos":"verb","senses":["to deliver"]}]',
+    'oeil\t[{"pos":"noun","gender":"m","senses":["eye"]}]',
+    'été\t[{"pos":"noun","gender":"m","senses":["summer"]}]',
+    'être\t[{"pos":"verb","senses":["to be"]},{"pos":"noun","gender":"m","senses":["being"]}]'
   ].join("\n");
   const { context: c } = background({}, { indexedDB: true });
   let fetches = 0;
@@ -708,12 +713,92 @@ async function dictionaryStoreTests() {
   assert.equal((await c.DualSubDictionary.lookup("livre", "noun")).senses[0], "book");
   // With no reading, the first part of speech answers rather than nothing.
   assert.equal((await c.DualSubDictionary.lookup("livre")).pos, "noun");
-  // A group the entry does not have falls back rather than returning nothing.
-  assert.equal((await c.DualSubDictionary.lookup("armée", "verb")).pos, "noun");
+  assert.equal((await c.DualSubDictionary.lookup("livre", "unknown")).pos, "noun", "An unknown group is no reading at all");
+  // A real reading the entry does not have is not answered with some other
+  // part of speech: "la maison" must not read "her, it", so the engine answers.
+  assert.equal(await c.DualSubDictionary.lookup("armée", "verb"), null, "A group the entry lacks is a miss");
+  assert.equal(await c.DualSubDictionary.lookup("la", "determiner"), null, "la as a determiner has no pronoun meaning");
+  assert.equal((await c.DualSubDictionary.lookup("la", "pronoun")).senses[0], "her, it (direct object)");
+
+  // Candidates are tried in order, and the first with a part matching the
+  // reading answers. Lexique gives être as the lemma of été, but cet été is a
+  // noun, and the surface word's own entry has that noun.
+  assert.equal((await c.DualSubDictionary.lookup(["été", "être"], "noun")).senses[0], "summer");
+  assert.equal((await c.DualSubDictionary.lookup(["est", "être"], "noun")).senses[0], "east");
+  // A candidate with no entry, or no matching part, is skipped for the next.
+  assert.equal((await c.DualSubDictionary.lookup(["yeux", "oeil"], "noun")).senses[0], "eye", "yeux has no entry; its lemma does");
+  assert.equal((await c.DualSubDictionary.lookup(["été", "être"], "verb")).senses[0], "to be", "été has no verb part; être does");
+  assert.equal(await c.DualSubDictionary.lookup(["été", "être"], "adverb"), null, "No candidate matches, so nothing answers");
+  // With no reading, the first candidate that has an entry answers with its first part.
+  assert.equal((await c.DualSubDictionary.lookup(["yeux", "oeil"], "")).senses[0], "eye");
+  assert.equal(await c.DualSubDictionary.lookup([], "noun"), null);
 
   assert.equal(await c.DualSubDictionary.lookup("inconnu"), null, "A miss is null, so the caller can ask an engine");
   assert.equal(fetches, 1, "The file is read once, not per lookup");
   assert.equal(c.DualSubDictionary.state, "ready");
+}
+
+// A connection Firefox closes underneath the event page (site data cleared,
+// storage pressure) or a store that throws must degrade a lookup to null, and
+// the next lookup must reopen rather than error until the event page restarts.
+async function dictionaryConnectionTests() {
+  const { forceCloseDatabase } = require("fake-indexeddb");
+  const index = 'armée\t[{"pos":"noun","gender":"f","senses":["army"]}]';
+  const { context: c } = background({}, { indexedDB: true });
+  const connections = [];
+  const open = c.indexedDB.open.bind(c.indexedDB);
+  c.indexedDB.open = (...args) => {
+    const request = open(...args);
+    request.addEventListener("success", () => connections.push(request.result));
+    return request;
+  };
+  c.fetch = async () => ({ ok: true, text: async () => index });
+  vm.runInContext(source("dictionary.js"), c);
+  assert.equal((await c.DualSubDictionary.lookup("armée")).senses[0], "army");
+
+  // Forced close fires "close"; the next lookup opens a fresh connection.
+  const closed = new Promise((resolve) => connections.at(-1).addEventListener("close", resolve));
+  forceCloseDatabase(connections.at(-1));
+  await closed;
+  assert.equal((await c.DualSubDictionary.lookup("armée"))?.senses[0], "army", "A force-closed connection is reopened");
+  assert.equal(connections.length, 2);
+
+  // A connection closed without an event makes every transaction throw. That
+  // resolves null rather than rejecting, and the lookup after it recovers.
+  connections.at(-1).close();
+  assert.equal(await c.DualSubDictionary.lookup("armée"), null, "A throwing store degrades to null");
+  assert.equal((await c.DualSubDictionary.lookup("armée"))?.senses[0], "army", "...and the next lookup reopens");
+
+  // Another tab upgrading the database asks this connection to step aside.
+  // A connection that ignores it leaves the upgrade waiting forever, so a
+  // timeout closes everything and fails rather than hanging the suite.
+  const upgrade = await new Promise((resolve, reject) => {
+    const request = c.indexedDB.open("dualsub-dictionary", 2);
+    const timer = setTimeout(() => {
+      for (const database of connections) database.close();
+      reject(new Error("The dictionary connection blocked a version change"));
+    }, 1000);
+    request.onsuccess = () => { clearTimeout(timer); resolve(request.result); };
+    request.onerror = () => { clearTimeout(timer); reject(request.error); };
+  });
+  upgrade.close();
+}
+
+// Upgrading the shipped data must not leave lemmas the new file removed.
+async function dictionaryUpgradeTests() {
+  const { context: c } = background({}, { indexedDB: true });
+  let index = [
+    'ancien\t[{"pos":"adjective","senses":["old"]}]',
+    'livre\t[{"pos":"noun","gender":"m","senses":["book"]}]'
+  ].join("\n");
+  c.fetch = async () => ({ ok: true, text: async () => index });
+  vm.runInContext(source("dictionary.js"), c);
+  assert.equal((await c.DualSubDictionary.lookup("ancien")).senses[0], "old");
+
+  index = 'livre\t[{"pos":"noun","gender":"m","senses":["book, volume"]}]';
+  vm.runInContext(source("dictionary.js").replace(/const DATA_VERSION = "[^"]*";/, 'const DATA_VERSION = "next-data";'), c);
+  assert.equal((await c.DualSubDictionary.lookup("livre")).senses[0], "book, volume", "The new data is imported");
+  assert.equal(await c.DualSubDictionary.lookup("ancien"), null, "A lemma the new data removed is gone");
 }
 
 // A dictionary hit answers without a request, and must not be written into the
@@ -730,7 +815,7 @@ async function dictionaryLookupTests() {
   vm.runInContext(source("dictionary.js"), c);
 
   const hit = await c.translateSelectionWithEngine({
-    text: "armées", cacheMode: "word", lemma: "armée", group: "noun", sessionId: "d1"
+    text: "armées", cacheMode: "word", lemmas: ["armées", "armée"], group: "noun", sessionId: "d1"
   });
   assert.equal(hit.translatedText, "army · armed forces");
   assert.equal(hit.provider, "dictionary");
@@ -738,19 +823,34 @@ async function dictionaryLookupTests() {
   assert.equal(providerCalls, 0, "A dictionary hit spends no request");
 
   const miss = await c.translateSelectionWithEngine({
-    text: "zzzz", cacheMode: "word", lemma: "zzzz", group: "noun", sessionId: "d2"
+    text: "zzzz", cacheMode: "word", lemmas: ["zzzz"], group: "noun", sessionId: "d2"
   });
   assert.equal(miss.translatedText, "armies");
   assert.equal(providerCalls, 1, "A miss falls through to the engine");
 
+  // The reading's group is a real part of speech the entry lacks, so the
+  // engine answers rather than the dictionary's first part.
+  const mismatch = await c.translateSelectionWithEngine({
+    text: "armée", cacheMode: "word", lemmas: ["armée"], group: "verb", sessionId: "d2b"
+  });
+  assert.notEqual(mismatch.provider, "dictionary");
+  assert.equal(providerCalls, 2, "A group mismatch asks the engine");
+
   // A phrase is not a headword.
   await c.translateSelectionWithEngine({ text: "les armées", cacheMode: "phrase", sessionId: "d3" });
-  assert.equal(providerCalls, 2, "A phrase never consults the dictionary");
+  assert.equal(providerCalls, 3, "A phrase never consults the dictionary");
+
+  // A message without candidates looks up the word itself.
+  for (const [lemmas, sessionId] of [[undefined, "d3a"], [[], "d3b"]]) {
+    const bare = await c.translateSelectionWithEngine({ text: "armée", cacheMode: "word", lemmas, group: "noun", sessionId });
+    assert.equal(bare.provider, "dictionary", "No candidates falls back to the normalized text");
+  }
+  assert.equal(providerCalls, 3);
 
   // A saved correction still wins.
   await c.saveTranslationCorrection("armées", "my own word");
   const corrected = await c.translateSelectionWithEngine({
-    text: "armées", cacheMode: "word", lemma: "armée", group: "noun", sessionId: "d4"
+    text: "armées", cacheMode: "word", lemmas: ["armées", "armée"], group: "noun", sessionId: "d4"
   });
   assert.equal(corrected.translatedText, "my own word");
 
@@ -773,7 +873,7 @@ async function dictionaryLookupTests() {
   };
   vm.runInContext(source("dictionary.js"), off);
   const asked = await off.translateSelectionWithEngine({
-    text: "armées", cacheMode: "word", lemma: "armée", group: "noun", sessionId: "d5"
+    text: "armées", cacheMode: "word", lemmas: ["armées", "armée"], group: "noun", sessionId: "d5"
   });
   assert.equal(asked.translatedText, "armies");
   assert.equal(offCalls, 1, "With the setting off the engine answers");
@@ -799,8 +899,8 @@ async function dictionaryBatchAndPeekTests() {
   // provider.
   const mixed = await c.translateBatchMessage({
     items: [
-      { text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" },
-      { text: "zzzz", cacheId: "word:zzzz", lemma: "zzzz", group: "noun" }
+      { text: "armées", cacheId: "word:armées", lemmas: ["armées", "armée"], group: "noun" },
+      { text: "zzzz", cacheId: "word:zzzz", lemmas: ["zzzz"], group: "noun" }
     ],
     sessionId: "batch1"
   });
@@ -814,7 +914,7 @@ async function dictionaryBatchAndPeekTests() {
   // A batch of only hits makes zero provider requests, and so never calls
   // translateBatch at all.
   const hitsOnly = await c.translateBatchMessage({
-    items: [{ text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" }],
+    items: [{ text: "armées", cacheId: "word:armées", lemmas: ["armées", "armée"], group: "noun" }],
     sessionId: "batch2"
   });
   assert.equal(hitsOnly.results[0].provider, "dictionary");
@@ -823,7 +923,7 @@ async function dictionaryBatchAndPeekTests() {
   // A saved correction still wins over a dictionary entry in the batch path.
   await c.saveTranslationCorrection("armées", "my own word");
   const corrected = await c.translateBatchMessage({
-    items: [{ text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" }],
+    items: [{ text: "armées", cacheId: "word:armées", lemmas: ["armées", "armée"], group: "noun" }],
     sessionId: "batch3"
   });
   assert.equal(corrected.results[0].provider, "correction");
@@ -840,7 +940,7 @@ async function dictionaryBatchAndPeekTests() {
   };
   vm.runInContext(source("dictionary.js"), off);
   const offBatch = await off.translateBatchMessage({
-    items: [{ text: "armées", cacheId: "word:armées", lemma: "armée", group: "noun" }],
+    items: [{ text: "armées", cacheId: "word:armées", lemmas: ["armées", "armée"], group: "noun" }],
     sessionId: "batch4"
   });
   assert.equal(offBatch.results[0].translatedText, "armies");
@@ -859,8 +959,8 @@ async function dictionaryBatchAndPeekTests() {
   vm.runInContext(source("dictionary.js"), p);
   const peeked = await p.peekWordMeanings({
     words: [
-      { text: "armées", lemma: "armée", group: "noun" },
-      { text: "inconnu", lemma: "inconnu", group: "" }
+      { text: "armées", lemmas: ["armées", "armée"], group: "noun" },
+      { text: "inconnu", lemmas: ["inconnu"], group: "" }
     ]
   });
   assert.equal(peeked.meanings[0].translatedText, "army · armed forces");
@@ -870,7 +970,7 @@ async function dictionaryBatchAndPeekTests() {
 
   // A saved correction still wins in peek too.
   await p.saveTranslationCorrection("armées", "my own word");
-  const peekCorrected = await p.peekWordMeanings({ words: [{ text: "armées", lemma: "armée", group: "noun" }] });
+  const peekCorrected = await p.peekWordMeanings({ words: [{ text: "armées", lemmas: ["armées", "armée"], group: "noun" }] });
   assert.equal(peekCorrected.meanings[0].translatedText, "my own word");
   assert.equal(peekCorrected.meanings[0].provenance, "Your correction");
   assert.equal(peekProviderCalls, 0, "A correction in peek still costs no request");
@@ -883,7 +983,7 @@ async function dictionaryBatchAndPeekTests() {
     throw new Error("peek must never contact a provider");
   };
   vm.runInContext(source("dictionary.js"), peekOff);
-  const peekedOff = await peekOff.peekWordMeanings({ words: [{ text: "armées", lemma: "armée", group: "noun" }] });
+  const peekedOff = await peekOff.peekWordMeanings({ words: [{ text: "armées", lemmas: ["armées", "armée"], group: "noun" }] });
   assert.equal(peekedOff.meanings[0].translatedText, "", "With the setting off, peek does not answer from the dictionary");
 }
 
@@ -1003,6 +1103,6 @@ async function dictionaryClearDuringImportTests() {
   await learningDataModelTests(); await storageMigrationTests(); await cacheEpochTests(); await ocrCaptureTests();
   await wordBatchTests(); await googleBatchTests(); await correctionKeyTests();
   await translationTests(); await providerFallbackTests(); await memoryWordLookupTests(); await wordPeekTests(); await sidebarTests(); await practiceTests();
-  await dictionaryStoreTests(); await dictionaryLookupTests(); await dictionaryBatchAndPeekTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
+  await dictionaryStoreTests(); await dictionaryConnectionTests(); await dictionaryUpgradeTests(); await dictionaryLookupTests(); await dictionaryBatchAndPeekTests(); await dictionaryConcurrentLookupTests(); await dictionaryImportFailureRecoveryTests(); await dictionaryClearDuringImportTests();
   console.log("DualSub regression tests passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

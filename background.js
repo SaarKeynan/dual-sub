@@ -453,7 +453,7 @@ async function translateWordBatch(items, message, settings, fallbackProviders = 
     // A dictionary answer is local and costs no request, same as the
     // interactive lookup: preloading must apply the same checks and reach the
     // same answers.
-    const dictionaryHit = await dictionaryWordLookup(text, text, item.lemma, item.group, settings);
+    const dictionaryHit = await dictionaryWordLookup(text, text, item.lemmas, item.group, settings);
     if (dictionaryHit) {
       results[index] = dictionaryHit;
       continue;
@@ -611,9 +611,18 @@ function singleWordLookup(value) {
 // matter which of the three asked. Local, instant, and costs no request --
 // checked before any provider and before the provider cache is even keyed.
 // Single words only, and only while the setting allows it.
-async function dictionaryWordLookup(normalizedText, lookupText, lemma, group, settings) {
+//
+// `lemmas` is the content script's ordered list of candidate headwords (the
+// background has no morphology); the dictionary answers from the first one
+// with a part of speech matching `group`. Without candidates, the word itself.
+async function dictionaryWordLookup(normalizedText, lookupText, lemmas, group, settings) {
   if (settings.dictionaryLookup === false || !singleWordLookup(normalizedText)) return null;
-  const entry = await DualSubDictionary.lookup(lemma || normalizedText, group || "");
+  const candidates = (Array.isArray(lemmas) ? lemmas : [])
+    .map((value) => cleanVocabularyText(value, 160))
+    .filter(Boolean)
+    .slice(0, 4);
+  const entry = await DualSubDictionary.lookup(candidates.length ? candidates : [normalizedText], String(group || ""))
+    .catch(() => null);
   if (!entry?.senses?.length) return null;
   return {
     sourceText: normalizedText,
@@ -687,7 +696,7 @@ async function peekWordMeanings(message) {
     }
     // A dictionary hit answers the row without a cache entry or a provider,
     // same order as the interactive lookup: correction, then dictionary.
-    const dictionaryHit = await dictionaryWordLookup(normalizedText, normalizedText, words[index]?.lemma, words[index]?.group, settings);
+    const dictionaryHit = await dictionaryWordLookup(normalizedText, normalizedText, words[index]?.lemmas, words[index]?.group, settings);
     if (dictionaryHit) {
       return { translatedText: dictionaryHit.translatedText, provenance: dictionaryHit.provenance, saved: isSaved };
     }
@@ -729,7 +738,7 @@ async function translateSelectionWithEngine(message) {
   // answer is local, instant, and costs no request. Single words only — a phrase
   // is not a headword.
   if (message.cacheMode === "word") {
-    const dictionaryHit = await dictionaryWordLookup(normalizedText, lookupText, message.lemma, message.group, settings);
+    const dictionaryHit = await dictionaryWordLookup(normalizedText, lookupText, message.lemmas, message.group, settings);
     if (dictionaryHit) return dictionaryHit;
   }
   if (translationPending.has(pendingKey)) return translationPending.get(pendingKey);
