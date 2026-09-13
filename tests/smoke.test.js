@@ -47,6 +47,17 @@ async function testCaptionProcessing() {
   const nativePrefetch = extract(source, "  function handleObservedNativeSource", "  function stopNativeCapture");
   assert(/purpose: "subtitles"/.test(nativePrefetch), "So does the prefetch that runs ahead of it");
   assert(/purpose: "translator"/.test(translatorSource), "The translator page identifies itself so its own switch applies");
+  // The hover-prefetch handler sends up to two evidence messages: one for the
+  // hovered word and, when word alignment is on, a second for its lemma (a
+  // different string). Only the first message's lemma/group may be attached
+  // to the message for the hovered word -- attaching them unconditionally
+  // would send the primary word's lemma alongside the lemma text's own
+  // message, and the background would then look up the wrong headword.
+  const hoverPrefetch = extract(source, "  function handleWordPointerOver", "  function handleWordPointerOut");
+  assert(/lemma: text === wordText \? lookupLemmaFor\(wordText, conjugation, reading\) : ""/.test(hoverPrefetch),
+    "The lemma sent to the background must be gated to the primary word's own message, same as lookupText/readingKey");
+  assert(/group: text === wordText \? reading\?\.group \|\| "" : ""/.test(hoverPrefetch),
+    "...and so must the grammatical group that picks the dictionary entry's part of speech");
   const context = { console, scheduleVideoSnapshot() {} };
   vm.createContext(context);
   vm.runInContext(`${helpers}\n${parser}\n${cueTools}\n${wordMatching}\n${elisionTools}\n${nativeMessageFilter}\nconst clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));\n${captureCrop}`, context);
