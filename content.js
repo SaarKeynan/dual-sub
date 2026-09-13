@@ -1709,6 +1709,8 @@
     const providerLabel = { google: "Google", mymemory: "MyMemory", azure: "Azure", deepl: "DeepL", libretranslate: "LibreTranslate", correction: "Saved correction" }[provider] || provider;
     if (provider === "correction") {
       label.textContent = "Source: your saved correction";
+    } else if (provider === "dictionary") {
+      label.textContent = "Source: bundled dictionary";
     } else if (response?.memoryCache) {
       label.textContent = `Source: instant session cache · ${providerLabel}`;
     } else if (response?.cacheHit) {
