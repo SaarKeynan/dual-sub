@@ -109,6 +109,17 @@ Explicit YouTube append events are joined. Heuristics fold strongly identified
 late roll-up fragments without merging independent short captions. The original
 fragment timing is retained for progressive display when that mode is enabled.
 
+`attachStrandedPunctuation()` runs before that folding. YouTube's `tlang=en`
+track reorders words across its event boundaries, so the closing punctuation or
+English contraction ending (`'s`, `'m`, `'ve`) of one caption often arrives at
+the start of the next event, or as the whole of it. The stranded ending is moved
+back onto the previous caption. An event that held nothing else is folded in the
+way an append event is: the previous caption takes its end time and raw
+fragment. Opening quotes, brackets, symbols such as `€` and a leading ellipsis
+are left alone. Cached snapshots are repaired the same way on restore; if that
+changes the French cues, their saved translations are discarded, because those
+are keyed by cue index.
+
 ### Recovery and fallback order
 
 YouTube sometimes rejects extension-created timed-text requests even though its

@@ -610,7 +610,9 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
     assert.equal(state.cues[0].text, frenchText);
     if (cachedSnapshot) {
       assert.equal(captionRequests, 0, "Refreshing a cached video skips caption downloads");
-      if (cachedSnapshot.targetCues?.length || cachedSnapshot.translations?.length) {
+      if (options.repairsSource && !cachedSnapshot.targetCues?.length) {
+        assert(translationBatches > 0, "Translations saved against unrepaired French cues are not reused, since their indexes moved");
+      } else if (cachedSnapshot.targetCues?.length || cachedSnapshot.translations?.length) {
         assert.equal(translationBatches, 0, "Saved translations are seeded before scheduling provider requests");
       }
     } else assert(captionRequests > 0);
@@ -850,6 +852,17 @@ async function content(cachedSnapshot = null, frenchText = "Je vais bien", optio
     "Je vais bien", { aheadTranslation: true });
   await content({ ...snapshot, targetCues: [], translations: [] }, "Je vais bien",
     { recoverAfterFailedBatch: true, batchFailure: { ok: false, error: "Google translation failed (HTTP 400).", errorCode: "PROVIDER_REQUEST_FAILED" } });
+  // A snapshot saved before stranded punctuation was repaired at parse time is
+  // repaired when it is restored, in both languages.
+  const strandedSnapshot = {
+    ...snapshot,
+    sourceCues: [...snapshot.sourceCues, { start: 2500, end: 3000, text: "?" }],
+    targetCues: [...snapshot.targetCues, { start: 2500, end: 3000, text: "." }]
+  };
+  const repairedSnapshot = await content(strandedSnapshot, "Je vais bien?", { repairsSource: true });
+  assert.deepEqual(repairedSnapshot.sourceCues.map((cue) => cue.text), ["Je vais bien?"]);
+  assert.deepEqual(repairedSnapshot.targetCues.map((cue) => cue.text), ["I am well."]);
+  await content({ ...strandedSnapshot, targetCues: [], translations: [{ index: 0, text: "I am well" }] }, "Je vais bien?", { repairsSource: true });
   await content(null, "Tu l'as");
   await content(snapshot, "Je vais bien", { pauseOnLookup: true, settings: { pauseOnLookup: true, hoverLookup: false } });
   await content(snapshot, "Je vais bien", { overlayScale: true });

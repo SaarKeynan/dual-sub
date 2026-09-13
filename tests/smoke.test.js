@@ -99,6 +99,48 @@ async function testCaptionProcessing() {
   assert.strictEqual(explicitAppendCues[0].text, "c'est vraiment important");
   assert.strictEqual(explicitAppendCues[0].fragments.length, 2, "Display grouping must preserve both raw timed fragments");
 
+  // YouTube's auto-translated track reorders words across its event boundaries,
+  // so the punctuation or contraction ending the previous caption can arrive as
+  // the next event, sometimes as the whole of it. Taken from fVUQceJCGqk.
+  const strandedPayload = JSON.stringify({ events: [
+    { tStartMs: 87880, dDurationMs: 1199, segs: [{ utf8: "It's actually quite distressing" }] },
+    { tStartMs: 88799, dDurationMs: 1481, segs: [{ utf8: "." }] },
+    { tStartMs: 89079, dDurationMs: 2000, segs: [{ utf8: "Which one is it? In this case, those qualities" }] },
+    { tStartMs: 97720, dDurationMs: 2640, segs: [{ utf8: "Yeah, it" }] },
+    { tStartMs: 100360, dDurationMs: 3560, segs: [{ utf8: "'s Lakin Park metal." }] },
+    { tStartMs: 180000, dDurationMs: 3360, segs: [{ utf8: "listen to a band and you say, \"Well" }] },
+    { tStartMs: 183360, dDurationMs: 3000, segs: [{ utf8: ", that's it, it's definitely" }] },
+    { tStartMs: 186360, dDurationMs: 3640, segs: [{ utf8: "\"Yeah, well, it's a copy, actually." }] },
+    { tStartMs: 190000, dDurationMs: 2000, segs: [{ utf8: "[__].\" Even they don't like it" }] },
+    { tStartMs: 192000, dDurationMs: 2000, segs: [{ utf8: "€13.26 from what" }] },
+    { tStartMs: 194000, dDurationMs: 1000, segs: [{ utf8: "?" }] },
+    { tStartMs: 195000, dDurationMs: 2000, segs: [{ utf8: "... and then nothing" }] }
+  ] });
+  const strandedCues = context.parseCaptionPayload(strandedPayload);
+  const strandedTexts = Array.from(strandedCues, (cue) => cue.text);
+  assert.deepStrictEqual(strandedTexts, [
+    "It's actually quite distressing.",
+    "Which one is it? In this case, those qualities",
+    "Yeah, it's",
+    "Lakin Park metal.",
+    "listen to a band and you say, \"Well,",
+    "that's it, it's definitely",
+    "\"Yeah, well, it's a copy, actually.",
+    "[__].\" Even they don't like it",
+    "€13.26 from what?",
+    "... and then nothing"
+  ], "Stranded punctuation and contraction endings rejoin the caption they end; opening quotes, masks, symbols and ellipses stay");
+  assert(strandedCues.every((cue) => !/^[,.;:!?]/u.test(cue.text) || cue.text.startsWith("...")), "No cue starts with, or is only, closing punctuation");
+  assert.strictEqual(strandedCues[0].end, 90280, "A caption that absorbed a punctuation-only event covers that event's time, as an explicit append does");
+  assert.strictEqual(strandedCues[0].fragments.length, 2, "and keeps its raw timed fragment");
+  assert.deepStrictEqual(
+    Array.from(context.attachStrandedPunctuation([{ start: 0, end: 1000, text: "?" }, { start: 1000, end: 2000, text: "! Et puis" }]), (cue) => cue.text),
+    ["Et puis"],
+    "With no caption before it, stranded punctuation is dropped rather than shown alone"
+  );
+  const repairedOnce = context.attachStrandedPunctuation(strandedCues);
+  assert.deepStrictEqual(Array.from(repairedOnce, (cue) => cue.text), strandedTexts, "Repairing is idempotent, so cached tracks can be repaired on restore");
+
   const overlaps = [
     { start: 1000, end: 5000, text: "old" },
     { start: 3000, end: 6000, text: "new" }

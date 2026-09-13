@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — no more lines of stray punctuation
+
+- English subtitles no longer show a line that starts with, or is only, a full
+  stop, comma, question mark or the end of a contraction (`.`, `, that's it`,
+  `'s Lakin Park metal.`). YouTube's auto-translated track moves words across
+  its own caption boundaries, leaving the previous line's ending stranded in
+  the next one. That ending now rejoins the line it belongs to, and a line that
+  was nothing else is folded into it. The same repair applies to the French
+  track (`?`, `! Et à ce moment-là`) and to captions already saved for a video.
+
 ## Unreleased — a bundled dictionary for word meanings
 
 - Word meanings are now answered from a bundled French-English dictionary

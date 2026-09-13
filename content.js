@@ -1,7 +1,7 @@
 (() => {
   const DEFAULT_SETTINGS = DualSubSettings.defaults;
 
-  const { joinCaptionParts, foldLateCaptionFragments, parseCaptionPayload, cueAt, cueIndexAt } = DualSubCaptions;
+  const { joinCaptionParts, attachStrandedPunctuation, foldLateCaptionFragments, parseCaptionPayload, cueAt, cueIndexAt } = DualSubCaptions;
   const { translationPrefetchOrder } = DualSubScheduler;
   let settings = DEFAULT_SETTINGS;
   const tabSessionId = crypto.randomUUID();
@@ -837,11 +837,16 @@
     const snapshot = videoCacheScope ? cacheResponse?.snapshot : null;
     if (snapshot?.sourceCues?.length) {
       stopNativeCapture(true); stopAheadTranslation();
-      sourceCues = snapshot.sourceCues; targetCues = snapshot.targetCues || [];
+      // Snapshots saved before stranded punctuation was repaired at parse time
+      // are repaired here. Saved translations are keyed by French cue index, so
+      // they are dropped if that repair changed the French cues.
+      sourceCues = attachStrandedPunctuation(snapshot.sourceCues); targetCues = attachStrandedPunctuation(snapshot.targetCues || []);
+      const sourceRepaired = sourceCues.length !== snapshot.sourceCues.length ||
+        sourceCues.some((cue, index) => cue.text !== snapshot.sourceCues[index].text);
       videoCacheCapturedAt = snapshot.capturedAt;
       restoredVideoSnapshot = true;
       if (targetCues.length) { refreshCueAlignment(); scheduleVideoWordWarmup(); }
-      else startAheadTranslation(snapshot.translations || []);
+      else startAheadTranslation(sourceRepaired ? [] : snapshot.translations || []);
       setStatus("ready", "Restored saved captions for this video.", 1800);
       requestRender();
       return;

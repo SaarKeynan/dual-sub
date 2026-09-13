@@ -12,6 +12,39 @@
     return result.trim();
   }
 
+  // YouTube's auto-translated track reorders words across its event boundaries,
+  // so the punctuation or English contraction ending one caption can arrive as
+  // the start of the next event, or as the whole of it ("It's actually quite
+  // distressing" then "."). The same happens to a closing "?" or "!" in French
+  // auto captions. Opening quotes, brackets, symbols and a leading ellipsis are
+  // how a caption legitimately begins, so they stay.
+  const strandedStart = /^(?:(?![.]{2,}|…)[,.;:!?%)\]}»”]+|['’](?:s|m|re|ve|ll|d)(?![\p{L}\p{N}])|n['’]t(?![\p{L}\p{N}]))\s*/u;
+
+  function attachStrandedPunctuation(cues) {
+    const repaired = [];
+    for (const original of cues) {
+      const cue = { ...original, fragments: original.fragments?.map((fragment) => ({ ...fragment })) };
+      let stranded = "";
+      let rest = cue.text;
+      for (let match = strandedStart.exec(rest); match; match = strandedStart.exec(rest)) {
+        stranded += match[0].trim();
+        rest = rest.slice(match[0].length);
+      }
+      const previous = repaired[repaired.length - 1];
+      if (stranded && previous) previous.text = joinCaptionParts([previous.text, stranded]);
+      if (rest) {
+        cue.text = rest;
+        repaired.push(cue);
+      } else if (previous) {
+        // Nothing but the previous caption's ending: fold it in the way an
+        // explicit aAppend event is, keeping its time and raw fragment.
+        previous.end = Math.max(previous.end, cue.end);
+        if (previous.fragments && cue.fragments) previous.fragments.push(...cue.fragments);
+      }
+    }
+    return repaired;
+  }
+
   function foldLateCaptionFragments(cues) {
     const folded = [];
     const connectingWords = new Set([
@@ -99,7 +132,7 @@
         }
       }
 
-      const folded = foldLateCaptionFragments(provisional);
+      const folded = foldLateCaptionFragments(attachStrandedPunctuation(provisional));
       return folded.map((cue, index) => ({
         ...cue,
         end: cue.end > cue.start
@@ -114,7 +147,7 @@
       const duration = Number(node.getAttribute("dur") || 5) * 1000;
       return { start, end: start + duration, text: node.textContent.trim() };
     }).filter((cue) => cue.text);
-    if (simpleCues.length) return foldLateCaptionFragments(simpleCues);
+    if (simpleCues.length) return foldLateCaptionFragments(attachStrandedPunctuation(simpleCues));
 
     // YouTube's srv3 format, commonly returned for auto-generated captions,
     // uses <p t="milliseconds" d="milliseconds"><s>…</s></p> rather than
@@ -128,7 +161,7 @@
         text: node.textContent.replace(/\s+/g, " ").trim()
       };
     }).filter((cue) => cue.text);
-    return foldLateCaptionFragments(richCues);
+    return foldLateCaptionFragments(attachStrandedPunctuation(richCues));
   }
 
 
@@ -166,5 +199,5 @@
   }
 
 
-  globalThis.DualSubCaptions = Object.freeze({ joinCaptionParts, foldLateCaptionFragments, parseCaptionPayload, cueAt, cueIndexAt });
+  globalThis.DualSubCaptions = Object.freeze({ joinCaptionParts, attachStrandedPunctuation, foldLateCaptionFragments, parseCaptionPayload, cueAt, cueIndexAt });
 })();
