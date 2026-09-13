@@ -549,6 +549,11 @@ async function testFrenchWithLoadedResources() {
     assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
   }
   assert(french.classifyWord("entre", "il entre dans la salle").alternatives.includes("preposition"));
+  // Only a verb reading is looked up with a subject: the preposition of
+  // "contre le mur" was sent to the engine as "je contre".
+  assert.strictEqual(french.lookupReading("contre", "contre le mur").text, "contre");
+  assert.strictEqual(french.lookupReading("contre", "nous contre eux").text, "contre");
+  assert.strictEqual(french.lookupReading("as", "Tu as").text, "tu as", "A verb reading still gets its subject");
   // Fixed adverbial expressions: "au moins" is the commonest moins of all, and
   // read as the noun it answered "the minus sign".
   for (const [word, sentence] of [

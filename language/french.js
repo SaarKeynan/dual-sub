@@ -794,7 +794,9 @@
     const parts = splitElidedClitic(rawWord);
     const ambiguous = lexicalGroups(parts.base).some((value) => value === "noun" || value === "adjective") || parts.prefix === "l";
     let text = rawWord;
-    if (analysis?.partOfSpeech === "verb" && ambiguous && ["indicative", "conditional", "subjunctive"].includes(analysis.mood)) {
+    // Only a verb reading is looked up with a subject: the closed-class
+    // preposition of "contre le mur" is not "je contre".
+    if (group === "verb" && analysis?.partOfSpeech === "verb" && ambiguous && ["indicative", "conditional", "subjunctive"].includes(analysis.mood)) {
       const pronouns = { "1st:singular": "je", "2nd:singular": "tu", "3rd:singular": "il", "1st:plural": "nous", "2nd:plural": "vous", "3rd:plural": "ils" };
       const subject = pronouns[`${analysis.person}:${analysis.number}`];
       if (subject) {
