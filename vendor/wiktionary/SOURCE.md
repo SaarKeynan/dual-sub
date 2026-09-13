@@ -14,15 +14,10 @@ The raw extract itself is not committed; it is downloaded to
 `vendor/wiktionary/kaikki-french.jsonl`, which `.gitignore` covers, and the
 build script reads it from there by default.
 
-Source: pending first download — see Task 6, step 1. The per-language file
-was expected at `https://kaikki.org/dictionary/French/`, but that path is
-marked deprecated on kaikki.org and may be gone by the time it is fetched; if
-so, the English-edition raw dump at `https://kaikki.org/dictionary/rawdata.html`
-is used instead, since the build filters by `lang_code` either way. Record the
-exact URL that served the file here once it has been downloaded. Do not guess
-it.
+Source: `https://kaikki.org/dictionary/French/kaikki.org-dictionary-French.jsonl`,
+served with `Last-Modified: Wed, 09 Sep 2026 21:01:41 GMT`, fetched 2026-09-13.
 
-Extract date: pending first download — see Task 6, step 1.
+Extract date: 2026-09-09 (the `Last-Modified` date of the served file).
 
 The build applies these filters and limits, in order:
 
@@ -35,6 +30,17 @@ The build applies these filters and limits, in order:
   dropped entirely.
 - A sense tagged `obsolete`, `archaic`, `rare`, or `dated` is dropped; a learner
   will not meet it in a subtitle, and it would crowd out a sense they will.
+- A sense tagged `form-of` is dropped: it is a grammar note such as "feminine
+  singular of armé" or "inflection of livrer:", not a meaning. The content
+  script already sends the lemma for an inflected surface form, and the
+  lemma's own entry carries the real senses. A part of speech left with no
+  senses after this filtering is not emitted at all.
+- Gender is taken from `entry.tags` when present, else from the tags of the
+  senses that survived the filters above (the first `masculine`/`feminine`
+  found); real kaikki entries carry no gender on `entry.tags` at all, so this
+  fallback is what actually supplies it. It covers all but 0.12% of nouns
+  (17 of 14,196) in the shipped build, so `head_templates` gender is not
+  consulted.
 - The result is intersected with the lemmas in
   `vendor/lexique/french-lexical-info.txt`: this removes Wiktionary's long tail
   of forms that never occur in speech, and guarantees every surviving lemma is
@@ -54,7 +60,9 @@ The extract is produced by wiktextract, cited as:
 > Data", Proceedings of the 13th Conference on Language Resources and
 > Evaluation (LREC 2022), pp. 1317-1325, Marseille, 20-25 June 2022.
 
-Generated derivative SHA-256: pending first build
+Generated derivative SHA-256: 3D0FDD074AB6F5909722F6AABA50B27C694EABF0592E3A9F2E2E0AA83AAF4F9B
+
+`french-english.txt`: 21,211 lemmas, 1,915,665 bytes.
 
 Project and documentation: https://kaikki.org/ and
 https://github.com/tatuylonen/wiktextract

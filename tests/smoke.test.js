@@ -967,6 +967,21 @@ async function testDictionaryBuild() {
 
   assert(!entries.has("Paris"), "Proper nouns are not dictionary lookups");
   assert(!entries.has("dog"), "Only French entries are kept");
+
+  // Real kaikki entries carry gender on senses[].tags, not entry.tags.
+  assert.deepStrictEqual(entries.get("table"), [
+    { pos: "noun", gender: "f", senses: ["table"] }
+  ], "Gender falls back to the tags of the kept senses when entry.tags has none");
+
+  // A sense tagged form-of is a grammar note, not a meaning; a part left with
+  // no senses is not emitted at all.
+  assert(!entries.has("vas"), "An entry whose only sense is form-of is dropped entirely");
+
+  // Mixing a form-of sense with a real sense keeps only the real one.
+  assert.deepStrictEqual(entries.get("mixe"), [
+    { pos: "verb", senses: ["to mix"] }
+  ], "A form-of sense is dropped even when a real sense shares its part of speech");
+
   fs.unlinkSync(output);
 
   // And with a lexicon, only lemmas it knows survive. "chien" is in Lexique and

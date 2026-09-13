@@ -4,3 +4,6 @@
 {"word":"chien","lang_code":"fr","pos":"noun","tags":["masculine"],"senses":[{"glosses":["dog"]},{"tags":["obsolete"],"glosses":["a flintlock hammer"]}]}
 {"word":"Paris","lang_code":"fr","pos":"name","senses":[{"glosses":["Paris"]}]}
 {"word":"dog","lang_code":"en","pos":"noun","senses":[{"glosses":["a dog"]}]}
+{"word":"table","lang_code":"fr","pos":"noun","senses":[{"tags":["feminine"],"glosses":["table"]}]}
+{"word":"vas","lang_code":"fr","pos":"verb","senses":[{"tags":["form-of","indicative","present","second-person","singular"],"glosses":["second-person singular present indicative of aller"],"form_of":[{"word":"aller"}]}]}
+{"word":"mixe","lang_code":"fr","pos":"verb","senses":[{"tags":["form-of"],"glosses":["inflection of mixer:"],"form_of":[{"word":"mixer"}]},{"glosses":["to mix"]}]}

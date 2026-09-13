@@ -20,8 +20,11 @@ const PARTS = new Map([
   ["prep", "preposition"], ["conj", "conjunction"], ["intj", "interjection"]
 ]);
 // A sense a learner will not meet in a subtitle, and which would crowd out one
-// they will. "name" is excluded as a part of speech entirely.
-const DROP_TAGS = new Set(["obsolete", "archaic", "rare", "dated"]);
+// they will. "name" is excluded as a part of speech entirely. "form-of" senses
+// are grammar notes ("feminine singular of armé", "inflection of livrer:"),
+// not meanings: the content script already sends the lemma for inflected
+// forms, and the lemma's own entry carries the real senses.
+const DROP_TAGS = new Set(["obsolete", "archaic", "rare", "dated", "form-of"]);
 const MAX_SENSES = 3;
 const MAX_PARTS = 3;
 const MAX_SENSE_LENGTH = 60;
@@ -69,9 +72,13 @@ function genderOf(tags) {
     if (!word || (known && !known.has(word))) continue;
 
     const senses = [];
+    // Real kaikki entries carry no gender on entry.tags at all; it lives on
+    // the tags of the senses that were kept. Take the first one found.
+    let senseGender = "";
     for (const sense of entry.senses || []) {
       const tags = sense.tags || [];
       if (tags.some((tag) => DROP_TAGS.has(tag))) continue;
+      if (!senseGender) senseGender = genderOf(tags);
       for (const gloss of sense.glosses || []) {
         const cleaned = cleanGloss(gloss);
         if (cleaned && !senses.includes(cleaned)) senses.push(cleaned);
@@ -80,7 +87,7 @@ function genderOf(tags) {
     if (!senses.length) continue;
 
     const parts = collected.get(word) || [];
-    const gender = genderOf(entry.tags || []);
+    const gender = genderOf(entry.tags || []) || senseGender;
     parts.push({ pos, ...(gender ? { gender } : {}), senses: senses.slice(0, MAX_SENSES) });
     collected.set(word, parts);
   }
