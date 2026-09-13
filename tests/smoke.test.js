@@ -553,6 +553,20 @@ async function testFrenchWithLoadedResources() {
     assert(classification.alternatives.includes(group === "noun" ? "adjective" : "noun"), `${word} in "${sentence}" keeps the other reading`);
     assert.strictEqual(french.lookupReading(word, sentence).group, group);
   }
+  // excuse, montre, marche and mariée are nouns although Lexique's lemma for
+  // each is the verb (excuser, montrer...). Only a form of être or avoir (est,
+  // a, été) after the word is taken as the verb, so the noun still follows.
+  for (const [word, sentence, group] of [
+    ["bonne", "une bonne excuse", "adjective"],
+    ["petite", "une petite montre", "adjective"],
+    ["longue", "une longue marche", "adjective"],
+    ["jeune", "la jeune mariée", "adjective"],
+    ["belle", "une belle marche", "adjective"],
+    ["petite", "la petite est là", "noun"],
+    ["grande", "la grande a dit", "noun"]
+  ]) {
+    assert.strictEqual(french.classifyWord(word, sentence).group, group, `${word} in "${sentence}"`);
+  }
   // Only one of the two readings in the lexicon: nothing to decide.
   assert.strictEqual(french.classifyWord("présumée", "la présumée victime").group, "adjective");
   assert.strictEqual(french.classifyWord("maison", "la maison bleue").group, "noun");

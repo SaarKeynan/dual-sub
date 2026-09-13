@@ -698,15 +698,18 @@
   }
 
   // How the word after a determiner-led word reads: "noun", "ambiguous" when
-  // the lexicon also has it as an adjective, or "" for anything else. A form
-  // whose Lexique lemma is another word that is an attested verb (est -> être)
-  // is the verb, although Lexique also lists est as a noun.
+  // the lexicon also has it as an adjective, or "" for anything else. Lexique
+  // lists est, a, as and été as nouns (east, the letter, ace, summer), but as
+  // forms of être and avoir they are overwhelmingly the verb: "la nouvelle est
+  // arrivée". Any other noun counts, even when Lexique's lemma for the form is
+  // a verb, because excuse, montre and marche are ordinary nouns too.
+  const auxiliaryLemmas = new Set(["être", "avoir"]);
   function followingNounReading(token) {
     if (!token || !/^\p{L}/u.test(token) || closedWordGroup(token)) return "";
     const groups = lexicalGroups(token);
     if (!groups.includes("noun")) return "";
     const lemma = lexicalInfo(token)?.lemma;
-    if (lemma && lemma !== token && attestedLemmas?.has(lemma)) return "";
+    if (lemma && lemma !== token && auxiliaryLemmas.has(lemma)) return "";
     return groups.includes("adjective") ? "ambiguous" : "noun";
   }
 
