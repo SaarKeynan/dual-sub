@@ -662,6 +662,20 @@
     });
   }
 
+  // The token after each occurrence of word that directly follows a nominal
+  // determiner, or undefined at the end. Punctuation is kept as its own token
+  // so a clause boundary ends the phrase.
+  function tokensAfterDeterminer(word, sentence) {
+    const tokens = normalize(sentence).replace(/’/gu, "'").match(/[\p{L}]+|[^\p{L}\s']/gu) || [];
+    return tokens.flatMap((token, index) => (
+      token === word && (strongNominalDeterminers.has(tokens[index - 1]) || articleDeterminers.has(tokens[index - 1]))
+        ? [tokens[index + 1]]
+        : []
+    ));
+  }
+
+  const functionWordGroups = new Set(["determiner", "preposition", "conjunction", "pronoun"]);
+
   // "le plus grand", "la moins chère": after a determiner, a degree adverb that
   // modifies the next word is the superlative, not the noun "un plus". Only a
   // following adjective, adverb or participle counts; "un plus pour l'équipe",
@@ -671,19 +685,52 @@
   function modifiesFollowingWord(rawWord, sentence) {
     const word = splitElidedClitic(rawWord).base;
     if (word !== "moins" && closedWordGroup(word) !== "adverb") return false;
-    // Punctuation is kept as its own token so a clause boundary ends the phrase.
-    const tokens = normalize(sentence).replace(/’/gu, "'").match(/[\p{L}]+|[^\p{L}\s']/gu) || [];
-    return tokens.some((token, index) => {
-      if (token !== word) return false;
-      const preceding = tokens[index - 1];
-      if (!strongNominalDeterminers.has(preceding) && !articleDeterminers.has(preceding)) return false;
-      const next = tokens[index + 1];
+    return tokensAfterDeterminer(word, sentence).some((next) => {
       if (!next || !/^\p{L}/u.test(next)) return false;
       // Lexique also lists en as an adverb; a function word starts a new phrase.
-      if (["determiner", "preposition", "conjunction", "pronoun"].includes(closedWordGroup(next))) return false;
+      if (functionWordGroups.has(closedWordGroup(next))) return false;
       if (lexicalGroups(next).some((group) => group === "adjective" || group === "adverb")) return true;
       return (analyzeWithMorphology(next) || fallbackAnalysis(next))?.mood === "participle";
     });
+  }
+
+  // How the word after a determiner-led word reads: "noun", "ambiguous" when
+  // the lexicon also has it as an adjective, or "" for anything else. A form
+  // whose Lexique lemma is another word that is an attested verb (est -> être)
+  // is the verb, although Lexique also lists est as a noun.
+  function followingNounReading(token) {
+    if (!token || !/^\p{L}/u.test(token) || closedWordGroup(token)) return "";
+    const groups = lexicalGroups(token);
+    if (!groups.includes("noun")) return "";
+    const lemma = lexicalInfo(token)?.lemma;
+    if (lemma && lemma !== token && attestedLemmas?.has(lemma)) return "";
+    return groups.includes("adjective") ? "ambiguous" : "noun";
+  }
+
+  // Adjectives that ordinarily stand before their noun (the BANGS class and a
+  // few more), by masculine singular lemma. They decide "ma chère amie" and
+  // "le petit ami", where the next word is itself noun or adjective.
+  const preposedAdjectives = new Set([
+    "beau", "bel", "joli", "jeune", "vieux", "vieil", "nouveau", "nouvel", "bon", "mauvais", "meilleur",
+    "grand", "petit", "gros", "long", "haut", "court", "premier", "dernier", "prochain", "autre", "même",
+    "vrai", "faux", "seul", "cher", "pauvre", "brave", "ancien", "futur", "véritable", "simple",
+    "présumé", "prétendu", "soi-disant", "sacré", "moindre", "double"
+  ]);
+
+  // After a determiner, a word the lexicon lists as both noun and adjective is
+  // an adjective only when a noun follows for it to modify: "une nouvelle
+  // voiture", but "la nouvelle est arrivée", "une donnée", "la marine". When the
+  // next word is itself noun or adjective ("les armées ennemies", "ma chère
+  // amie"), a pre-posed adjective keeps the adjective and anything else is the
+  // noun, followed by its own adjective.
+  function nounOrAdjectiveInContext(rawWord, sentence) {
+    const word = splitElidedClitic(rawWord).base;
+    const next = tokensAfterDeterminer(word, sentence)[0];
+    const reading = followingNounReading(next);
+    if (reading === "noun") return "adjective";
+    if (reading !== "ambiguous") return "noun";
+    const lemmas = [word, adjectiveLemma(word), lexicalInfo(word)?.lemma];
+    return lemmas.some((lemma) => lemma && preposedAdjectives.has(lemma)) ? "adjective" : "noun";
   }
 
   function analyzeWord(rawWord, sentence = "") {
@@ -722,7 +769,9 @@
     const analysis = suppliedAnalysis || analyzeWord(rawWord, sentence);
     const groups = lexicalGroups(rawWord);
     if (analysis?.partOfSpeech === "nominal") {
-      const contextualGroup = groups.find((group) => group === "noun" || group === "adjective") || "noun";
+      const contextualGroup = groups.includes("noun") && groups.includes("adjective")
+        ? nounOrAdjectiveInContext(rawWord, sentence)
+        : groups.find((group) => group === "noun" || group === "adjective") || "noun";
       // Only offer a verb alternative when a verb reading was actually found.
       const candidates = analysis.verbReadings?.length ? [...groups, "verb"] : groups;
       return {

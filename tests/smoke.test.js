@@ -525,6 +525,38 @@ async function testFrenchWithLoadedResources() {
   assert.strictEqual(french.classifyWord("moins", "un moins").group, "noun");
   assert.strictEqual(french.classifyWord("moins", "dix moins deux").group, "adverb");
 
+  // After a determiner, a word the lexicon lists as both noun and adjective was
+  // labelled by lexicon order alone, so "la nouvelle est arrivée" and "la
+  // marine" read as adjectives. It is an adjective only before a noun it can
+  // modify; when that next word is itself noun or adjective, a pre-posed
+  // adjective (grand, cher, jeune...) keeps the adjective.
+  for (const [word, sentence, group] of [
+    ["nouvelle", "une nouvelle voiture", "adjective"],
+    ["grand", "un grand homme", "adjective"],
+    ["petit", "le petit chat", "adjective"],
+    ["chère", "ma chère amie", "adjective"],
+    ["meilleure", "la meilleure amie", "adjective"],
+    ["jeunes", "les jeunes filles", "adjective"],
+    ["nouvelle", "la nouvelle est arrivée", "noun"],
+    ["donnée", "une donnée", "noun"],
+    ["marine", "la marine", "noun"],
+    ["marine", "la marine nationale", "noun"],
+    ["grand", "un grand", "noun"],
+    ["belle", "la belle et la bête", "noun"],
+    ["malade", "le malade dort", "noun"],
+    ["malade", "un malade mental", "noun"],
+    ["armées", "les armées ennemies", "noun"],
+    ["rouge", "le rouge te va bien", "noun"]
+  ]) {
+    const classification = french.classifyWord(word, sentence);
+    assert.strictEqual(classification.group, group, `${word} in "${sentence}"`);
+    assert(classification.alternatives.includes(group === "noun" ? "adjective" : "noun"), `${word} in "${sentence}" keeps the other reading`);
+    assert.strictEqual(french.lookupReading(word, sentence).group, group);
+  }
+  // Only one of the two readings in the lexicon: nothing to decide.
+  assert.strictEqual(french.classifyWord("présumée", "la présumée victime").group, "adjective");
+  assert.strictEqual(french.classifyWord("maison", "la maison bleue").group, "noun");
+
   // Lexique's schwa and yod codes reached the card unconverted.
   assert.strictEqual(french.lexicalInfo("je").pronunciation, "ʒə");
   assert(french.lexicalInfo("nuit").pronunciation.includes("ɥ"), "The yod code 8 should render as ɥ");
@@ -622,14 +654,24 @@ async function testDictionaryWithRealData() {
     ["la présumée victime", "présumée", "presumed"],
     // Lexique's lemma for nouvelle is the noun (news); the adjective is filed
     // under its masculine form.
-    ["une nouvelle voiture", "nouvelle", "new"]
+    ["une nouvelle voiture", "nouvelle", "new"],
+    ["un grand homme", "grand", "big"],
+    ["ma chère amie", "chère", "dear"],
+    // A word that is both noun and adjective, with no noun after it to modify,
+    // is the noun. Read as adjectives these answered "new", "affordable, cheap"
+    // and "maritime", and a learner saves what the card says.
+    ["la nouvelle est arrivée", "nouvelle", "news", "", /\bnew\b/],
+    ["une donnée", "donnée", "datum", "", /affordable/],
+    ["la marine", "marine", "navy", "", /maritime/],
+    ["la marine nationale", "marine", "navy", "", /maritime/]
   ];
-  for (const [sentence, token, expected, reason] of cases) {
+  for (const [sentence, token, expected, reason, forbidden] of cases) {
     const result = await resolve(token, sentence);
     const described = `${token} in "${sentence}" (${result.group}, ${JSON.stringify(result.lemmas)}) -> ${JSON.stringify(result.meaning)}`;
     if (expected === null) assert.strictEqual(result.meaning, null, `${described}: ${reason}`);
     else assert(result.meaning?.includes(expected), `${described} should contain "${expected}"`);
     assert(!/front page|nonstandard spelling|to please/.test(result.meaning || ""), `${described} is a known wrong meaning`);
+    if (forbidden) assert(!forbidden.test(result.meaning || ""), `${described} must not match ${forbidden}`);
   }
 }
 

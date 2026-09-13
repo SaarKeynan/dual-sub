@@ -342,6 +342,17 @@ looks like a participle follows a nominal determiner, DualSub prefers a noun or
 adjective reading and retains the verb as an alternative. This is why context
 such as `une ...` can prevent a misleading verb-first explanation.
 
+When the lexicon lists the word as both noun and adjective, the next word
+decides (`nounOrAdjectiveInContext()` in `language/french.js`). A following
+noun makes it a pre-posed adjective (`une nouvelle voiture`). Anything else
+makes it the noun: a verb, a function word, punctuation, or the end of the
+line (`la nouvelle est arrivée`, `une donnée`, `la marine`). A following word
+that is itself noun or adjective is resolved by a short list of adjectives that
+normally stand before their noun (`ma chère amie` is an adjective, `les armées
+ennemies` a noun). The other reading stays as an alternative. A degree adverb
+after a determiner that modifies the next word is the adverb (`le plus grand`),
+not the noun `un plus`.
+
 Local analysis selects labels and infinitives; it does not invent the displayed
 English meaning. The displayed meaning still comes from correction, cache, or
 the translation provider.
