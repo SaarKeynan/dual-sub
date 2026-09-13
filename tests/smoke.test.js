@@ -549,6 +549,15 @@ async function testFrenchWithLoadedResources() {
   assert.strictEqual(french.lexicalInfo("armées").lemma, "armée");
   const livre = french.analyzeWord("livre", "je livre le colis");
   assert.strictEqual(livre.lemma, "livrer");
+
+  // Wiktionary files a feminine or plural adjective under its masculine
+  // singular, which Lexique does not always give as the lemma.
+  for (const [form, masculine] of [["nouvelle", "nouveau"], ["belles", "beau"], ["heureuses", "heureux"], ["active", "actif"], ["chère", "cher"], ["ancienne", "ancien"], ["bonne", "bon"], ["petite", "petit"]]) {
+    assert.strictEqual(french.adjectiveLemma(form), masculine, `${form} is a form of the adjective ${masculine}`);
+  }
+  for (const word of ["maison", "rapide", "grand", "nouveau"]) {
+    assert.strictEqual(french.adjectiveLemma(word), "", `${word} has no other masculine adjective form`);
+  }
 }
 
 // Fixture tests of each piece passed while the shipped data answered "la
@@ -610,7 +619,10 @@ async function testDictionaryWithRealData() {
     ["le cœur", "cœur", "heart"],
     // Neither the surface nor Lexique's lemma (none) has the adjective; the
     // morphology's -ée -> -é lemma does.
-    ["la présumée victime", "présumée", "presumed"]
+    ["la présumée victime", "présumée", "presumed"],
+    // Lexique's lemma for nouvelle is the noun (news); the adjective is filed
+    // under its masculine form.
+    ["une nouvelle voiture", "nouvelle", "new"]
   ];
   for (const [sentence, token, expected, reason] of cases) {
     const result = await resolve(token, sentence);
@@ -1023,6 +1035,7 @@ async function testTranscriptWordAnalysis() {
       analyzeWord: (word) => ({ compris: { partOfSpeech: "verb", lemma: "comprendre" }, plus: { partOfSpeech: "verb", lemma: "plaire" } })[word] || null,
       classifyWord: (word) => ({ group: word === "compris" ? "verb" : "adverb" }),
       lexicalInfo: (word) => ({ as: { lemma: "avoir" }, yeux: { lemma: "oeil" }, livre: { lemma: "livre" } })[word] || null,
+      adjectiveLemma: (word) => (word === "nouvelle" ? "nouveau" : ""),
       lookupReading: (word) => ({
         text: word === "compris" ? "j'ai compris" : word,
         key: word === "compris" ? "verb:comprendre" : "",
@@ -1075,6 +1088,10 @@ async function testTranscriptWordAnalysis() {
   assert.deepStrictEqual(candidates("yeux", { partOfSpeech: "nominal", lemma: "yeux" }, { group: "noun" }), ["yeux", "oeil"], "...de-duplicated");
   assert.deepStrictEqual(candidates("plus", { partOfSpeech: "verb", lemma: "plaire" }, { group: "adverb" }), ["plus"],
     "A word not read as a verb does not send the verb it could be a form of");
+  assert.deepStrictEqual(candidates("nouvelle", { partOfSpeech: "nominal", lemma: "nouvelle" }, { group: "adjective" }), ["nouvelle", "nouveau"],
+    "An adjective reading tries the masculine form last");
+  assert.deepStrictEqual(candidates("nouvelle", { partOfSpeech: "nominal", lemma: "nouvelle" }, { group: "noun" }), ["nouvelle"],
+    "...and only an adjective reading: la nouvelle is news");
   assert.deepStrictEqual(candidates("", null, null), [], "Empty values are removed");
 
   const many = context.describeStudyWords(

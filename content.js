@@ -1743,11 +1743,14 @@
   // morphology cannot (`armées` -> `armée`, `yeux` -> `oeil`); then the
   // morphology's own lemma, which reaches what Lexique files under the verb or
   // not at all (`présumée` -> `présumé`). A verb analysis under another reading
-  // (`plus` as a form of `plaire`) sends no infinitive.
+  // (`plus` as a form of `plaire`) sends no infinitive. An adjective reading
+  // finally tries the masculine singular (`nouvelle` -> `nouveau`), where the
+  // dictionary files the adjective; Lexique's lemma for `nouvelle` is the noun.
   function dictionaryCandidatesFor(word, conjugation, reading) {
     if (reading?.group === "verb" && conjugation?.lemma) return [conjugation.lemma];
     const morphologyLemma = conjugation?.partOfSpeech === "verb" ? "" : conjugation?.lemma;
-    return [word, globalThis.DualSubFrench?.lexicalInfo(word)?.lemma, morphologyLemma]
+    const masculine = reading?.group === "adjective" ? globalThis.DualSubFrench?.adjectiveLemma?.(word) : "";
+    return [word, globalThis.DualSubFrench?.lexicalInfo(word)?.lemma, morphologyLemma, masculine]
       .filter((value, index, values) => value && values.indexOf(value) === index);
   }
 

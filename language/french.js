@@ -618,6 +618,30 @@
     ) || word;
   }
 
+  // Feminine endings and the masculine each is tried as, in order: nouvelle is
+  // nouveau before nouvel, cruelle falls through to cruel.
+  const feminineAdjectiveEndings = [
+    ["elle", "eau"], ["elle", "el"], ["euse", "eux"], ["ive", "if"], ["ère", "er"],
+    ["enne", "en"], ["onne", "on"], ["ette", "et"], ["sse", "s"], ["e", ""]
+  ];
+
+  // The masculine singular of a feminine or plural adjective, which is where
+  // the dictionary files the adjective. Lexique keeps one lemma per form, and
+  // for nouvelle that lemma is the noun (news). A candidate counts only when
+  // Lexique lists both it and the word as adjectives; otherwise "".
+  function adjectiveLemma(rawWord) {
+    const word = splitElidedClitic(rawWord).base;
+    if (!lexicalGroups(word).includes("adjective")) return "";
+    const singular = word.endsWith("es") ? word.slice(0, -1) : word;
+    if (!singular.endsWith("e")) return "";
+    for (const [feminine, masculine] of feminineAdjectiveEndings) {
+      if (!singular.endsWith(feminine)) continue;
+      const candidate = singular.slice(0, -feminine.length) + masculine;
+      if (candidate && candidate !== word && lexicalGroups(candidate).includes("adjective")) return candidate;
+    }
+    return "";
+  }
+
   function hasNominalDeterminer(rawWord, sentence) {
     const parts = splitElidedClitic(rawWord);
     const word = parts.base;
@@ -755,6 +779,7 @@
 
   const ready = initializeResources();
   globalThis.DualSubFrench = Object.freeze({
+    adjectiveLemma,
     analyzeWord,
     analyzeElisionParticle,
     classifyWord,

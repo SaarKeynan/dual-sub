@@ -133,7 +133,10 @@ lemma per form, and for `été`, `est` and `as` that lemma is the verb, so `cet
 through their lemma. Last comes the morphology's own lemma, which reaches forms
 Lexique files under the verb or does not list (`la présumée victime` reaches
 the adjective `présumé`); a verb analysis under a non-verb reading, such as
-`plus` as a form of `plaire`, adds nothing. The dictionary answers from the
+`plus` as a form of `plaire`, adds nothing. An adjective reading finally tries
+the masculine singular from `adjectiveLemma()` in `language/french.js`
+(`nouvelle` -> `nouveau`), since Wiktionary files the adjective there and
+Lexique's lemma for `nouvelle` is the noun. The dictionary answers from the
 first candidate with a part of speech matching the group. When the group is a real part of speech that no
 candidate has, the dictionary does not answer and the engine does: `la maison`
 is a determiner, and the only `la` entries are the pronoun and the musical
