@@ -92,8 +92,9 @@ French analysis, and French-to-English word matching are detailed in
   not flash a loading state or spend provider quota.
   When full timed captions are available, DualSub can also preload a small set
   of the video's most frequent words before they are selected.
-  Each lookup card identifies whether its result came from a correction, local
-  cache, or live engine request and links to the provider's public lookup page.
+  Each lookup card identifies whether its result came from a correction, the
+  bundled dictionary, local cache, or live engine request, linking to the
+  provider's public lookup page except for a dictionary answer, which has none.
 - French conjugations are analyzed locally with ablaut's reverse morphology,
   then checked against a 7,820-infinitive Lefff derivative. The lookup card
   shows only the most likely infinitive, keeping grammatical analysis out of
