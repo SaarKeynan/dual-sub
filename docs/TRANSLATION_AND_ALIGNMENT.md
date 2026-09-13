@@ -193,7 +193,11 @@ is still lexicon-order based after a determiner:
 
 Three rounds of rule-based context heuristics (following-word rules, then
 positive evidence of a noun use) fixed the phrases they were written for and
-regressed on unseen phrases in independent review, so they were reverted. The
+regressed on unseen phrases in independent review, so they were reverted.
+`tests/fixtures/french-context-cases.json` keeps the phrases measured so far with
+their target readings. The smoke suite checks each row against the shipped data.
+A row that fails today is marked `knownWrong`, and one that starts passing fails
+the suite until the flag is removed. The
 attempts, their measured results and suggested starting points are recorded in
 [docs/superpowers/notes/2026-09-13-french-noun-adjective-classification.md](superpowers/notes/2026-09-13-french-noun-adjective-classification.md).
 

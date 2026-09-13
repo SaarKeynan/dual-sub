@@ -678,6 +678,41 @@ async function testDictionaryWithRealData() {
     assert(!/front page|nonstandard spelling|to please/.test(result.meaning || ""), `${described} is a known wrong meaning`);
     if (forbidden) assert(!forbidden.test(result.meaning || ""), `${described} must not match ${forbidden}`);
   }
+
+  // tests/fixtures/french-context-cases.json records the target reading of
+  // each phrase, not what the code does today. A row names the expected group
+  // ("a|b" when either is right) and optionally a pattern the meaning must
+  // match and one it must never match. knownWrong rows fail today and are a
+  // ratchet: one that starts passing fails the suite until the flag is removed,
+  // so an improvement is recorded. disputed rows are not checked. source says
+  // who wrote the phrase (author, review-round1..3), so a context rule can be
+  // measured on reviewer phrases it was not written against; from names the
+  // commit whose test the row came from.
+  const corpus = JSON.parse(fs.readFileSync(path.join(projectRoot, "tests", "fixtures", "french-context-cases.json"), "utf8"));
+  const failures = [];
+  const promotions = [];
+  const tally = { passing: 0, knownWrong: 0, disputed: 0 };
+  const bySource = {};
+  for (const row of corpus) {
+    const counts = bySource[row.source] ||= { passing: 0, knownWrong: 0 };
+    if (row.disputed) { tally.disputed++; continue; }
+    const result = await resolve(row.word, row.phrase);
+    const problems = [];
+    if (!row.group.split("|").includes(result.group)) problems.push(`group ${result.group}, expected ${row.group}`);
+    if (row.meaning && !new RegExp(row.meaning).test(result.meaning || "")) problems.push(`meaning does not match /${row.meaning}/`);
+    if (row.forbidden && new RegExp(row.forbidden).test(result.meaning || "")) problems.push(`meaning matches forbidden /${row.forbidden}/`);
+    const described = `${row.word} in "${row.phrase}" -> ${result.group}, ${JSON.stringify(result.meaning)}`;
+    if (row.knownWrong) {
+      tally.knownWrong++; counts.knownWrong++;
+      if (!problems.length) promotions.push(described);
+    } else if (problems.length) failures.push(`${described}: ${problems.join("; ")}`);
+    else { tally.passing++; counts.passing++; }
+  }
+  console.log(`French context corpus: ${tally.passing} passing, ${tally.knownWrong} knownWrong, ${tally.disputed} disputed; by source ${
+    Object.entries(bySource).map(([source, counts]) => `${source} ${counts.passing}/${counts.passing + counts.knownWrong}`).join(", ")}`);
+  assert.strictEqual(failures.length, 0, `Context corpus rows that should pass:\n${failures.join("\n")}`);
+  assert.strictEqual(promotions.length, 0,
+    `knownWrong corpus rows now pass; remove their knownWrong flag to promote them:\n${promotions.join("\n")}`);
 }
 
 async function testWordGroupResource() {

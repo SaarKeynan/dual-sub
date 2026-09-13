@@ -49,6 +49,7 @@ These are independent of the noun/adjective heuristics and stay on the branch:
 | e6d7292 | `au moins`, `du moins`, `le moins du monde`, `deux au plus` are adverbs | `french.js` `fixedAdverbialExpression` |
 | 55ddbfa, 84cd0b8 | `entre`/`contre` are verbs only after `je/j'/tu/il/on` (clitics between), or an ungoverned `elle`; `nous contre eux` stays a preposition | `french.js` `prepositionVerbAfterSubject` |
 | fc38864 (from f9cc7a4) | `lookupReading` adds a subject pronoun only for a verb reading, so `contre le mur` is no longer sent to the engine as "je contre" | `french.js` `lookupReading` |
+| from 31f1420, revised | The context corpus: 431 phrases with their target readings, with failing rows marked `knownWrong` | `tests/fixtures/french-context-cases.json`, run by `tests/smoke.test.js` `testDictionaryWithRealData` |
 
 ## Attempt 1: the following-word rule (round 1)
 
@@ -216,8 +217,13 @@ Reverted:
 - **31f1420** test: run a corpus of French context phrases against the shipped data
 - **ef1b23c** docs: describe evidence-based noun readings and the context corpus
 
-Kept from the same round: 84cd0b8 (entre/contre narrowed), and from
-f9cc7a4 only the `lookupReading` subject change (fc38864).
+Kept from the same round:
+
+- 84cd0b8 (entre/contre narrowed);
+- from f9cc7a4, only the `lookupReading` subject change (fc38864);
+- 31f1420's corpus, restored after the revert as a record of target behaviour.
+  It has corrected rows, reviewer rows, and failing rows marked `knownWrong`;
+  see [The context corpus](#the-context-corpus-kept).
 
 ### Files and functions
 
@@ -237,8 +243,10 @@ At ef1b23c, all in `language/french.js`:
   `classifyWord` at line 911.
 - The auxiliary exclusion was removed from `followingNounReading`.
 - The corpus was `tests/fixtures/french-context-cases.json`, with 352 rows run
-  by `testDictionaryWithRealData`. Read it with `git show
-  31f1420:tests/fixtures/french-context-cases.json`.
+  by `testDictionaryWithRealData`. Every row had to pass, so the expectations
+  were fitted to the rules. The version at 31f1420 is `git show
+  31f1420:tests/fixtures/french-context-cases.json`; the kept, revised version
+  is described below.
 
 ### The rule as implemented
 
@@ -328,7 +336,7 @@ The corpus had its own problems:
 - Rows without a meaning pattern checked only the group.
 
 The rows were written by the author of the rules, so a corpus pass measured fit,
-not generalisation.
+not generalisation. The five flagged rows are corrected in the kept corpus.
 
 ### Measured
 
@@ -445,6 +453,96 @@ How to set up the probe:
 Expected values in any sample need a **native-speaker check**. A third of the
 corpus rows spot-checked were wrong or debatable.
 
+### The context corpus (kept)
+
+`tests/fixtures/french-context-cases.json` holds 431 phrases, one JSON object
+per line. `testDictionaryWithRealData` in `tests/smoke.test.js` resolves each
+row through the real morphology, the real `dictionaryCandidatesFor` and the
+shipped dictionary. That takes well under a second.
+
+#### Fields
+
+| Field | Required | Meaning |
+|---|---|---|
+| `phrase` | yes | The caption text |
+| `word` | yes | The token as written, including elisions such as `l'étudiant` |
+| `group` | yes | The **target** group; `"a\|b"` when either reading is right |
+| `meaning` | no | A regex the answer must match |
+| `forbidden` | no | A regex the answer must never match |
+| `knownWrong` | no | `true` when the row fails at the current code |
+| `disputed` | no | `true` when the expectation is debatable; not checked |
+| `note` | no | Why a row is disputed, or context for the expectation |
+| `source` | yes | Who wrote the phrase (see below) |
+| `from` | no | The reverted commit whose test assertion the row came from |
+
+The `source` values are:
+
+- `author`: the rule author's own sample and blind-spot rows;
+- `review-round1`: the first reviewer's probe table;
+- `review-round2`: the 219-phrase review of attempt 2;
+- `review-round3`: the phrases the 448-row review of attempt 3 named, plus the
+  limitations present at every commit.
+
+#### What changed from 31f1420
+
+- **Rows are target behaviour, not current behaviour.** No expectation was
+  changed to match the rolled-back code. Every row that fails now is marked
+  `knownWrong` instead.
+- **The five rows the decisive review flagged were corrected:**
+  - `les jeunes 18-25 ans` → noun;
+  - `le vieux sont partis` → `les vieux sont partis`;
+  - `le plus` → disputed;
+  - `la bonne est partie` → noun "maid", never "good";
+  - `les grands parents` → forbids "big".
+- **76 `review-round3` rows were added**, from the review phrases named in this
+  note. The round-2 review phrases were already present.
+- **Classification assertions from the reverted commits became rows.** 78 rows
+  carry `from`: 97c5c0a, f269ad8, 09690d3, 16763f3, f9cc7a4, db0567f and
+  4cedd9a. Where a phrase was already present, `from` was added to that row.
+  - Assertions that only tested removed helpers (`adjectiveLemma`, the candidate
+    stubs) were dropped.
+
+#### The ratchet
+
+The runner prints one line:
+
+```
+French context corpus: 305 passing, 125 knownWrong, 1 disputed; by source author 121/176, review-round1 26/26, review-round2 118/152, review-round3 40/76
+```
+
+It fails in two cases:
+
+- a row without `knownWrong` fails;
+- a `knownWrong` row now passes. The message says to remove the flag, so an
+  improvement is recorded and can't later regress silently.
+
+A `knownWrong` row that gets worse still fails, so it stays in the file as
+`knownWrong` with its target intact. The runner does not notice that it got
+worse, though; for that, compare against a baseline as described below.
+
+#### Using it to measure an attempt
+
+1. Measure the pass rate per source at a baseline commit and at the candidate.
+   Use the same harness as above; drop `knownWrong` from the check, or read the
+   runner's line.
+2. Judge generalisation on the `review-*` rows, not `author`.
+3. Diff row by row against the baseline for REGRESSION and NEW-WRONG. The
+   runner alone cannot see a `knownWrong` row changing from one wrong answer to
+   another.
+4. Add fresh reviewer rows before tuning, not after.
+
+Pass rates, excluding the disputed row:
+
+| Commit | author | review-round1 | review-round2 | review-round3 | total |
+|---|---|---|---|---|---|
+| 349d8c1 (baseline) | 96/176 | 23/26 | 109/152 | 38/76 | 266/430 |
+| ef1b23c (attempt 3) | 170/176 | 26/26 | 151/152 | **15/76** | 362/430 |
+| fc38864 (after rollback) | 121/176 | 26/26 | 118/152 | 40/76 | 305/430 |
+
+Attempt 3 scored 97% on the rows its author had seen, and 20% on the round-3
+reviewer's phrases, below the baseline's 50%. That gap is the overfitting this
+note describes. No row passes at 349d8c1 and fails at fc38864.
+
 ### Infrastructure to build on (kept)
 
 - `sentenceTokens()` in `french.js`: lowercased tokens, with punctuation as its
@@ -458,105 +556,35 @@ corpus rows spot-checked were wrong or debatable.
 - `dictionaryCandidatesFor` already drops verb-only Lexique lemmas.
 - `testDictionaryWithRealData` cases take an optional `forbidden` pattern and
   an `undefined` expectation, for "must not answer this" rows.
+- The context corpus and its `knownWrong` ratchet (above).
 - `tests/ui.test.js` `useRealFrench(w)` loads the real morphology and Lexique
   into a jsdom window.
 
-### Candidate test material (unverified expectations)
+### Test material (unverified expectations)
 
-These phrases came from the reviews. **The expected readings below are the
-reviewers' and implementer's judgements, not a native speaker's; verify them
-before encoding them as tests.** In each list, the word in brackets is the
-token under test.
+The phrases this note names are rows in the context corpus:
 
-- **Attempt-3 regressions, all fine at 349d8c1:**
-  - These should read as the verb *faire*:
-    - il en fait trop
-    - qu'est-ce qu'il en fait
-    - elle en fait partie
-    - on en fait un
-    - il s'en fait pour rien
-    - ça en fait deux
-    - l'usage qu'il en fait
-    - il en fait des tonnes
-  - These should read as nouns:
-    - un raccourci clavier [raccourci]
-    - un employé modèle [employé]
-    - un étudiant étranger / l'étudiant étranger [étudiant]
-    - les étudiants français / les étudiants bien sûr [étudiants]
-    - les salariés français [salariés]
-    - un salarié cadre [salarié]
-    - les chercheurs français [chercheurs]
-    - un artiste français [artiste]
-    - un français moyen [français]
-    - un rosé bien frais [rosé]
-    - un contenu bien fait [contenu]
-    - les employés bien payés [employés]
-    - le public bien présent [public]
-    - un produit phare [produit]
-    - les invités surprise [invités]
-    - un gagnant surprise [gagnant]
-    - les participants inscrits [participants]
-    - les abonnés fidèles [abonnés]
-  - These should read as adjectives, or as an idiom rather than a noun sense:
-    - c'est un grand n'importe quoi [grand]
-    - un gros n'importe quoi [gros]
-    - les forts [forts]
-    - les vrais savent [vrais]
-    - un vrai de vrai [vrai]
-    - au final [final]
-    - au juste [juste]
-    - au frais [frais]
-    - pas du tout / du tout / rien du tout / le tout premier [tout]
-  - These are the noun *news*, and must never answer "new":
-    - j'ai appris la nouvelle hier
-    - c'est une bonne nouvelle pour vous
-    - bonne nouvelle !
-    - j'ai une bonne nouvelle
-    - une grande nouvelle
-    - LA NOUVELLE EST ARRIVÉE
-- **Earlier regressions:**
-  - These should read as adjectives, never a noun sense:
-    - à la prochaine [prochaine]
-    - c'est le bon [bon]
-    - c'est la bonne [bonne]
-    - ma petite sœur [petite]
-    - une bonne excuse [bonne]
-    - un drôle de truc [drôle]
-    - un petit live [petit]
-    - le petit Nicolas [petit]
-    - une belle et grande maison [belle]
-    - les grands avions [grands]
-  - la morte [morte] must never answer "process of dying".
-  - These should read as prepositions:
-    - nous contre eux
-    - chez nous entre amis
-    - c'est nous contre le reste du monde
-- **The original issues:**
-  - These should read as nouns: la nouvelle, une donnée, la marine.
-  - une nouvelle voiture should read as an adjective.
-- **Fixes that must keep working:**
-  - le plus grand, la plus belle, le moins cher (adverb)
-  - c'est un plus (noun)
-  - au moins, du moins, de plus en plus (adverb)
-  - plus tard: no "Infinitive: plaire"
-  - tu es là: no `taire`
-  - il mange: keeps `manger`
-  - le cœur, des œufs (noun)
-  - il entre dans la salle, elle entre (verb)
-- **Attempt-3 fixes worth keeping as goals:**
-  - les jeunes ne votent pas
-  - le petit ne sait pas
-  - la pauvre elle est fatiguée
-  - un malade imaginaire
-  - le vieux de la vieille
-  - c'est qui le nouveau ?
-  - le rouge à lèvres
-  - un inconnu m'a parlé
-  - le froid arrive
-  - au total
-  - les Bleus ont gagné
-  - en fait, tout à fait, à peine (not after clitic `en`)
-  - le haut niveau
-  - un fin connaisseur
-- **The spot-checked corpus rows** from 31f1420: see the attempt 3 section.
-  The whole fixture is a starting list of phrases, not of trusted expectations.
+- the attempt-3 regressions and fixes, and the limitations present at every
+  commit, with `source` `review-round3`;
+- the earlier regressions, with `source` `review-round1` and `review-round2`;
+- the original issues and the reverted commits' assertions, with `from`.
+
+**The expectations are the reviewers' and implementer's judgements, not a native
+speaker's.** Check them before trusting a pass or a failure. The ones most worth
+a second opinion are:
+
+- the idioms: `au final`, `au juste`, `du tout`, `les forts`, `les vrais
+  savent`, which accept several groups and forbid the wrong sense;
+- `un français moyen`;
+- `un autre`, `les meilleurs` and `c'est le bon`, where "adjective" stands for
+  an elliptical reading.
+
+The card-level checks for the kept fixes are not corpus rows, because the corpus
+checks only the group and the meaning:
+
+- `plus tard` has no "Infinitive: plaire";
+- `tu es là` has no `taire`;
+- `il mange` keeps `manger`;
+- `il entre` shows `entrer`.
+
+They live in `tests/ui.test.js` (`verbEvidence`).
